@@ -106,6 +106,10 @@ sequenceDiagram
 9. Before a new intent or provider submission, the active tenant policy's emergency kill switch is
    checked again. A completed receipt may still be replayed under a later stop because that path
    returns existing proof and never resubmits funds.
+10. Active route, autonomy, treasury freshness, daily-limit, and reserve controls are checked in the
+    same serialized database transaction that reserves a new payment intent. The calculation adds
+    every durable intent created after the latest source balance, preventing concurrent workers from
+    spending the same observed headroom twice.
 
 ## Historical decision replay
 
@@ -162,6 +166,12 @@ against the previous version. The active kill switch is additionally checked on 
 so activating an emergency stop blocks invoices that were already `READY` under an older decision.
 This execution-time gate records the blocking policy version and hash in the audit chain before
 failing closed.
+
+The governance overview also computes a read-only settlement-capacity projection from the same
+durable sources. It reports the latest observed balance and spend, intent commitments since that
+observation, effective available balance, remaining daily limit, reserve floor, snapshot freshness,
+and the smaller of daily or reserve headroom as the maximum currently admissible payment. This is an
+operational preview only; the authoritative check still runs atomically during intent reservation.
 
 ## Tenant isolation
 

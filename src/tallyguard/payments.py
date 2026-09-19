@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import hashlib
 from uuid import uuid4
 
@@ -30,10 +31,16 @@ class PaymentOrchestrator:
         repository: SqliteRepository,
         settlement_service: SettlementService,
         network: ArcNetworkConfig,
+        enforce_execution_controls: bool = False,
+        maximum_snapshot_age: timedelta = timedelta(minutes=15),
     ) -> None:
+        if maximum_snapshot_age <= timedelta(0):
+            raise ValueError("Treasury snapshot maximum age must be positive.")
         self.repository = repository
         self.settlement_service = settlement_service
         self.network = network
+        self.enforce_execution_controls = enforce_execution_controls
+        self.maximum_snapshot_age = maximum_snapshot_age
 
     def settle(
         self,
@@ -60,7 +67,11 @@ class PaymentOrchestrator:
             idempotency_key=str(uuid4()),
             approval_reference=decision.approval_reference,
         )
-        intent, _ = self.repository.create_or_get_payment_intent(proposed)
+        intent, _ = self.repository.create_or_get_payment_intent(
+            proposed,
+            enforce_active_controls=self.enforce_execution_controls,
+            maximum_snapshot_age=self.maximum_snapshot_age,
+        )
         existing = self.repository.find_settlement_receipt(
             organization_id=intent.organization_id,
             payment_intent_id=intent.id,

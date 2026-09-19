@@ -166,7 +166,27 @@ export interface ApprovalInboxItem {
 
 export interface GovernanceOverview {
   activePolicy: ActivePolicy | null;
+  settlementCapacity: SettlementCapacity | null;
   pendingApprovals: ApprovalInboxItem[];
+}
+
+export interface SettlementCapacity {
+  organization_id: string;
+  active_policy_version: string;
+  active_policy_hash: string;
+  kill_switch_enabled: boolean;
+  treasury_snapshot_sequence: number;
+  treasury_snapshot_recorded_at: string;
+  snapshot_age_seconds: number;
+  snapshot_fresh: boolean;
+  snapshot_available_usdc: string;
+  snapshot_spent_today_usdc: string;
+  committed_since_snapshot_usdc: string;
+  effective_available_usdc: string;
+  daily_payment_limit_usdc: string;
+  daily_remaining_usdc: string;
+  minimum_cash_reserve_usdc: string;
+  maximum_new_payment_usdc: string;
 }
 
 export interface PolicyDraft {

@@ -84,10 +84,12 @@ export async function bootstrap(): Promise<BootstrapData> {
 export async function fetchGovernanceOverview(approverToken: string): Promise<GovernanceOverview> {
   const payload = await request<{
     active_policy: GovernanceOverview['activePolicy'];
+    settlement_capacity: GovernanceOverview['settlementCapacity'];
     pending_approvals: GovernanceOverview['pendingApprovals'];
   }>('/api/governance/overview', { method: 'GET' }, approverToken);
   return {
     activePolicy: payload.active_policy,
+    settlementCapacity: payload.settlement_capacity,
     pendingApprovals: payload.pending_approvals,
   };
 }

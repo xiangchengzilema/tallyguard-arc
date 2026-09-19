@@ -219,12 +219,17 @@ policy or an explicit `null` empty state together with enriched pending approval
 the bound invoice and decision. Resolving an approval uses optimistic version checks: approval moves
 the invoice from `ESCALATED` to `READY`; rejection moves it to terminal `REJECTED`. Neither operation
 creates a payment intent, and only the approved path can later satisfy settlement authorization.
+When policy and treasury state exist, the response also includes settlement capacity derived from
+the latest source snapshot plus every durable intent committed since that observation.
 
 Every settlement request checks the current active policy's kill switch before creating a new
 intent or calling the provider, even when the bound `PAY` decision predates the emergency policy.
 A blocked execution writes a tenant audit event containing the active policy version and hash. If a
 durable receipt already exists, the request returns that proof as an idempotent replay and does not
 call the provider, so post-payment emergency stops do not hide completed reconciliation evidence.
+For a new or incomplete intent, policy route, autonomy, snapshot freshness, daily spend, and reserve
+headroom are rechecked inside the same write transaction that reserves the intent. A failed control
+writes an auditable execution-control event and leaves no intent for the provider to submit.
 
 ## 7. Demo scenarios
 

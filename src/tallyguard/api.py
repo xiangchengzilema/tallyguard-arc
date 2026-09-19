@@ -53,6 +53,7 @@ from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
 from .persistence import (
     PersistenceError,
+    SettlementExecutionBlocked,
     SqliteRepository,
     StoredInvoice,
     StoredTreasurySnapshot,
@@ -446,10 +447,15 @@ def create_app(
         adapter=settlement_adapter,
         allow_mainnet=allow_mainnet,
     )
+    treasury_max_age = timedelta(
+        seconds=int(os.getenv("TALLYGUARD_TREASURY_MAX_AGE_SECONDS", "900"))
+    )
     payment_orchestrator = PaymentOrchestrator(
         repository=repository,
         settlement_service=settlement_service,
         network=network_config,
+        enforce_execution_controls=True,
+        maximum_snapshot_age=treasury_max_age,
     )
     configured_rate_limit = rate_limit_per_minute or int(
         os.getenv("TALLYGUARD_RATE_LIMIT_PER_MINUTE", "6000")
@@ -1104,6 +1110,32 @@ def create_app(
             if history
             else None
         )
+        try:
+            capacity = repository.settlement_capacity(
+                organization_id=g.principal.organization_id,
+                maximum_snapshot_age=treasury_max_age,
+            )
+        except PersistenceError:
+            capacity_json = None
+        else:
+            capacity_json = {
+                "organization_id": capacity.organization_id,
+                "active_policy_version": capacity.active_policy_version,
+                "active_policy_hash": capacity.active_policy_hash,
+                "kill_switch_enabled": capacity.kill_switch_enabled,
+                "treasury_snapshot_sequence": capacity.treasury_snapshot_sequence,
+                "treasury_snapshot_recorded_at": capacity.treasury_snapshot_recorded_at.isoformat(),
+                "snapshot_age_seconds": capacity.snapshot_age_seconds,
+                "snapshot_fresh": capacity.snapshot_fresh,
+                "snapshot_available_usdc": format(capacity.snapshot_available_usdc, "f"),
+                "snapshot_spent_today_usdc": format(capacity.snapshot_spent_today_usdc, "f"),
+                "committed_since_snapshot_usdc": format(capacity.committed_since_snapshot_usdc, "f"),
+                "effective_available_usdc": format(capacity.effective_available_usdc, "f"),
+                "daily_payment_limit_usdc": format(capacity.daily_payment_limit_usdc, "f"),
+                "daily_remaining_usdc": format(capacity.daily_remaining_usdc, "f"),
+                "minimum_cash_reserve_usdc": format(capacity.minimum_cash_reserve_usdc, "f"),
+                "maximum_new_payment_usdc": format(capacity.maximum_new_payment_usdc, "f"),
+            }
         pending_approvals = []
         for approval in approval_inbox.pending(
             organization_id=g.principal.organization_id
@@ -1128,6 +1160,7 @@ def create_app(
                 "active_policy": (
                     _policy_json(active_policy) if active_policy is not None else None
                 ),
+                "settlement_capacity": capacity_json,
                 "pending_approvals": pending_approvals,
                 "correlation_id": _correlation_id(),
             }
@@ -1814,50 +1847,35 @@ def create_app(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
         )
-        completed_receipt_exists = False
         try:
-            existing_intent = repository.get_payment_intent_for_decision(
-                organization_id=g.principal.organization_id,
+            outcome = payment_orchestrator.settle(
+                invoice=stored,
                 decision_id=decision_id,
+                decision=decision,
+                actor_user_id=actor_user_id,
+                correlation_id=correlation_id,
             )
-        except PersistenceError as exc:
-            if "not found" not in str(exc).lower():
-                raise
-        else:
-            completed_receipt_exists = repository.find_settlement_receipt(
-                organization_id=g.principal.organization_id,
-                payment_intent_id=existing_intent.id,
-            ) is not None
-
-        if not completed_receipt_exists:
-            execution_policy = repository.active_policy(
-                organization_id=g.principal.organization_id
+        except SettlementExecutionBlocked as exc:
+            event_type = (
+                "SETTLEMENT_BLOCKED_BY_ACTIVE_KILL_SWITCH"
+                if exc.control_code == "KILL_SWITCH_ENABLED"
+                else "SETTLEMENT_BLOCKED_BY_EXECUTION_CONTROL"
             )
-            if execution_policy.policy.kill_switch_enabled:
-                repository.append(
-                    aggregate_type="settlement_gate",
-                    aggregate_id=decision_id,
-                    event_type="SETTLEMENT_BLOCKED_BY_ACTIVE_KILL_SWITCH",
-                    payload={
-                        "organization_id": g.principal.organization_id,
-                        "invoice_id": invoice_id,
-                        "decision_id": decision_id,
-                        "active_policy_version": execution_policy.policy.version,
-                        "active_policy_hash": execution_policy.content_hash,
-                        "actor_user_id": actor_user_id,
-                        "correlation_id": correlation_id,
-                    },
-                )
-                raise SettlementDenied(
-                    "The active organization policy has engaged the settlement kill switch."
-                )
-        outcome = payment_orchestrator.settle(
-            invoice=stored,
-            decision_id=decision_id,
-            decision=decision,
-            actor_user_id=actor_user_id,
-            correlation_id=correlation_id,
-        )
+            repository.append(
+                aggregate_type="settlement_gate",
+                aggregate_id=f"{decision_id}:{correlation_id}:{uuid4().hex}",
+                event_type=event_type,
+                payload={
+                    "organization_id": g.principal.organization_id,
+                    "invoice_id": invoice_id,
+                    "decision_id": decision_id,
+                    "control_code": exc.control_code,
+                    "actor_user_id": actor_user_id,
+                    "correlation_id": correlation_id,
+                    **exc.details,
+                },
+            )
+            raise SettlementDenied(str(exc)) from exc
         repository.append(
             aggregate_type="payment",
             aggregate_id=outcome.intent.id,

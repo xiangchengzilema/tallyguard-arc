@@ -105,6 +105,7 @@ Implemented foundation:
 - Durable policy decisions and optimistic approval records survive service restarts
 - Approved settlement authorization is reconstructed from the bound decision and approval instead of trusted from process memory
 - The current tenant kill switch is enforced again at execution time before any new intent or provider submission, including for invoices that became `READY` under an older policy; completed receipt replays remain idempotently readable
+- Intent reservation atomically rechecks active asset/network, autonomy approval, treasury freshness, daily limit, and reserve floor; durable post-snapshot commitments prevent concurrent workers from double-spending the same headroom
 - The authenticated evaluation API now normalizes real uploaded three-way-match evidence and binds it to the verified vendor, active policy, latest treasury snapshot, and Arc network
 - Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
 - A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
@@ -191,12 +192,13 @@ Implemented foundation:
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
 - Role-scoped policy-history, policy-diff, active-policy, treasury-snapshot, vendor, and wallet-history APIs
+- Approver governance returns live settlement capacity from the active policy, latest treasury snapshot, and post-snapshot intent reservations
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries
 - Vendor, invoice, evidence, decision, approval, settlement, receipt, and audit APIs
 - Cursor pagination and stable filters
-- Per-tenant rate limits and quotas (rate limit complete; durable quotas pending)
+- Per-tenant rate limits and durable treasury quotas (complete)
 - Request correlation IDs and structured logs
 - Health, readiness, and metrics endpoints (complete)
 
@@ -231,6 +233,7 @@ Implemented foundation:
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
 - The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
+- A settlement-capacity module shows observed balance, durably committed amount, daily headroom, reserve floor, snapshot freshness, and the maximum currently admissible payment
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)

@@ -292,6 +292,7 @@ function GovernancePanel({
   onResolve: (item: GovernanceOverview['pendingApprovals'][number], approve: boolean) => void;
 }) {
   const policy = governance.activePolicy;
+  const capacity = governance.settlementCapacity;
   const defaultDraft = useCallback((): PolicyDraft => ({
     daily_payment_limit_usdc: policy?.daily_payment_limit_usdc ?? '5000',
     minimum_cash_reserve_usdc: policy?.minimum_cash_reserve_usdc ?? '3000',
@@ -343,6 +344,21 @@ function GovernancePanel({
         ) : (
           <p className="governance-empty">Run a control case or create a production policy to establish the tenant's payment authority.</p>
         )}
+        {capacity ? (
+          <div className="settlement-capacity" aria-label="Durable settlement capacity">
+            <div className="settlement-capacity__head">
+              <div><span>Atomic treasury reservation</span><strong>{formatMoney(capacity.maximum_new_payment_usdc)} USDC available now</strong></div>
+              <Tag type={capacity.snapshot_fresh ? 'green' : 'red'}>{capacity.snapshot_fresh ? 'SNAPSHOT FRESH' : 'SNAPSHOT STALE'}</Tag>
+            </div>
+            <div className="settlement-capacity__grid">
+              <div><span>Observed balance</span><strong>{formatMoney(capacity.snapshot_available_usdc)}</strong></div>
+              <div><span>Durably committed</span><strong>{formatMoney(capacity.committed_since_snapshot_usdc)}</strong></div>
+              <div><span>Daily headroom</span><strong>{formatMoney(capacity.daily_remaining_usdc)}</strong></div>
+              <div><span>Reserve floor</span><strong>{formatMoney(capacity.minimum_cash_reserve_usdc)}</strong></div>
+            </div>
+            <small>Snapshot #{capacity.treasury_snapshot_sequence} · {capacity.snapshot_age_seconds}s old. Competing workers reserve inside one database transaction before any provider call.</small>
+          </div>
+        ) : null}
         <button className="policy-editor__toggle" type="button" onClick={() => setEditorOpen((open) => !open)}>
           <span>{editorOpen ? 'Close policy change' : 'Propose immutable policy version'}</span>
           <span aria-hidden="true">{editorOpen ? '−' : '+'}</span>
@@ -1134,6 +1150,7 @@ function App() {
       setPayment(await settleInvoice(run, data.sessions.approver, approval?.status === 'APPROVED' ? approval.id : undefined));
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, approval, data, run]);
 
@@ -1156,6 +1173,7 @@ function App() {
     void act(`Reconciling ${items.length} selected Arc payments`, async () => {
       setBatch(await settlePaymentBatch(items, data.sessions.approver));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
 
@@ -1164,6 +1182,7 @@ function App() {
     void act('Revalidating due schedules against current controls', async () => {
       setScheduleRun(await runDueSchedules(data.sessions.approver));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
 

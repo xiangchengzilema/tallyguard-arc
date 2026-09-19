@@ -39,6 +39,8 @@ from .persistence import (
     InvoiceTransition,
     OperationsOverview,
     PersistenceError,
+    SettlementCapacity,
+    SettlementExecutionBlocked,
     SqliteRepository,
     StoredInvoice,
 )
@@ -89,6 +91,8 @@ __all__ = [
     "ReplayCheck",
     "SourceLocation",
     "SqliteRepository",
+    "SettlementCapacity",
+    "SettlementExecutionBlocked",
     "StoredInvoice",
     "StoredPolicy",
     "TreasurySnapshot",

@@ -1,13 +1,16 @@
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from threading import Barrier
 
 import pytest
 
-from tallyguard.models import Invoice
+from tallyguard.auth import Role
+from tallyguard.models import Invoice, TreasurySnapshot
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.payments import PaymentOrchestrator
-from tallyguard.persistence import SqliteRepository
-from tallyguard.policy import Decision, DecisionAction
+from tallyguard.persistence import PersistenceError, SettlementExecutionBlocked, SqliteRepository
+from tallyguard.policy import Decision, DecisionAction, Policy
 from tallyguard.settlement import (
     PaymentIntent,
     ProviderSubmission,
@@ -191,4 +194,156 @@ def test_non_usdc_invoice_never_creates_payment_intent(tmp_path):
             decision=authorized_decision(),
             actor_user_id="approver-1",
             correlation_id="request-1",
+        )
+
+
+def test_atomic_treasury_reservation_prevents_concurrent_daily_limit_overspend(tmp_path):
+    database = tmp_path / "concurrent-reservations.sqlite3"
+    recorded_at = datetime.now(timezone.utc)
+    setup = SqliteRepository(database)
+    setup.create_organization(organization_id="org-1", name="Northwind AI")
+    setup.create_user(
+        organization_id="org-1",
+        user_id="admin-1",
+        display_name="Policy Admin",
+        roles=(Role.ADMIN.value,),
+    )
+    setup.create_user(
+        organization_id="org-1",
+        user_id="operator-1",
+        display_name="Finance Operator",
+        roles=(Role.FINANCE_OPERATOR.value,),
+    )
+    setup.activate_policy(
+        Policy(
+            version="v1",
+            organization_id="org-1",
+            daily_payment_limit_usdc=Decimal("100"),
+            minimum_cash_reserve_usdc=Decimal("20"),
+            maximum_autonomous_payment_usdc=Decimal("100"),
+        ),
+        activated_by_user_id="admin-1",
+        activated_at=recorded_at,
+    )
+    setup.record_treasury_snapshot(
+        TreasurySnapshot(
+            organization_id="org-1",
+            available_usdc=Decimal("140"),
+            spent_today_usdc=Decimal("0"),
+        ),
+        source_reference="circle-balance-before-race",
+        recorded_by_user_id="operator-1",
+        recorded_at=recorded_at,
+    )
+    for index in (1, 2):
+        setup.create_invoice(
+            Invoice(
+                id=f"invoice-{index}",
+                organization_id="org-1",
+                vendor_id="vendor-1",
+                invoice_number=f"INV-{index}",
+                currency="USDC",
+                amount=Decimal("70"),
+                due_date=date(2026, 10, 8),
+                payment_wallet_address=WALLET,
+                source_document_hash=str(index) * 64,
+            ),
+            status=InvoiceStatus.READY,
+            created_at=recorded_at,
+        )
+    setup.close()
+
+    barrier = Barrier(2)
+
+    def reserve(index: int) -> str:
+        repo = SqliteRepository(database)
+        intent = PaymentIntent(
+            id=f"payment-{index}",
+            organization_id="org-1",
+            invoice_id=f"invoice-{index}",
+            decision_id=f"decision-{index}",
+            recipient=WALLET,
+            amount_usdc=Decimal("70"),
+            network=ArcNetwork.TESTNET,
+            idempotency_key=f"key-{index}",
+        )
+        barrier.wait()
+        try:
+            repo.create_or_get_payment_intent(
+                intent,
+                created_at=recorded_at + timedelta(seconds=index),
+                enforce_active_controls=True,
+            )
+            return "ACCEPTED"
+        except SettlementExecutionBlocked as exc:
+            return exc.control_code
+        finally:
+            repo.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = tuple(pool.map(reserve, (1, 2)))
+
+    assert sorted(outcomes) == ["ACCEPTED", "DAILY_LIMIT_EXCEEDED"]
+
+
+def test_treasury_reservation_fails_closed_on_stale_snapshot(tmp_path):
+    repo, stored = ready_repository(tmp_path / "stale-treasury.sqlite3")
+    observed_at = datetime(2026, 9, 20, 1, 0, tzinfo=timezone.utc)
+    repo.create_user(
+        organization_id="org-1",
+        user_id="admin-1",
+        display_name="Policy Admin",
+        roles=(Role.ADMIN.value,),
+    )
+    repo.create_user(
+        organization_id="org-1",
+        user_id="operator-1",
+        display_name="Finance Operator",
+        roles=(Role.FINANCE_OPERATOR.value,),
+    )
+    repo.activate_policy(
+        Policy(
+            version="v1",
+            organization_id="org-1",
+            daily_payment_limit_usdc=Decimal("100"),
+            minimum_cash_reserve_usdc=Decimal("20"),
+            maximum_autonomous_payment_usdc=Decimal("100"),
+        ),
+        activated_by_user_id="admin-1",
+        activated_at=observed_at,
+    )
+    repo.record_treasury_snapshot(
+        TreasurySnapshot(
+            organization_id="org-1",
+            available_usdc=Decimal("140"),
+            spent_today_usdc=Decimal("0"),
+        ),
+        source_reference="stale-circle-balance",
+        recorded_by_user_id="operator-1",
+        recorded_at=observed_at,
+    )
+    intent = PaymentIntent(
+        id="payment-stale",
+        organization_id="org-1",
+        invoice_id=stored.invoice.id,
+        decision_id="decision-stale",
+        recipient=WALLET,
+        amount_usdc=Decimal("1.25"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="key-stale",
+    )
+
+    with pytest.raises(SettlementExecutionBlocked) as blocked:
+        repo.create_or_get_payment_intent(
+            intent,
+            created_at=observed_at + timedelta(minutes=16),
+            enforce_active_controls=True,
+            maximum_snapshot_age=timedelta(minutes=15),
+        )
+
+    assert blocked.value.control_code == "TREASURY_SNAPSHOT_STALE"
+    with pytest.raises(PersistenceError, match="not found"):
+        repo.get_payment_intent_for_decision(
+            organization_id="org-1",
+            decision_id="decision-stale",
         )

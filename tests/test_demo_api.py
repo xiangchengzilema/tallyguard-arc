@@ -237,6 +237,7 @@ def test_governance_overview_treats_missing_policy_as_empty_state(tmp_path):
 
     assert response.status_code == 200
     assert response.get_json()["active_policy"] is None
+    assert response.get_json()["settlement_capacity"] is None
     assert response.get_json()["pending_approvals"] == []
 
 
@@ -322,6 +323,14 @@ def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
     assert first_payment["receipt"]["explorer_url"].startswith(
         "https://explorer.testnet.arc.io/tx/0x"
     )
+    capacity = client.get(
+        "/api/governance/overview", headers=approver_headers
+    ).get_json()["settlement_capacity"]
+    assert capacity["snapshot_fresh"] is True
+    assert capacity["committed_since_snapshot_usdc"] == "1200"
+    assert capacity["effective_available_usdc"] == "8800"
+    assert capacity["daily_remaining_usdc"] == "3400"
+    assert capacity["maximum_new_payment_usdc"] == "3400"
 
     second = client.post(
         f"/api/invoices/{invoice_id}/settle",
@@ -443,6 +452,61 @@ def test_active_kill_switch_blocks_ready_invoice_but_not_completed_receipt_repla
     assert replay.status_code == 200
     assert replay.get_json()["payment"]["reused_receipt"] is True
     assert paid_app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+
+def test_execution_time_daily_limit_blocks_an_older_pay_decision(tmp_path):
+    app = create_app(database_path=tmp_path / "execution-daily-limit.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    admin_headers = auth(client, "admin")
+    auditor_headers = auth(client, "auditor")
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=operator_headers,
+    ).get_json()
+    active = client.get(
+        "/api/policies/active", headers=approver_headers
+    ).get_json()["policy"]
+    reduced_payload = {
+        key: active[key]
+        for key in (
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+            "allowed_asset",
+            "allowed_network",
+            "kill_switch_enabled",
+            "schedule_payments_before_due_days",
+        )
+    }
+    reduced_payload.update(
+        {"version": "reduced-daily-limit-v1", "daily_payment_limit_usdc": "1000"}
+    )
+    assert client.post(
+        "/api/policies", json=reduced_payload, headers=admin_headers
+    ).status_code == 201
+
+    blocked = client.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        json={"decision_id": run["decision"]["id"]},
+        headers=approver_headers,
+    )
+
+    assert blocked.status_code == 409
+    assert "daily payment limit" in blocked.get_json()["error"]["message"].lower()
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+    with pytest.raises(PersistenceError, match="not found"):
+        app.extensions["tallyguard_repository"].get_payment_intent_for_decision(
+            organization_id="demo-org",
+            decision_id=run["decision"]["id"],
+        )
+    audit = client.get(
+        "/api/audit/events", headers=auditor_headers
+    ).get_json()
+    assert audit["chain_valid"] is True
+    assert audit["items"][-1]["event_type"] == "SETTLEMENT_BLOCKED_BY_EXECUTION_CONTROL"
+    assert audit["items"][-1]["payload"]["control_code"] == "DAILY_LIMIT_EXCEEDED"
 
 
 def test_non_pay_decision_cannot_enter_settlement(tmp_path):

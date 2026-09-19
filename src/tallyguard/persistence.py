@@ -47,6 +47,21 @@ class PersistenceError(RuntimeError):
     """Raised when a durable record is missing, duplicated, or stale."""
 
 
+class SettlementExecutionBlocked(PersistenceError):
+    """Raised when the active treasury controls reject an intent reservation."""
+
+    def __init__(
+        self,
+        control_code: str,
+        message: str,
+        *,
+        details: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.control_code = control_code
+        self.details = details or {}
+
+
 @dataclass(frozen=True, slots=True)
 class StoredInvoice:
     invoice: Invoice
@@ -100,6 +115,26 @@ class OperationsOverview:
     minimum_reserve_usdc: Decimal | None
     projected_after_open_usdc: Decimal | None
     work_queue: tuple[StoredInvoice, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SettlementCapacity:
+    organization_id: str
+    active_policy_version: str
+    active_policy_hash: str
+    kill_switch_enabled: bool
+    treasury_snapshot_sequence: int
+    treasury_snapshot_recorded_at: datetime
+    snapshot_age_seconds: int
+    snapshot_fresh: bool
+    snapshot_available_usdc: Decimal
+    snapshot_spent_today_usdc: Decimal
+    committed_since_snapshot_usdc: Decimal
+    effective_available_usdc: Decimal
+    daily_payment_limit_usdc: Decimal
+    daily_remaining_usdc: Decimal
+    minimum_cash_reserve_usdc: Decimal
+    maximum_new_payment_usdc: Decimal
 
 
 SCHEMA = """
@@ -696,6 +731,79 @@ class SqliteRepository:
         if row is None:
             raise PersistenceError("No treasury snapshot exists for this organization.")
         return self._treasury_snapshot(row)
+
+    def settlement_capacity(
+        self,
+        *,
+        organization_id: str,
+        as_of: datetime | None = None,
+        maximum_snapshot_age: timedelta = timedelta(minutes=15),
+    ) -> SettlementCapacity:
+        timestamp = as_of or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise PersistenceError("Settlement capacity timestamp must be timezone-aware.")
+        if maximum_snapshot_age <= timedelta(0):
+            raise PersistenceError("Treasury snapshot maximum age must be positive.")
+        with self._guard:
+            policy_row = self._connection.execute(
+                """
+                SELECT p.* FROM active_policies a
+                JOIN policies p
+                  ON p.organization_id = a.organization_id AND p.version = a.version
+                WHERE a.organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+            snapshot_row = self._connection.execute(
+                """
+                SELECT * FROM treasury_snapshots
+                WHERE organization_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            if policy_row is None or snapshot_row is None:
+                raise PersistenceError(
+                    "Settlement capacity requires an active policy and treasury snapshot."
+                )
+            recorded_at = datetime.fromisoformat(str(snapshot_row["recorded_at"]))
+            reservation_rows = self._connection.execute(
+                """
+                SELECT amount_usdc FROM payment_intents
+                WHERE organization_id = ? AND created_at > ?
+                """,
+                (organization_id, recorded_at.isoformat()),
+            ).fetchall()
+
+        committed = sum(
+            (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
+            Decimal("0"),
+        )
+        available = Decimal(str(snapshot_row["available_usdc"]))
+        spent_today = Decimal(str(snapshot_row["spent_today_usdc"]))
+        daily_limit = Decimal(str(policy_row["daily_payment_limit_usdc"]))
+        reserve_floor = Decimal(str(policy_row["minimum_cash_reserve_usdc"]))
+        effective_available = available - committed
+        daily_remaining = max(daily_limit - spent_today - committed, Decimal("0"))
+        balance_headroom = max(effective_available - reserve_floor, Decimal("0"))
+        age = timestamp.astimezone(timezone.utc) - recorded_at.astimezone(timezone.utc)
+        return SettlementCapacity(
+            organization_id=organization_id,
+            active_policy_version=str(policy_row["version"]),
+            active_policy_hash=str(policy_row["content_hash"]),
+            kill_switch_enabled=bool(policy_row["kill_switch_enabled"]),
+            treasury_snapshot_sequence=int(snapshot_row["sequence"]),
+            treasury_snapshot_recorded_at=recorded_at,
+            snapshot_age_seconds=max(0, int(age.total_seconds())),
+            snapshot_fresh=timedelta(0) <= age <= maximum_snapshot_age,
+            snapshot_available_usdc=available,
+            snapshot_spent_today_usdc=spent_today,
+            committed_since_snapshot_usdc=committed,
+            effective_available_usdc=effective_available,
+            daily_payment_limit_usdc=daily_limit,
+            daily_remaining_usdc=daily_remaining,
+            minimum_cash_reserve_usdc=reserve_floor,
+            maximum_new_payment_usdc=min(daily_remaining, balance_headroom),
+        )
 
     def onboard_vendor(
         self,
@@ -1705,10 +1813,22 @@ class SqliteRepository:
         intent: PaymentIntent,
         *,
         created_at: datetime | None = None,
+        enforce_active_controls: bool = False,
+        maximum_snapshot_age: timedelta = timedelta(minutes=15),
     ) -> tuple[PaymentIntent, bool]:
-        """Persist one immutable intent per tenant/decision, safe under races."""
+        """Persist one immutable intent per tenant/decision, safe under races.
+
+        When active controls are enabled, the policy read, treasury reservation
+        calculation, and intent insert share one ``BEGIN IMMEDIATE`` transaction.
+        This makes competing workers serialize on the same durable limits instead
+        of each trusting the same stale in-memory balance.
+        """
 
         timestamp = created_at or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise PersistenceError("Payment intent timestamp must be timezone-aware.")
+        if maximum_snapshot_age <= timedelta(0):
+            raise PersistenceError("Treasury snapshot maximum age must be positive.")
         with self._guard:
             self._connection.execute("BEGIN IMMEDIATE")
             try:
@@ -1722,6 +1842,23 @@ class SqliteRepository:
                 if existing_row is not None:
                     existing = self._payment_intent(existing_row)
                     self._ensure_same_payment(existing, intent)
+                    receipt_row = self._connection.execute(
+                        """
+                        SELECT 1 FROM settlement_receipts
+                        WHERE organization_id = ? AND payment_intent_id = ?
+                        """,
+                        (intent.organization_id, existing.id),
+                    ).fetchone()
+                    if receipt_row is not None:
+                        self._connection.execute("COMMIT")
+                        return existing, False
+                if enforce_active_controls:
+                    self._assert_payment_reservation_allowed(
+                        intent=intent,
+                        timestamp=timestamp,
+                        maximum_snapshot_age=maximum_snapshot_age,
+                    )
+                if existing_row is not None:
                     self._connection.execute("COMMIT")
                     return existing, False
                 self._connection.execute(
@@ -1752,6 +1889,130 @@ class SqliteRepository:
             except Exception:
                 self._connection.execute("ROLLBACK")
                 raise
+
+    def _assert_payment_reservation_allowed(
+        self,
+        *,
+        intent: PaymentIntent,
+        timestamp: datetime,
+        maximum_snapshot_age: timedelta,
+    ) -> None:
+        policy_row = self._connection.execute(
+            """
+            SELECT p.* FROM active_policies a
+            JOIN policies p
+              ON p.organization_id = a.organization_id AND p.version = a.version
+            WHERE a.organization_id = ?
+            """,
+            (intent.organization_id,),
+        ).fetchone()
+        if policy_row is None:
+            raise SettlementExecutionBlocked(
+                "NO_ACTIVE_POLICY",
+                "Settlement requires an active organization policy.",
+            )
+        policy_details = {
+            "active_policy_version": str(policy_row["version"]),
+            "active_policy_hash": str(policy_row["content_hash"]),
+        }
+        if bool(policy_row["kill_switch_enabled"]):
+            raise SettlementExecutionBlocked(
+                "KILL_SWITCH_ENABLED",
+                "The active organization policy has engaged the settlement kill switch.",
+                details=policy_details,
+            )
+        if str(policy_row["allowed_asset"]).upper() != "USDC":
+            raise SettlementExecutionBlocked(
+                "ASSET_NOT_ALLOWED",
+                "The active policy does not allow USDC settlement.",
+                details=policy_details,
+            )
+        if str(policy_row["allowed_network"]).upper() != intent.network.value.upper():
+            raise SettlementExecutionBlocked(
+                "NETWORK_NOT_ALLOWED",
+                "The active policy does not allow settlement on the configured Arc network.",
+                details=policy_details,
+            )
+
+        autonomous_limit = Decimal(str(policy_row["maximum_autonomous_payment_usdc"]))
+        if intent.amount_usdc > autonomous_limit and not intent.approval_reference:
+            raise SettlementExecutionBlocked(
+                "AUTONOMY_LIMIT_EXCEEDED",
+                "Settlement exceeds the current autonomous limit and has no approval reference.",
+                details={
+                    **policy_details,
+                    "amount_usdc": format(intent.amount_usdc, "f"),
+                    "maximum_autonomous_payment_usdc": format(autonomous_limit, "f"),
+                },
+            )
+
+        snapshot_row = self._connection.execute(
+            """
+            SELECT * FROM treasury_snapshots
+            WHERE organization_id = ? ORDER BY sequence DESC LIMIT 1
+            """,
+            (intent.organization_id,),
+        ).fetchone()
+        if snapshot_row is None:
+            raise SettlementExecutionBlocked(
+                "TREASURY_SNAPSHOT_MISSING",
+                "Settlement requires a recent treasury snapshot.",
+                details=policy_details,
+            )
+        recorded_at = datetime.fromisoformat(str(snapshot_row["recorded_at"]))
+        snapshot_age = timestamp.astimezone(timezone.utc) - recorded_at.astimezone(timezone.utc)
+        if snapshot_age < timedelta(0) or snapshot_age > maximum_snapshot_age:
+            raise SettlementExecutionBlocked(
+                "TREASURY_SNAPSHOT_STALE",
+                "The latest treasury snapshot is outside the settlement freshness window.",
+                details={
+                    **policy_details,
+                    "treasury_snapshot_sequence": str(snapshot_row["sequence"]),
+                    "treasury_snapshot_recorded_at": recorded_at.isoformat(),
+                    "maximum_snapshot_age_seconds": str(int(maximum_snapshot_age.total_seconds())),
+                },
+            )
+
+        reservation_rows = self._connection.execute(
+            """
+            SELECT id, amount_usdc FROM payment_intents
+            WHERE organization_id = ? AND created_at > ? AND id <> ?
+            """,
+            (intent.organization_id, recorded_at.isoformat(), intent.id),
+        ).fetchall()
+        committed_since_snapshot = sum(
+            (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
+            Decimal("0"),
+        )
+        available = Decimal(str(snapshot_row["available_usdc"]))
+        spent_today = Decimal(str(snapshot_row["spent_today_usdc"]))
+        daily_limit = Decimal(str(policy_row["daily_payment_limit_usdc"]))
+        reserve_floor = Decimal(str(policy_row["minimum_cash_reserve_usdc"]))
+        projected_daily_spend = spent_today + committed_since_snapshot + intent.amount_usdc
+        projected_available = available - committed_since_snapshot - intent.amount_usdc
+        treasury_details = {
+            **policy_details,
+            "treasury_snapshot_sequence": str(snapshot_row["sequence"]),
+            "treasury_snapshot_recorded_at": recorded_at.isoformat(),
+            "committed_since_snapshot_usdc": format(committed_since_snapshot, "f"),
+            "requested_amount_usdc": format(intent.amount_usdc, "f"),
+            "projected_daily_spend_usdc": format(projected_daily_spend, "f"),
+            "daily_payment_limit_usdc": format(daily_limit, "f"),
+            "projected_available_usdc": format(projected_available, "f"),
+            "minimum_cash_reserve_usdc": format(reserve_floor, "f"),
+        }
+        if projected_daily_spend > daily_limit:
+            raise SettlementExecutionBlocked(
+                "DAILY_LIMIT_EXCEEDED",
+                "Settlement would exceed the active policy's durable daily payment limit.",
+                details=treasury_details,
+            )
+        if projected_available < reserve_floor:
+            raise SettlementExecutionBlocked(
+                "MINIMUM_RESERVE_BREACH",
+                "Settlement would reduce reserved treasury funds below the active minimum.",
+                details=treasury_details,
+            )
 
     def get_payment_intent(
         self,
