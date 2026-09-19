@@ -47,6 +47,7 @@ Every payment answers four questions:
 - Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
+- Restart-safe opaque sessions stored only as SHA-256 token digests
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with seven live risk scenarios
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow

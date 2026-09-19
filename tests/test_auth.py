@@ -5,6 +5,7 @@ import pytest
 from tallyguard.auth import (
     AuthenticationDenied,
     Authenticator,
+    InMemorySessionStore,
     AuthorizationDenied,
     Permission,
     Principal,
@@ -25,14 +26,16 @@ def principal(*roles: Role, organization_id: str = "org-1") -> Principal:
 
 
 def test_session_authenticates_before_expiry_and_stores_only_digest():
-    authenticator = Authenticator()
+    store = InMemorySessionStore()
+    authenticator = Authenticator(store=store)
     raw_token, session = authenticator.issue_session(
         principal(Role.FINANCE_OPERATOR),
         lifetime=timedelta(minutes=30),
         now=NOW,
     )
     assert raw_token != session.token_hash
-    assert raw_token not in authenticator._sessions
+    assert store.get_session(raw_token) is None
+    assert store.get_session(session.token_hash) == session
     assert authenticator.authenticate(raw_token, now=NOW + timedelta(minutes=29)).user_id == "user-1"
 
 

@@ -68,6 +68,25 @@ def test_authenticated_endpoints_enforce_per_tenant_rate_limit(tmp_path):
     assert int(limited.headers["Retry-After"]) >= 1
 
 
+def test_demo_session_authentication_survives_api_restart(tmp_path):
+    database = tmp_path / "api.sqlite3"
+    first_app = create_app(database_path=database, testing=True)
+    first_client = first_app.test_client()
+    token = first_client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    first_app.extensions["tallyguard_repository"].close()
+
+    restarted_app = create_app(database_path=database, testing=True)
+    response = restarted_app.test_client().get(
+        "/api/invoices",
+        headers=headers(token, "after-restart"),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-ID"] == "after-restart"
+
+
 def test_api_responses_include_browser_security_headers(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     response = app.test_client().get("/api/health")
@@ -128,6 +147,12 @@ def test_cross_tenant_invoice_is_invisible(tmp_path):
 
     repository = app.extensions["tallyguard_repository"]
     repository.create_organization(organization_id="other-org", name="Other Organization")
+    repository.create_user(
+        organization_id="other-org",
+        user_id="other-auditor",
+        display_name="Other Auditor",
+        roles=(Role.AUDITOR.value,),
+    )
     authenticator = app.extensions["tallyguard_authenticator"]
     other_token, _ = authenticator.issue_session(
         Principal(user_id="other-auditor", organization_id="other-org", roles=(Role.AUDITOR,))

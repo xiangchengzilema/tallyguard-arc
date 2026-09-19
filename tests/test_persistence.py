@@ -1,9 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from datetime import timedelta
 
 import pytest
 
+from tallyguard.auth import AuthenticationDenied, Authenticator, Principal, Role
 from tallyguard.evidence import (
     EvidenceRecord,
     EvidenceStore,
@@ -242,6 +244,50 @@ def test_payment_intent_and_receipt_survive_repository_restart(tmp_path):
     assert reopened.get_settlement_receipt(
         organization_id="org-1", payment_intent_id="payment-1"
     ) == receipt
+
+
+def test_opaque_session_survives_restart_and_revocation_is_durable(tmp_path):
+    database = tmp_path / "tallyguard.sqlite3"
+    repo = repository(tmp_path)
+    repo.create_user(
+        organization_id="org-1",
+        user_id="auditor-1",
+        display_name="Auditor One",
+        roles=(Role.AUDITOR.value,),
+    )
+    authenticator = Authenticator(store=repo)
+    token, session = authenticator.issue_session(
+        Principal(
+            user_id="auditor-1",
+            organization_id="org-1",
+            roles=(Role.AUDITOR,),
+        ),
+        lifetime=timedelta(hours=1),
+        now=datetime(2026, 9, 20, tzinfo=timezone.utc),
+    )
+    assert token != session.token_hash
+    repo.close()
+
+    reopened = SqliteRepository(database)
+    restarted_authenticator = Authenticator(store=reopened)
+    principal = restarted_authenticator.authenticate(
+        token,
+        now=datetime(2026, 9, 20, 0, 30, tzinfo=timezone.utc),
+    )
+    assert principal.user_id == "auditor-1"
+
+    restarted_authenticator.revoke(
+        token,
+        now=datetime(2026, 9, 20, 0, 31, tzinfo=timezone.utc),
+    )
+    reopened.close()
+
+    final_repo = SqliteRepository(database)
+    with pytest.raises(AuthenticationDenied, match="revoked"):
+        Authenticator(store=final_repo).authenticate(
+            token,
+            now=datetime(2026, 9, 20, 0, 32, tzinfo=timezone.utc),
+        )
 
 
 def test_decision_retries_reuse_original_uuid4_and_reject_changed_payment(tmp_path):

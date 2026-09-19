@@ -7,8 +7,8 @@ safe simulation mode and never requires wallet credentials.
 ## Public judge deployment
 
 The container runs Gunicorn with one process and eight threads. One process is a
-deliberate correctness constraint: demo bearer sessions, decision records, and
-approval state currently live in process memory. Multiple threads allow
+deliberate correctness constraint: decision records and approval state are still
+transient, although bearer sessions are already durable. Multiple threads allow
 concurrent judge traffic, while one process prevents requests from landing on a
 worker that does not own the corresponding transient state.
 
@@ -21,7 +21,7 @@ scenario on demand. It is not an acceptable production persistence model.
 
 Before a real multi-instance deployment:
 
-1. Move sessions, decisions, and approvals into a shared durable database.
+1. Move decisions and approvals into a shared durable database; sessions are already durable.
 2. Replace local SQLite with managed Postgres.
 3. Add tenant-aware distributed rate limiting.
 4. Enable multiple Gunicorn workers and run worker-restart recovery tests.

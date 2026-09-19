@@ -12,6 +12,7 @@ import sqlite3
 from threading import RLock
 
 from .audit import canonical_json
+from .auth import Principal, Role, Session
 from .evidence import (
     EvidenceDocument,
     EvidenceRecord,
@@ -76,6 +77,21 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (organization_id, id),
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    roles_json TEXT NOT NULL,
+    principal_active INTEGER NOT NULL CHECK (principal_active IN (0, 1)),
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (organization_id, user_id) REFERENCES users(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry
+    ON sessions (expires_at);
 
 CREATE TABLE IF NOT EXISTS evidence_documents (
     organization_id TEXT NOT NULL,
@@ -233,6 +249,50 @@ class SqliteRepository:
                 )
             except sqlite3.IntegrityError as exc:
                 raise PersistenceError("User cannot be created in this organization.") from exc
+
+    def save_session(self, session: Session) -> None:
+        principal = session.principal
+        with self._guard:
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO sessions
+                        (token_hash, organization_id, user_id, roles_json,
+                         principal_active, issued_at, expires_at, revoked_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session.token_hash,
+                        principal.organization_id,
+                        principal.user_id,
+                        canonical_json(tuple(role.value for role in principal.roles)),
+                        int(principal.active),
+                        session.issued_at.isoformat(),
+                        session.expires_at.isoformat(),
+                        session.revoked_at.isoformat() if session.revoked_at else None,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceError("Session could not be stored for this user.") from exc
+
+    def get_session(self, token_hash: str) -> Session | None:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM sessions WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+        return self._session(row) if row is not None else None
+
+    def revoke_session(self, token_hash: str, revoked_at: datetime) -> Session | None:
+        with self._guard:
+            self._connection.execute(
+                """
+                UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?)
+                WHERE token_hash = ?
+                """,
+                (revoked_at.isoformat(), token_hash),
+            )
+        return self.get_session(token_hash)
 
     def save_evidence(self, record: EvidenceRecord) -> EvidenceRecord:
         document = record.document
@@ -659,6 +719,25 @@ class SqliteRepository:
             version=row["version"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _session(row: sqlite3.Row) -> Session:
+        return Session(
+            token_hash=row["token_hash"],
+            principal=Principal(
+                user_id=row["user_id"],
+                organization_id=row["organization_id"],
+                roles=tuple(Role(value) for value in json.loads(row["roles_json"])),
+                active=bool(row["principal_active"]),
+            ),
+            issued_at=datetime.fromisoformat(row["issued_at"]),
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            revoked_at=(
+                datetime.fromisoformat(row["revoked_at"])
+                if row["revoked_at"] is not None
+                else None
+            ),
         )
 
     @staticmethod

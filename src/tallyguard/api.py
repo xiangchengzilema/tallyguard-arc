@@ -154,7 +154,7 @@ def create_app(
     app.config.update(TESTING=testing)
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
-    authenticator = Authenticator()
+    authenticator = Authenticator(store=repository)
     decision_service = DecisionService()
     approval_inbox = ApprovalInbox()
     authorized_decisions: dict[tuple[str, str], Any] = {}

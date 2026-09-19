@@ -14,6 +14,7 @@ from enum import StrEnum
 import hashlib
 import secrets
 from threading import Lock
+from typing import Protocol
 
 
 class AuthenticationDenied(RuntimeError):
@@ -101,12 +102,43 @@ class Session:
         return self.revoked_at is None and self.principal.active
 
 
-class Authenticator:
-    """Thread-safe opaque session issuer storing no bearer-token plaintext."""
+class SessionStore(Protocol):
+    def save_session(self, session: Session) -> None: ...
 
+    def get_session(self, token_hash: str) -> Session | None: ...
+
+    def revoke_session(self, token_hash: str, revoked_at: datetime) -> Session | None: ...
+
+
+class InMemorySessionStore:
     def __init__(self) -> None:
         self._guard = Lock()
         self._sessions: dict[str, Session] = {}
+
+    def save_session(self, session: Session) -> None:
+        with self._guard:
+            self._sessions[session.token_hash] = session
+
+    def get_session(self, token_hash: str) -> Session | None:
+        with self._guard:
+            return self._sessions.get(token_hash)
+
+    def revoke_session(self, token_hash: str, revoked_at: datetime) -> Session | None:
+        with self._guard:
+            session = self._sessions.get(token_hash)
+            if session is None:
+                return None
+            if session.revoked_at is None:
+                session = replace(session, revoked_at=revoked_at)
+                self._sessions[token_hash] = session
+            return session
+
+
+class Authenticator:
+    """Thread-safe opaque session issuer storing no bearer-token plaintext."""
+
+    def __init__(self, *, store: SessionStore | None = None) -> None:
+        self.store = store or InMemorySessionStore()
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -134,8 +166,7 @@ class Authenticator:
             issued_at=issued_at,
             expires_at=issued_at + lifetime,
         )
-        with self._guard:
-            self._sessions[token_hash] = session
+        self.store.save_session(session)
         return raw_token, session
 
     def authenticate(self, token: str, *, now: datetime | None = None) -> Principal:
@@ -145,8 +176,7 @@ class Authenticator:
         if checked_at.tzinfo is None:
             raise ValueError("Authentication timestamp must be timezone-aware.")
         token_hash = self._token_hash(token)
-        with self._guard:
-            session = self._sessions.get(token_hash)
+        session = self.store.get_session(token_hash)
         if session is None:
             raise AuthenticationDenied("Session is invalid.")
         if not session.active:
@@ -158,12 +188,9 @@ class Authenticator:
     def revoke(self, token: str, *, now: datetime | None = None) -> None:
         revoked_at = now or datetime.now(timezone.utc)
         token_hash = self._token_hash(token)
-        with self._guard:
-            session = self._sessions.get(token_hash)
-            if session is None:
-                raise AuthenticationDenied("Session is invalid.")
-            if session.revoked_at is None:
-                self._sessions[token_hash] = replace(session, revoked_at=revoked_at)
+        session = self.store.revoke_session(token_hash, revoked_at)
+        if session is None:
+            raise AuthenticationDenied("Session is invalid.")
 
 
 def authorize(
