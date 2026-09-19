@@ -195,6 +195,7 @@ Implemented foundation:
 - Approver governance returns live settlement capacity from the active policy, latest treasury snapshot, and post-snapshot intent reservations
 - Durable two-phase agent runs scan up to 25 tenant invoices, freeze a content-addressed plan, route approval handoffs, release due schedules, and require settlement permission for execution
 - Every executable plan item revalidates invoice version, workflow status, decision, approval binding, schedule eligibility, and retry authorization; stale or policy-changed items fail closed while independent safe items continue
+- Auditor-only Agent Run Proof Packet is content-addressed and carries plan-hash verification, approval bindings, execution results, related audit events, and tenant-chain validity
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries
@@ -238,6 +239,7 @@ Implemented foundation:
 - A settlement-capacity module shows observed balance, durably committed amount, daily headroom, reserve floor, snapshot freshness, and the maximum currently admissible payment
 - A vendor trust directory exposes legal identity, risk tier, autopay ceiling, exact invoice-wallet match state, and append-only wallet verification history; the wallet-change scenario visibly resolves to `MISMATCH — HOLD`
 - A dark, judge-focused autonomous-run workbench shows the scanned queue, executable and human-attention counts, plan/state proofs, per-invoice reasoning, funds authority, and routed/revalidated/settled/stale/failed outcome
+- The autonomous-run workbench exports its proof packet and displays the returned SHA-256 content address after download
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)

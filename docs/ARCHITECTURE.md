@@ -169,6 +169,11 @@ same atomic treasury reservation, provider idempotency, independent Arc reconcil
 persistence path as a single approved payment. Runs, item results, and their hashes survive
 restarts and remain tenant scoped.
 
+An auditor can export an Agent Run Proof Packet. Its content address covers the frozen run,
+execution results, referenced approvals, relevant invoice/run audit events, and integrity findings.
+The packet recomputes the plan hash from the durable items and reports full tenant-chain validity;
+it never contains session tokens, provider idempotency keys, or wallet credentials.
+
 ## Approval governance boundary
 
 The exception inbox is a tenant-scoped work queue, not a shortcut around policy. Only principals

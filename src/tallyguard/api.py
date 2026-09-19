@@ -2218,6 +2218,86 @@ def create_app(
         )
         return jsonify({"agent_run": _agent_run_json(run), "correlation_id": _correlation_id()})
 
+    @app.get("/api/agent-runs/<run_id>/proof-packet")
+    @require(Permission.AUDIT_READ)
+    def get_agent_run_proof_packet(run_id: str):
+        organization_id = g.principal.organization_id
+        run = repository.get_agent_run(
+            organization_id=organization_id,
+            run_id=run_id,
+        )
+        invoice_ids = {item.invoice_id for item in run.items}
+        approval_ids = {
+            item.approval_reference for item in run.items if item.approval_reference
+        }
+        approval_ids.update(
+            str(result["approval"]["id"])
+            for result in run.results
+            if isinstance(result.get("approval"), dict)
+            and result["approval"].get("id")
+        )
+        approvals = []
+        for approval_id in sorted(approval_ids):
+            approval = repository.get_approval(
+                organization_id=organization_id,
+                approval_id=approval_id,
+            )
+            if approval is not None:
+                approvals.append(_approval_json(approval))
+
+        tenant_events = repository.audit_events(organization_id=organization_id)
+        related_events = tuple(
+            event
+            for event in tenant_events
+            if event.aggregate_id == run.id
+            or event.aggregate_id in invoice_ids
+            or event.payload.get("agent_run_id") == run.id
+            or event.payload.get("invoice_id") in invoice_ids
+        )
+        computed_plan_hash = sha256(
+            canonical_payload(plan_payload(run.items, as_of=run.as_of)).encode("utf-8")
+        ).hexdigest()
+        packet = {
+            "schema_version": "1.0",
+            "organization_id": organization_id,
+            "agent_run": _agent_run_json(run),
+            "integrity": {
+                "plan_hash_verified": computed_plan_hash == run.plan_hash,
+                "recorded_plan_hash": run.plan_hash,
+                "computed_plan_hash": computed_plan_hash,
+                "recorded_state_hash": run.state_hash,
+                "state_hash_scope": (
+                    "The tenant queue state observed at planning time; preserved in the "
+                    "durable run and committed into the plan audit event."
+                ),
+            },
+            "approvals": approvals,
+            "audit": {
+                "tenant_chain_valid": repository.verify_audit_chain(
+                    organization_id=organization_id
+                ),
+                "related_events": [_audit_event_json(event) for event in related_events],
+                "last_tenant_event_hash": (
+                    tenant_events[-1].event_hash if tenant_events else None
+                ),
+            },
+        }
+        canonical_packet = canonical_json(packet).encode("utf-8")
+        packet_hash = sha256(canonical_packet).hexdigest()
+        envelope = {
+            "packet_id": f"agent_proof_{packet_hash[:24]}",
+            "packet_sha256": packet_hash,
+            "hash_scope": "UTF-8 canonical JSON of the packet field",
+            "packet": packet,
+        }
+        body = json.dumps(envelope, indent=2, ensure_ascii=False).encode("utf-8")
+        response = Response(body, mimetype="application/json")
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="tallyguard-{secure_filename(run_id)}-proof-packet.json"'
+        )
+        response.headers["X-TallyGuard-Packet-SHA256"] = packet_hash
+        return response
+
     @app.post("/api/agent-runs/<run_id>/execute")
     @require(Permission.SETTLEMENT_EXECUTE)
     def execute_agent_run(run_id: str):

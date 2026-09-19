@@ -1,4 +1,8 @@
 from datetime import date
+from hashlib import sha256
+import json
+
+from tallyguard.audit import canonical_json
 
 from tallyguard.api import create_app
 from tallyguard.auth import Principal, Role
@@ -94,6 +98,24 @@ def test_agent_run_plans_mixed_work_and_executes_only_policy_cleared_items(tmp_p
         "AGENT_RUN_EXECUTED",
     ]
 
+    packet_response = client.get(
+        f"/api/agent-runs/{run['id']}/proof-packet",
+        headers=headers(auditor, "agent-proof"),
+    )
+    assert packet_response.status_code == 200
+    assert packet_response.headers["Content-Disposition"].endswith("-proof-packet.json\"")
+    envelope = json.loads(packet_response.data)
+    assert envelope["packet"]["agent_run"]["id"] == run["id"]
+    assert envelope["packet"]["integrity"]["plan_hash_verified"] is True
+    assert envelope["packet"]["audit"]["tenant_chain_valid"] is True
+    assert {event["event_type"] for event in envelope["packet"]["audit"]["related_events"]} >= {
+        "AGENT_RUN_PLANNED",
+        "AGENT_RUN_EXECUTED",
+    }
+    packet_hash = sha256(canonical_json(envelope["packet"]).encode("utf-8")).hexdigest()
+    assert envelope["packet_sha256"] == packet_hash
+    assert packet_response.headers["X-TallyGuard-Packet-SHA256"] == packet_hash
+
 
 def test_agent_run_revalidates_stale_invoice_state_before_moving_funds(tmp_path):
     app = create_app(database_path=tmp_path / "agent-stale.sqlite3", testing=True)
@@ -172,6 +194,11 @@ def test_agent_runs_are_durable_and_tenant_scoped(tmp_path):
         headers=headers(other_token, "tenant-hidden"),
     )
     assert hidden.status_code == 404
+    hidden_packet = restarted.test_client().get(
+        f"/api/agent-runs/{run['id']}/proof-packet",
+        headers=headers(other_token, "tenant-proof-hidden"),
+    )
+    assert hidden_packet.status_code == 404
 
 
 def test_agent_run_routes_escalation_then_settles_only_after_separate_approval(tmp_path):

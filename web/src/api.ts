@@ -199,6 +199,37 @@ export async function executeAgentRun(runId: string, approverToken: string): Pro
   return payload.agent_run;
 }
 
+export async function downloadAgentRunProof(
+  runId: string,
+  auditorToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `/api/agent-runs/${encodeURIComponent(runId)}/proof-packet`,
+    { headers: { Authorization: `Bearer ${auditorToken}` } },
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.error;
+    throw new ApiError(
+      detail?.message ?? 'TallyGuard could not assemble the agent proof packet.',
+      response.status,
+      detail?.code,
+    );
+  }
+  const packetHash = response.headers.get('X-TallyGuard-Packet-SHA256') ?? '';
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `tallyguard-${runId}-proof-packet.json`;
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+  return packetHash;
+}
+
 const encodeDocument = (value: Record<string, string>): ArrayBuffer => {
   const encoded = new TextEncoder().encode(JSON.stringify(value));
   return encoded.buffer.slice(

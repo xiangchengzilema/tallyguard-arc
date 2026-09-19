@@ -33,6 +33,7 @@ import {
   activatePolicyVersion,
   bootstrap,
   createAgentRun,
+  downloadAgentRunProof,
   downloadEvidencePacket,
   executeAgentRun,
   fetchGovernanceOverview,
@@ -205,12 +206,16 @@ function AutonomousRunPanel({
   settlementStopped,
   onPlan,
   onExecute,
+  onDownloadProof,
+  proofHash,
 }: {
   run: AgentRun | null;
   busy: boolean;
   settlementStopped: boolean;
   onPlan: () => void;
   onExecute: () => void;
+  onDownloadProof: () => void;
+  proofHash: string | null;
 }) {
   const resultByInvoice = new Map(run?.results.map((result) => [result.invoice_id, result]) ?? []);
   return (
@@ -229,6 +234,11 @@ function AutonomousRunPanel({
           {run?.status === 'PLANNED' && run.summary.executable > 0 ? (
             <Button size="sm" renderIcon={PlayFilled} disabled={busy || settlementStopped} onClick={onExecute}>
               Execute {run.summary.executable} safe action{run.summary.executable === 1 ? '' : 's'}
+            </Button>
+          ) : null}
+          {run ? (
+            <Button size="sm" kind="ghost" renderIcon={Download} disabled={busy} onClick={onDownloadProof}>
+              Export proof
             </Button>
           ) : null}
         </div>
@@ -267,7 +277,7 @@ function AutonomousRunPanel({
               })}
             </div>
           )}
-          <div className="agent-run__boundary"><Locked size={16} /><span>Plan {shorten(run.id, 14, 8)} · state {shorten(run.state_hash, 12, 10)} · execution cannot override deterministic policy.</span></div>
+          <div className="agent-run__boundary"><Locked size={16} /><span>{proofHash ? `Proof ${shorten(proofHash, 12, 10)} · ` : ''}Plan {shorten(run.id, 14, 8)} · state {shorten(run.state_hash, 12, 10)} · execution cannot override deterministic policy.</span></div>
         </>
       ) : (
         <div className="agent-run__empty"><Rule size={20} /><span>Create a plan to turn the current work queue into a traceable sequence of safe actions and human handoffs.</span></div>
@@ -1246,6 +1256,7 @@ function App() {
   const [vendorDirectory, setVendorDirectory] = useState<VendorTrustRecord[]>([]);
   const [settlementRetryNeeded, setSettlementRetryNeeded] = useState(false);
   const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
+  const [agentProofHash, setAgentProofHash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1443,6 +1454,7 @@ function App() {
     if (!data) return;
     void act('Planning a bounded autonomous accounts-payable run', async () => {
       setAgentRun(await createAgentRun(data.sessions.operator));
+      setAgentProofHash(null);
     });
   }, [act, data]);
 
@@ -1453,6 +1465,13 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+    });
+  }, [act, agentRun, data]);
+
+  const handleDownloadAgentProof = useCallback(() => {
+    if (!data || !agentRun) return;
+    void act('Assembling a content-addressed agent proof packet', async () => {
+      setAgentProofHash(await downloadAgentRunProof(agentRun.id, data.sessions.auditor));
     });
   }, [act, agentRun, data]);
 
@@ -1589,6 +1608,8 @@ function App() {
             settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
             onPlan={handlePlanAgentRun}
             onExecute={handleExecuteAgentRun}
+            onDownloadProof={handleDownloadAgentProof}
+            proofHash={agentProofHash}
           />
         ) : null}
 

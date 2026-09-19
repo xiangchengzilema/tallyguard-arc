@@ -212,6 +212,11 @@ current-policy decision before settlement. Changed or newly blocked items become
 `REVALIDATED`. Valid funds-moving items use the normal atomic, idempotent settlement orchestrator
 and retain independent results when another item fails.
 
+`GET /api/agent-runs/{id}/proof-packet` requires audit-read permission and returns a downloadable,
+content-addressed JSON envelope. The packet includes the durable plan and results, referenced
+approvals, related invoice/run audit events, a recomputed plan-hash verdict, and tenant audit-chain
+verification. Tenant-scoped lookup returns 404 for a foreign run identifier.
+
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response
 explicitly distinguishes reliability evidence from customer traction and states that no funds moved.
