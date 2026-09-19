@@ -62,6 +62,8 @@ Implemented foundation:
 - Tenant-safe, deterministic evidence-package manifest hashes
 - Atomic duplicate detection using content hash, vendor/invoice number, business keys, and near-duplicate text
 - Explicit fail-closed outcomes for missing PO and delivery evidence
+- Evidence normalization into invoice, PO, and delivery domain records with confidence gates
+- Verified vendor-wallet onboarding and append-only wallet replacement history
 
 - Organization and user authentication
 - Vendor onboarding and verified wallet history

@@ -20,7 +20,9 @@ from .models import (
     TreasurySnapshot,
     Vendor,
 )
+from .normalization import EvidenceNormalizer, NormalizedEvidence
 from .policy import Decision, DecisionAction, Policy, PolicyEngine
+from .vendors import VendorDirectory, VendorWalletEvent, WalletVerificationMethod
 
 __all__ = [
     "AuditChain",
@@ -34,14 +36,19 @@ __all__ = [
     "EvidenceRecord",
     "EvidenceStore",
     "EvidenceType",
+    "EvidenceNormalizer",
     "ExtractedField",
     "ExtractionMethod",
     "Invoice",
     "InvoiceIdentity",
+    "NormalizedEvidence",
     "Policy",
     "PolicyEngine",
     "PurchaseOrder",
     "SourceLocation",
     "TreasurySnapshot",
     "Vendor",
+    "VendorDirectory",
+    "VendorWalletEvent",
+    "WalletVerificationMethod",
 ]

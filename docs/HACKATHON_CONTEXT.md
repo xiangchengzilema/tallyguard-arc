@@ -52,8 +52,8 @@ Strongly encouraged:
 - Missing PO and delivery evidence now fail closed with explicit remediation
 - Automated test suite passing
 
-Milestone 2 remains active. Authentication, vendor wallet history, and evidence-to-domain
-normalization are the next implementation slice.
+Milestone 2 remains active. Evidence-to-domain normalization and verified vendor wallet
+history are implemented; organization/user authentication and durable persistence remain.
 
 ## Submission discipline
 
