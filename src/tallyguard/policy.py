@@ -1,0 +1,280 @@
+"""Deterministic payment policy evaluation.
+
+The policy engine is intentionally independent from any language model. An AI
+may propose an action, but this module is the authority that decides whether a
+payment intent may be created.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import StrEnum
+from typing import Iterable
+
+from .models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
+
+
+class DecisionAction(StrEnum):
+    PAY = "PAY"
+    SCHEDULE = "SCHEDULE"
+    HOLD = "HOLD"
+    REJECT = "REJECT"
+    ESCALATE = "ESCALATE"
+
+
+class RuleDisposition(StrEnum):
+    PASS = "PASS"
+    HOLD = "HOLD"
+    REJECT = "REJECT"
+    ESCALATE = "ESCALATE"
+
+
+@dataclass(frozen=True, slots=True)
+class RuleResult:
+    code: str
+    disposition: RuleDisposition
+    message: str
+    remediation: str | None = None
+
+    @property
+    def passed(self) -> bool:
+        return self.disposition == RuleDisposition.PASS
+
+
+@dataclass(frozen=True, slots=True)
+class Policy:
+    version: str
+    daily_payment_limit_usdc: Decimal
+    minimum_cash_reserve_usdc: Decimal
+    maximum_autonomous_payment_usdc: Decimal
+    po_amount_tolerance_usdc: Decimal = Decimal("0")
+    allowed_asset: str = "USDC"
+    allowed_network: str = "ARC-TESTNET"
+    kill_switch_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "daily_payment_limit_usdc",
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+        ):
+            object.__setattr__(self, field_name, Decimal(str(getattr(self, field_name))))
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    action: DecisionAction
+    policy_version: str
+    invoice_fingerprint: str
+    rule_results: tuple[RuleResult, ...]
+
+    @property
+    def reason_codes(self) -> tuple[str, ...]:
+        return tuple(result.code for result in self.rule_results if not result.passed)
+
+    @property
+    def remediation(self) -> tuple[str, ...]:
+        return tuple(
+            result.remediation
+            for result in self.rule_results
+            if result.remediation is not None and not result.passed
+        )
+
+
+class PolicyEngine:
+    """Evaluate evidence in a stable order and return one final action."""
+
+    def evaluate(
+        self,
+        *,
+        invoice: Invoice,
+        vendor: Vendor,
+        purchase_order: PurchaseOrder,
+        delivery: DeliveryEvidence,
+        treasury: TreasurySnapshot,
+        policy: Policy,
+        known_invoice_fingerprints: Iterable[str] = (),
+        asset: str = "USDC",
+        network: str = "ARC-TESTNET",
+    ) -> Decision:
+        results = (
+            self._kill_switch(policy),
+            self._duplicate(invoice, known_invoice_fingerprints),
+            self._vendor(invoice, vendor),
+            self._wallet(invoice, vendor),
+            self._asset_and_network(asset, network, policy),
+            self._purchase_order(invoice, vendor, purchase_order, policy),
+            self._delivery(invoice, purchase_order, delivery, policy),
+            self._autonomy_limit(invoice, vendor, policy),
+            self._daily_limit(invoice, treasury, policy),
+            self._cash_reserve(invoice, treasury, policy),
+        )
+        action = self._final_action(results)
+        return Decision(
+            action=action,
+            policy_version=policy.version,
+            invoice_fingerprint=invoice.fingerprint,
+            rule_results=results,
+        )
+
+    @staticmethod
+    def _pass(code: str, message: str) -> RuleResult:
+        return RuleResult(code=code, disposition=RuleDisposition.PASS, message=message)
+
+    @staticmethod
+    def _kill_switch(policy: Policy) -> RuleResult:
+        if policy.kill_switch_enabled:
+            return RuleResult(
+                code="KILL_SWITCH_ACTIVE",
+                disposition=RuleDisposition.HOLD,
+                message="Autonomous settlement is disabled for the organization.",
+                remediation="Disable the kill switch after a treasury owner reviews the incident.",
+            )
+        return PolicyEngine._pass("KILL_SWITCH_CLEAR", "Autonomous settlement is enabled.")
+
+    @staticmethod
+    def _duplicate(invoice: Invoice, fingerprints: Iterable[str]) -> RuleResult:
+        if invoice.fingerprint in set(fingerprints):
+            return RuleResult(
+                code="DUPLICATE_INVOICE",
+                disposition=RuleDisposition.REJECT,
+                message="The invoice fingerprint has already been recorded.",
+                remediation="Use the existing invoice record or submit corrected source evidence.",
+            )
+        return PolicyEngine._pass("INVOICE_UNIQUE", "No duplicate invoice fingerprint was found.")
+
+    @staticmethod
+    def _vendor(invoice: Invoice, vendor: Vendor) -> RuleResult:
+        if invoice.vendor_id != vendor.id:
+            return RuleResult(
+                code="VENDOR_ID_MISMATCH",
+                disposition=RuleDisposition.HOLD,
+                message="Invoice vendor does not match the selected vendor profile.",
+                remediation="Attach the correct vendor profile or correct the invoice metadata.",
+            )
+        if not vendor.active:
+            return RuleResult(
+                code="VENDOR_INACTIVE",
+                disposition=RuleDisposition.HOLD,
+                message="The vendor is not active for autonomous payments.",
+                remediation="Re-verify and reactivate the vendor before payment.",
+            )
+        return PolicyEngine._pass("VENDOR_APPROVED", "Vendor is active and matches the invoice.")
+
+    @staticmethod
+    def _wallet(invoice: Invoice, vendor: Vendor) -> RuleResult:
+        if invoice.payment_wallet_address != vendor.approved_wallet_address:
+            return RuleResult(
+                code="VENDOR_WALLET_CHANGED",
+                disposition=RuleDisposition.HOLD,
+                message="Invoice payment address differs from the verified vendor wallet.",
+                remediation="Verify the wallet change out-of-band and update the vendor profile.",
+            )
+        return PolicyEngine._pass("VENDOR_WALLET_VERIFIED", "Payment address matches the vendor profile.")
+
+    @staticmethod
+    def _asset_and_network(asset: str, network: str, policy: Policy) -> RuleResult:
+        if asset.strip().upper() != policy.allowed_asset or network.strip().upper() != policy.allowed_network:
+            return RuleResult(
+                code="SETTLEMENT_ROUTE_NOT_ALLOWED",
+                disposition=RuleDisposition.HOLD,
+                message="The requested settlement asset or network is not allowed.",
+                remediation=f"Use {policy.allowed_asset} on {policy.allowed_network}.",
+            )
+        return PolicyEngine._pass("SETTLEMENT_ROUTE_ALLOWED", "Asset and network are allowed.")
+
+    @staticmethod
+    def _purchase_order(
+        invoice: Invoice,
+        vendor: Vendor,
+        po: PurchaseOrder,
+        policy: Policy,
+    ) -> RuleResult:
+        if po.vendor_id != vendor.id or po.currency != invoice.currency:
+            return RuleResult(
+                code="PO_IDENTITY_MISMATCH",
+                disposition=RuleDisposition.HOLD,
+                message="Purchase order vendor or currency does not match the invoice.",
+                remediation="Attach the correct purchase order or correct the source records.",
+            )
+        if invoice.amount > po.authorized_amount + policy.po_amount_tolerance_usdc:
+            return RuleResult(
+                code="INVOICE_EXCEEDS_PO",
+                disposition=RuleDisposition.HOLD,
+                message="Invoice amount exceeds the authorized purchase-order amount.",
+                remediation="Approve a PO amendment or submit a corrected invoice.",
+            )
+        return PolicyEngine._pass("PO_MATCHED", "Invoice is within the authorized PO amount.")
+
+    @staticmethod
+    def _delivery(
+        invoice: Invoice,
+        po: PurchaseOrder,
+        delivery: DeliveryEvidence,
+        policy: Policy,
+    ) -> RuleResult:
+        if delivery.purchase_order_id != po.id:
+            return RuleResult(
+                code="DELIVERY_PO_MISMATCH",
+                disposition=RuleDisposition.HOLD,
+                message="Delivery evidence does not belong to the attached purchase order.",
+                remediation="Attach delivery evidence for the correct purchase order.",
+            )
+        if delivery.delivered_value + policy.po_amount_tolerance_usdc < invoice.amount:
+            return RuleResult(
+                code="DELIVERY_VALUE_INSUFFICIENT",
+                disposition=RuleDisposition.HOLD,
+                message="Delivered value does not cover the requested invoice amount.",
+                remediation="Provide additional delivery proof or reduce the invoice amount.",
+            )
+        return PolicyEngine._pass("DELIVERY_MATCHED", "Delivery evidence covers the invoice amount.")
+
+    @staticmethod
+    def _autonomy_limit(invoice: Invoice, vendor: Vendor, policy: Policy) -> RuleResult:
+        limit = min(vendor.autopay_limit, policy.maximum_autonomous_payment_usdc)
+        if invoice.amount > limit:
+            return RuleResult(
+                code="AUTONOMY_LIMIT_EXCEEDED",
+                disposition=RuleDisposition.ESCALATE,
+                message=f"Invoice amount exceeds the autonomous payment limit of {limit} USDC.",
+                remediation="Obtain the configured human approval before settlement.",
+            )
+        return PolicyEngine._pass("AUTONOMY_LIMIT_OK", "Invoice is within the autonomous payment limit.")
+
+    @staticmethod
+    def _daily_limit(invoice: Invoice, treasury: TreasurySnapshot, policy: Policy) -> RuleResult:
+        projected = treasury.spent_today_usdc + invoice.amount
+        if projected > policy.daily_payment_limit_usdc:
+            return RuleResult(
+                code="DAILY_LIMIT_EXCEEDED",
+                disposition=RuleDisposition.HOLD,
+                message="Payment would exceed the organization's daily payment limit.",
+                remediation="Schedule for a later day or obtain a policy change.",
+            )
+        return PolicyEngine._pass("DAILY_LIMIT_OK", "Projected daily spend remains within policy.")
+
+    @staticmethod
+    def _cash_reserve(invoice: Invoice, treasury: TreasurySnapshot, policy: Policy) -> RuleResult:
+        projected = treasury.available_usdc - invoice.amount
+        if projected < policy.minimum_cash_reserve_usdc:
+            return RuleResult(
+                code="MINIMUM_RESERVE_BREACH",
+                disposition=RuleDisposition.HOLD,
+                message="Payment would reduce treasury funds below the minimum reserve.",
+                remediation="Fund the treasury, schedule later, or approve a reserve-policy change.",
+            )
+        return PolicyEngine._pass("MINIMUM_RESERVE_OK", "Post-payment balance preserves the required reserve.")
+
+    @staticmethod
+    def _final_action(results: tuple[RuleResult, ...]) -> DecisionAction:
+        dispositions = {result.disposition for result in results}
+        if RuleDisposition.REJECT in dispositions:
+            return DecisionAction.REJECT
+        if RuleDisposition.HOLD in dispositions:
+            return DecisionAction.HOLD
+        if RuleDisposition.ESCALATE in dispositions:
+            return DecisionAction.ESCALATE
+        return DecisionAction.PAY
+
