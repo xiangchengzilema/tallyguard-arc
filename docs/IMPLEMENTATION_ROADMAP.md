@@ -221,6 +221,8 @@ Implemented foundation:
 - Concurrent duplicate settlement storm with provider-submission accounting
 - JSON output with throughput, p50/p95/p99, error rate, and duplicate-payment count
 - 100-organization baseline: 200/200 workflows succeeded, 100/100 isolation probes denied, and 100 duplicate requests produced one provider submission
+- Full 10,000-workflow run: 10,000/10,000 succeeded across 19,301 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission
+- Full-run throughput reached 24.403 workflows/second with 0.00% workflow errors; settlement P95 was 2.929 seconds under SQLite contention
 - The baseline discovered and verified a fix for a stale-version settlement race
 
 Two distinct test classes will be reported honestly:
@@ -231,7 +233,7 @@ Two distinct test classes will be reported honestly:
 Synthetic load suite:
 
 - At least 100 isolated organizations
-- At least 10,000 invoices across clean and adversarial scenarios
+- At least 10,000 invoices across clean and adversarial scenarios (complete)
 - Concurrent ingestion, evaluation, approval, and receipt reads
 - Duplicate submission storms against the same idempotency key
 - Cross-tenant identifier attacks

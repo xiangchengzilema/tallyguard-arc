@@ -1,0 +1,98 @@
+{
+  "configuration": {
+    "concurrency": 64,
+    "duplicate_storm": 200,
+    "invoices": 10000,
+    "organizations": 100,
+    "timeout_seconds": 15
+  },
+  "errors": [],
+  "generated_at": "2026-09-19T18:13:04.715904+00:00",
+  "latency_ms": {
+    "by_request": {
+      "approval.request": {
+        "max": 44.748,
+        "mean": 15.124,
+        "p50": 14.335,
+        "p95": 25.163,
+        "p99": 34.355
+      },
+      "approval.resolve": {
+        "max": 765.268,
+        "mean": 402.151,
+        "p50": 375.08,
+        "p95": 561.577,
+        "p99": 696.577
+      },
+      "payment.settle": {
+        "max": 3435.41,
+        "mean": 2615.807,
+        "p50": 2597.248,
+        "p95": 2929.227,
+        "p99": 3113.782
+      },
+      "scenario.evaluate": {
+        "max": 2940.846,
+        "mean": 720.377,
+        "p50": 688.338,
+        "p95": 930.235,
+        "p99": 1032.773
+      },
+      "security.cross_tenant_read": {
+        "max": 25.086,
+        "mean": 5.612,
+        "p50": 5.296,
+        "p95": 6.391,
+        "p99": 14.634
+      },
+      "storm.duplicate_settlement": {
+        "max": 652.647,
+        "mean": 361.291,
+        "p50": 362.54,
+        "p95": 577.7,
+        "p99": 621.476
+      },
+      "storm.prepare": {
+        "max": 17.563,
+        "mean": 17.563,
+        "p50": 17.563,
+        "p95": 17.563,
+        "p99": 17.563
+      }
+    },
+    "overall": {
+      "max": 3435.41,
+      "mean": 1347.315,
+      "p50": 760.45,
+      "p95": 2781.242,
+      "p99": 2988.326
+    }
+  },
+  "methodology": {
+    "classification": "synthetic multi-tenant engineering load test",
+    "identity": "isolated organizations with distinct operator and approver sessions",
+    "note": "This report measures reliability and is not customer traction.",
+    "settlement": "deterministic Arc simulator; no funds moved",
+    "transport": "real loopback HTTP against the Flask API"
+  },
+  "run_id": "load_dc3db55450ad4bc19c46cc989ccb8efd",
+  "schema_version": "1.0",
+  "summary": {
+    "cross_tenant_attempts": 100,
+    "cross_tenant_attempts_denied": 100,
+    "duplicate_payment_count": 0,
+    "duplicate_storm_provider_submissions": 1,
+    "duplicate_storm_requests": 200,
+    "duplicate_storm_successes": 200,
+    "duplicate_storm_unique_transaction_hashes": 1,
+    "duration_seconds": 409.781,
+    "failed_workflows": 0,
+    "http_requests": 19301,
+    "protected_workflows": 4000,
+    "provider_submissions": 7001,
+    "settled_workflows": 7000,
+    "successful_workflows": 10000,
+    "workflow_error_rate": 0.0,
+    "workflow_throughput_per_second": 24.403
+  }
+}

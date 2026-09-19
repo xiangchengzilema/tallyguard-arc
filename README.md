@@ -72,7 +72,11 @@ Run a local reliability baseline:
   --duplicate-storm 100 --output docs\reports\load-test-baseline.json
 ```
 
-The checked-in [baseline report](docs/reports/LOAD_TEST_BASELINE.md) records zero failed workflows, zero duplicate payments, and 100/100 denied cross-tenant reads.
+The checked-in [10,000-workflow report](docs/reports/LOAD_TEST_10000.md) records
+zero failed workflows, zero duplicate payments, and 100/100 denied cross-tenant
+reads across 19,301 real loopback HTTP requests. The smaller
+[development baseline](docs/reports/LOAD_TEST_BASELINE.md) remains available for
+fast regression checks.
 
 ## Deploy the public judge playground
 
