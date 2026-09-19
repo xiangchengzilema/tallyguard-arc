@@ -37,6 +37,7 @@ import {
   runUploadedEvidenceWorkflow,
   runScenario,
   settleInvoice,
+  verifyDecisionReplay,
 } from './api';
 import type {
   Approval,
@@ -46,6 +47,7 @@ import type {
   EvidenceFileBundle,
   EvidenceFileReview,
   Payment,
+  ReplayVerification,
   RuleDisposition,
   RunResult,
   Scenario,
@@ -438,17 +440,21 @@ function DecisionPanel({
   approval,
   payment,
   busy,
+  replay,
   onRequestApproval,
   onApprove,
   onSettle,
+  onVerifyReplay,
 }: {
   run: RunResult;
   approval: Approval | null;
   payment: Payment | null;
   busy: string | null;
+  replay: ReplayVerification | null;
   onRequestApproval: () => void;
   onApprove: () => void;
   onSettle: () => void;
+  onVerifyReplay: () => void;
 }) {
   const { decision } = run;
   const isPayable = decision.final_action === 'PAY';
@@ -468,6 +474,24 @@ function DecisionPanel({
         <div><span>Policy version</span><code>{decision.policy_version}</code></div>
         <div><span>Policy hash</span><code>{shorten(decision.policy_content_hash, 10, 8)}</code></div>
         <div><span>Evidence manifest</span><code>{shorten(decision.evidence_manifest_hash, 10, 8)}</code></div>
+        <div><span>Replay snapshot</span><code>{shorten(decision.replay_input_hash ?? 'unavailable', 10, 8)}</code></div>
+      </div>
+
+      <div className="replay-proof">
+        <div>
+          <span className="eyebrow">Independent reproduction</span>
+          <strong>{replay ? (replay.verified ? 'Decision reproduced exactly' : 'Replay mismatch detected') : 'Recompute from the sealed inputs'}</strong>
+          <small>{replay ? `${replay.checks.filter((check) => check.passed).length}/${replay.checks.length} bindings verified` : 'No current vendor, treasury, or policy state is consulted.'}</small>
+        </div>
+        <Button
+          kind="tertiary"
+          size="sm"
+          renderIcon={replay?.verified ? CheckmarkFilled : Renew}
+          disabled={busy !== null || !decision.replayable}
+          onClick={onVerifyReplay}
+        >
+          {replay ? 'Verify again' : 'Verify replay'}
+        </Button>
       </div>
 
       {decision.agent_recommendation ? (
@@ -610,6 +634,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'scenario' | 'live'>('scenario');
   const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
+  const [replay, setReplay] = useState<ReplayVerification | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -647,6 +672,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
@@ -670,6 +696,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
@@ -686,6 +713,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
@@ -705,6 +733,13 @@ function App() {
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
     });
   }, [act, approval, data, run]);
+
+  const handleVerifyReplay = useCallback(() => {
+    if (!data || !run) return;
+    void act('Recomputing the decision from its sealed input snapshot', async () => {
+      setReplay(await verifyDecisionReplay(run.decision.id, data.sessions.auditor));
+    });
+  }, [act, data, run]);
 
   const selectedScenario = useMemo(
     () => data?.scenarios.find((item) => item.key === selectedKey),
@@ -769,10 +804,10 @@ function App() {
               scenarios={data.scenarios}
               activeKey={selectedKey}
               busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setAuditTrail(null); }}
+              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); }}
               onRun={handleRun}
               mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setAuditTrail(null); }}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); }}
               onRunLive={handleRunLive}
             />
             <main className="workbench">
@@ -789,9 +824,11 @@ function App() {
                       approval={approval}
                       payment={payment}
                       busy={busy}
+                      replay={replay}
                       onRequestApproval={handleRequestApproval}
                       onApprove={handleApprove}
                       onSettle={handleSettle}
+                      onVerifyReplay={handleVerifyReplay}
                     />
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}

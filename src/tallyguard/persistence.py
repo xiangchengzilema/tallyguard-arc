@@ -15,7 +15,7 @@ from threading import RLock
 from .audit import AuditEvent, GENESIS_HASH, audit_event_hash, canonical_json
 from .approvals import ApprovalError, ApprovalRequest, ApprovalStatus
 from .auth import Principal, Role, Session
-from .decisions import AgentRecommendation, DecisionRecord
+from .decisions import AgentRecommendation, DecisionRecord, DecisionReplayInputs
 from .evidence import (
     EvidenceDocument,
     EvidenceRecord,
@@ -1281,6 +1281,12 @@ class SqliteRepository:
                     }
                     for result in record.policy_decision.rule_results
                 ],
+                "replay_inputs": (
+                    record.replay_inputs.to_payload()
+                    if record.replay_inputs is not None
+                    else None
+                ),
+                "replay_input_hash": record.replay_input_hash,
             }
         )
         with self._guard:
@@ -1899,6 +1905,11 @@ class SqliteRepository:
             if agent_data is not None
             else None
         )
+        replay_inputs = (
+            DecisionReplayInputs.from_payload(policy_data["replay_inputs"])
+            if policy_data.get("replay_inputs") is not None
+            else None
+        )
         return DecisionRecord(
             id=row["id"],
             organization_id=row["organization_id"],
@@ -1909,6 +1920,8 @@ class SqliteRepository:
             agent_recommendation=recommendation,
             policy_decision=decision,
             final_action=DecisionAction(row["final_action"]),
+            replay_inputs=replay_inputs,
+            replay_input_hash=policy_data.get("replay_input_hash"),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
@@ -2001,6 +2014,8 @@ class SqliteRepository:
             and existing.agent_recommendation == proposed.agent_recommendation
             and existing.policy_decision == proposed.policy_decision
             and existing.final_action == proposed.final_action
+            and existing.replay_inputs == proposed.replay_inputs
+            and existing.replay_input_hash == proposed.replay_input_hash
         )
 
     @staticmethod

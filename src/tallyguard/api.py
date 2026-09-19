@@ -258,6 +258,8 @@ def _decision_json(record: DecisionRecord) -> dict[str, Any]:
         "evidence_manifest_hash": record.evidence_manifest_hash,
         "policy_version": record.policy_version,
         "policy_content_hash": record.policy_content_hash,
+        "replayable": record.replay_inputs is not None and record.replay_input_hash is not None,
+        "replay_input_hash": record.replay_input_hash,
         "agent_recommendation": (
             {
                 "action": recommendation.action.value,
@@ -963,6 +965,37 @@ def create_app(
         return jsonify(
             {
                 "decision": _decision_json(record),
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/decisions/<decision_id>/replay")
+    @require(Permission.AUDIT_READ)
+    def replay_decision(decision_id: str):
+        record = decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        verification = decision_service.verify_replay(record)
+        return jsonify(
+            {
+                "verification": {
+                    "verified": verification.verified,
+                    "original_decision_id": verification.original_decision_id,
+                    "replayed_decision_id": verification.replayed_decision_id,
+                    "input_snapshot_hash": verification.input_snapshot_hash,
+                    "action": verification.replayed_decision.action.value,
+                    "reason_codes": list(verification.replayed_decision.reason_codes),
+                    "checks": [
+                        {
+                            "code": check.code,
+                            "passed": check.passed,
+                            "expected": check.expected,
+                            "actual": check.actual,
+                        }
+                        for check in verification.checks
+                    ],
+                },
                 "correlation_id": _correlation_id(),
             }
         )

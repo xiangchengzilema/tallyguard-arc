@@ -47,6 +47,8 @@ export interface Decision {
   evidence_manifest_hash: string;
   policy_version: string;
   policy_content_hash: string;
+  replayable: boolean;
+  replay_input_hash: string | null;
   agent_recommendation: AgentRecommendation | null;
   agent_disagreed: boolean;
   final_action: DecisionAction;
@@ -54,6 +56,23 @@ export interface Decision {
   remediation: string[];
   rules: RuleResult[];
   created_at: string;
+}
+
+export interface ReplayCheck {
+  code: string;
+  passed: boolean;
+  expected: string;
+  actual: string;
+}
+
+export interface ReplayVerification {
+  verified: boolean;
+  original_decision_id: string;
+  replayed_decision_id: string;
+  input_snapshot_hash: string;
+  action: DecisionAction;
+  reason_codes: string[];
+  checks: ReplayCheck[];
 }
 
 export interface RunResult {

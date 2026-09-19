@@ -6,6 +6,7 @@ from tallyguard.audit import AuditChain
 from tallyguard.decisions import AgentRecommendation, DecisionService
 from tallyguard.models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
 from tallyguard.normalization import NormalizedEvidence
+from tallyguard.persistence import SqliteRepository
 from tallyguard.policy import DecisionAction, Policy
 
 
@@ -147,3 +148,73 @@ def test_decision_service_rejects_cross_tenant_policy():
         assert "another organization" in str(exc)
     else:
         raise AssertionError("Expected cross-tenant policy rejection")
+
+
+def test_decision_replay_recomputes_every_bound_input_exactly():
+    evidence, vendor, treasury, policy = case()
+    service = DecisionService()
+    record = service.evaluate(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+        known_invoice_fingerprints=("f" * 64,),
+        evaluation_date=date(2026, 9, 20),
+    )
+
+    verification = service.verify_replay(record)
+
+    assert verification.verified is True
+    assert verification.replayed_decision_id == record.id
+    assert verification.input_snapshot_hash == record.replay_input_hash
+    assert all(check.passed for check in verification.checks)
+
+
+def test_decision_replay_exposes_snapshot_tampering_instead_of_masking_it():
+    evidence, vendor, treasury, policy = case()
+    service = DecisionService()
+    record = service.evaluate(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+        evaluation_date=date(2026, 9, 20),
+    )
+    assert record.replay_inputs is not None
+    tampered_inputs = replace(
+        record.replay_inputs,
+        treasury=replace(record.replay_inputs.treasury, available_usdc=Decimal("1200")),
+    )
+
+    verification = service.verify_replay(replace(record, replay_inputs=tampered_inputs))
+
+    failed = {check.code for check in verification.checks if not check.passed}
+    assert verification.verified is False
+    assert "INPUT_SNAPSHOT_HASH" in failed
+    assert "DECISION_ACTION" in failed
+    assert "DECISION_ID" in failed
+
+
+def test_replay_snapshot_survives_sqlite_restart(tmp_path):
+    evidence, vendor, treasury, policy = case()
+    database = tmp_path / "replay.sqlite3"
+    repository = SqliteRepository(database)
+    repository.create_organization(organization_id="org-1", name="Northwind AI")
+    repository.create_invoice(evidence.invoice)
+    service = DecisionService(repository=repository, audit_chain=repository)
+    record = service.evaluate(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+        evaluation_date=date(2026, 9, 20),
+    )
+    repository.close()
+
+    reopened = SqliteRepository(database)
+    restored = reopened.get_decision(organization_id="org-1", decision_id=record.id)
+    verification = DecisionService(repository=reopened, audit_chain=reopened).verify_replay(restored)
+
+    assert restored.replay_inputs == record.replay_inputs
+    assert restored.replay_input_hash == record.replay_input_hash
+    assert verification.verified is True

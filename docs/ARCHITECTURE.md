@@ -19,7 +19,9 @@ flowchart LR
     vendors --> policy
     treasury --> policy
     agent -. recommendation only .-> policy
-    policy -->|PAY / SCHEDULE / HOLD / REJECT / ESCALATE| decisions[(Decision ledger)]
+    policy -->|PAY / SCHEDULE / HOLD / REJECT / ESCALATE| decisions[(Decision ledger + sealed replay input)]
+    decisions --> replay[Read-only deterministic replay]
+    replay -->|11 binding checks| api
     decisions --> approval[Role-separated approval]
     decisions --> settlement[Idempotent settlement service]
     approval --> settlement
@@ -67,7 +69,10 @@ sequenceDiagram
     Agent-->>API: Recommendation + reason codes
     API->>Policy: Evidence + vendor + treasury + policy version
     Policy-->>API: Final action + rule trace
-    API->>Store: Persist decision and audit event
+    API->>Store: Persist decision, sealed replay inputs, and audit event
+    Operator->>API: Verify historical replay
+    API->>Policy: Recompute from sealed point-in-time inputs
+    Policy-->>API: 11/11 decision bindings verified
     alt Pure escalation
         Operator->>API: Request approval
         Approver->>API: Approve with note and version
@@ -96,6 +101,16 @@ sequenceDiagram
 6. Arc RPC must independently prove the expected chain, successful receipt, canonical USDC
    contract call, recipient topic, and six-decimal atomic amount.
 7. A mismatch at any boundary fails closed and creates no confirmed receipt.
+
+## Historical decision replay
+
+Every new decision persists a canonical snapshot of the exact normalized evidence, verified vendor,
+treasury balances, immutable policy, known duplicate fingerprints, settlement route, and evaluation
+date used by the policy engine. Its SHA-256 hash is included in the decision identity. The auditor
+endpoint recomputes the policy result from that snapshot and compares 11 independent bindings:
+snapshot hash, organization, invoice, evidence manifest, policy version, policy content, action,
+final action, invoice fingerprint, full rule trace, and decision ID. Current vendor, treasury, and
+policy state are deliberately not consulted, so configuration changes cannot rewrite history.
 
 ## Tenant isolation
 
@@ -133,4 +148,3 @@ appropriate for a reproducible judge environment and local acceptance testing, b
 multi-instance production treasury. Production migration requires managed Postgres, shared rate
 limits, external identity, secret management, webhook-driven reconciliation, and worker-restart
 recovery drills.
-

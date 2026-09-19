@@ -6,6 +6,7 @@ import type {
   EvidenceFileBundle,
   EvidenceFileReview,
   Payment,
+  ReplayVerification,
   RunResult,
 } from './types';
 
@@ -405,6 +406,18 @@ export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string)
     event.aggregate_id === invoiceId || event.payload.invoice_id === invoiceId
   ));
   return { chainValid: payload.chain_valid, events };
+}
+
+export async function verifyDecisionReplay(
+  decisionId: string,
+  auditorToken: string,
+): Promise<ReplayVerification> {
+  const payload = await request<{ verification: ReplayVerification }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}/replay`,
+    { method: 'GET' },
+    auditorToken,
+  );
+  return payload.verification;
 }
 
 export { ApiError };

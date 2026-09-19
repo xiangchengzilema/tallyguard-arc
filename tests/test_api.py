@@ -455,6 +455,16 @@ def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_p
     assert fetched.get_json()["decision"]["evidence_manifest_hash"] == result[
         "decision"
     ]["evidence_manifest_hash"]
+    assert fetched.get_json()["decision"]["replayable"] is True
+    replayed = client.get(
+        f"/api/decisions/{result['decision']['id']}/replay",
+        headers=headers(auditor, "replay-1"),
+    )
+    assert replayed.status_code == 200
+    verification = replayed.get_json()["verification"]
+    assert verification["verified"] is True
+    assert verification["replayed_decision_id"] == result["decision"]["id"]
+    assert all(check["passed"] for check in verification["checks"])
 
     locked = client.post(
         "/api/invoices/invoice-live/evidence",

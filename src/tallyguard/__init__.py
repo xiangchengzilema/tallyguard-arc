@@ -3,7 +3,15 @@
 from .audit import AuditChain, AuditEvent
 from .approvals import ApprovalInbox, ApprovalRequest, ApprovalStatus, apply_approved_escalation
 from .auth import Authenticator, Permission, Principal, Role, authorize
-from .decisions import AgentRecommendation, DecisionRecord, DecisionRepository, DecisionService
+from .decisions import (
+    AgentRecommendation,
+    DecisionRecord,
+    DecisionReplayInputs,
+    DecisionReplayVerification,
+    DecisionRepository,
+    DecisionService,
+    ReplayCheck,
+)
 from .evidence import (
     DuplicateRegistry,
     EvidenceDocument,
@@ -41,6 +49,8 @@ __all__ = [
     "Decision",
     "DecisionAction",
     "DecisionRecord",
+    "DecisionReplayInputs",
+    "DecisionReplayVerification",
     "DecisionRepository",
     "DecisionService",
     "DeliveryEvidence",
@@ -68,6 +78,7 @@ __all__ = [
     "Principal",
     "PurchaseOrder",
     "Role",
+    "ReplayCheck",
     "SourceLocation",
     "SqliteRepository",
     "StoredInvoice",
