@@ -38,6 +38,7 @@ Every payment answers four questions:
 
 - Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
 - Authenticated multipart evidence API persists original PDF, PNG, JPEG, and JSON bytes with signature checks, SHA-256 addressing, invoice binding, and field-level provenance
+- Persistent vendor directory API requires an explicit verification method and reference for onboarding or wallet replacement, and retains an append-only tenant-scoped wallet history
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration

@@ -24,11 +24,17 @@ from .evidence import (
     ExtractionMethod,
     SourceLocation,
 )
-from .models import Invoice
+from .models import Invoice, Vendor, normalize_wallet
 from .network import ArcNetwork
 from .policy import Decision, DecisionAction, RuleDisposition, RuleResult
 from .settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from .workflow import InvoiceStatus, WorkflowError, require_transition
+from .vendors import (
+    VendorDirectoryError,
+    VendorWalletEvent,
+    WalletEventType,
+    WalletVerificationMethod,
+)
 
 
 class PersistenceError(RuntimeError):
@@ -96,6 +102,38 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry
     ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS vendors (
+    organization_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    legal_name TEXT NOT NULL,
+    approved_wallet_address TEXT NOT NULL,
+    autopay_limit TEXT NOT NULL,
+    risk_tier TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS vendor_wallet_events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id TEXT NOT NULL,
+    vendor_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    wallet_address TEXT NOT NULL,
+    previous_wallet_address TEXT,
+    verification_method TEXT NOT NULL,
+    verification_reference TEXT NOT NULL,
+    verified_by_user_id TEXT NOT NULL,
+    verified_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id, vendor_id) REFERENCES vendors(organization_id, id),
+    FOREIGN KEY (organization_id, verified_by_user_id) REFERENCES users(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendor_wallet_history
+    ON vendor_wallet_events (organization_id, vendor_id, sequence);
 
 CREATE TABLE IF NOT EXISTS evidence_documents (
     organization_id TEXT NOT NULL,
@@ -380,6 +418,163 @@ class SqliteRepository:
                 (revoked_at.isoformat(), token_hash),
             )
         return self.get_session(token_hash)
+
+    def onboard_vendor(
+        self,
+        vendor: Vendor,
+        *,
+        verification_method: WalletVerificationMethod,
+        verification_reference: str,
+        verified_by_user_id: str,
+        verified_at: datetime | None = None,
+    ) -> Vendor:
+        timestamp = verified_at or datetime.now(timezone.utc)
+        event = VendorWalletEvent(
+            organization_id=vendor.organization_id,
+            vendor_id=vendor.id,
+            event_type=WalletEventType.VERIFIED,
+            wallet_address=vendor.approved_wallet_address,
+            previous_wallet_address=None,
+            verification_method=verification_method,
+            verification_reference=verification_reference,
+            verified_by_user_id=verified_by_user_id,
+            verified_at=timestamp,
+        )
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO vendors
+                        (organization_id, id, legal_name, approved_wallet_address,
+                         autopay_limit, risk_tier, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        vendor.organization_id,
+                        vendor.id,
+                        vendor.legal_name,
+                        vendor.approved_wallet_address,
+                        format(vendor.autopay_limit, "f"),
+                        vendor.risk_tier,
+                        int(vendor.active),
+                        timestamp.isoformat(),
+                        timestamp.isoformat(),
+                    ),
+                )
+                self._insert_wallet_event(event)
+                self._connection.execute("COMMIT")
+                return vendor
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                raise PersistenceError(
+                    "Vendor ID must be unique and the verifier must belong to this organization."
+                ) from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def get_vendor(self, *, organization_id: str, vendor_id: str) -> Vendor:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM vendors WHERE organization_id = ? AND id = ?",
+                (organization_id, vendor_id),
+            ).fetchone()
+        if row is None:
+            raise VendorDirectoryError("Vendor was not found in this organization.")
+        return self._vendor(row)
+
+    def list_vendors(self, *, organization_id: str) -> tuple[Vendor, ...]:
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM vendors WHERE organization_id = ?
+                ORDER BY legal_name, id
+                """,
+                (organization_id,),
+            ).fetchall()
+        return tuple(self._vendor(row) for row in rows)
+
+    def replace_vendor_wallet(
+        self,
+        *,
+        organization_id: str,
+        vendor_id: str,
+        expected_current_wallet: str,
+        new_wallet: str,
+        verification_method: WalletVerificationMethod,
+        verification_reference: str,
+        verified_by_user_id: str,
+        verified_at: datetime | None = None,
+    ) -> Vendor:
+        expected = normalize_wallet(expected_current_wallet)
+        replacement = normalize_wallet(new_wallet)
+        timestamp = verified_at or datetime.now(timezone.utc)
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM vendors WHERE organization_id = ? AND id = ?",
+                    (organization_id, vendor_id),
+                ).fetchone()
+                if row is None:
+                    raise VendorDirectoryError("Vendor was not found in this organization.")
+                current = self._vendor(row)
+                if current.approved_wallet_address != expected:
+                    raise VendorDirectoryError("Vendor wallet changed since it was last read.")
+                if replacement == expected:
+                    raise VendorDirectoryError("Replacement wallet must differ from the current wallet.")
+                event = VendorWalletEvent(
+                    organization_id=organization_id,
+                    vendor_id=vendor_id,
+                    event_type=WalletEventType.REPLACED,
+                    wallet_address=replacement,
+                    previous_wallet_address=expected,
+                    verification_method=verification_method,
+                    verification_reference=verification_reference,
+                    verified_by_user_id=verified_by_user_id,
+                    verified_at=timestamp,
+                )
+                self._connection.execute(
+                    """
+                    UPDATE vendors SET approved_wallet_address = ?, updated_at = ?
+                    WHERE organization_id = ? AND id = ? AND approved_wallet_address = ?
+                    """,
+                    (replacement, timestamp.isoformat(), organization_id, vendor_id, expected),
+                )
+                self._insert_wallet_event(event)
+                self._connection.execute("COMMIT")
+                return Vendor(
+                    id=current.id,
+                    organization_id=current.organization_id,
+                    legal_name=current.legal_name,
+                    approved_wallet_address=replacement,
+                    autopay_limit=current.autopay_limit,
+                    risk_tier=current.risk_tier,
+                    active=current.active,
+                )
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                raise PersistenceError(
+                    "Wallet verification could not be recorded for this vendor."
+                ) from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def vendor_wallet_history(
+        self, *, organization_id: str, vendor_id: str
+    ) -> tuple[VendorWalletEvent, ...]:
+        self.get_vendor(organization_id=organization_id, vendor_id=vendor_id)
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM vendor_wallet_events
+                WHERE organization_id = ? AND vendor_id = ? ORDER BY sequence
+                """,
+                (organization_id, vendor_id),
+            ).fetchall()
+        return tuple(self._wallet_event(row) for row in rows)
 
     def save_evidence(
         self,
@@ -1249,6 +1444,28 @@ class SqliteRepository:
             ).fetchone()
         return self._settlement_receipt(row) if row is not None else None
 
+    def _insert_wallet_event(self, event: VendorWalletEvent) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO vendor_wallet_events
+                (organization_id, vendor_id, event_type, wallet_address,
+                 previous_wallet_address, verification_method,
+                 verification_reference, verified_by_user_id, verified_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.organization_id,
+                event.vendor_id,
+                event.event_type.value,
+                event.wallet_address,
+                event.previous_wallet_address,
+                event.verification_method.value,
+                event.verification_reference,
+                event.verified_by_user_id,
+                event.verified_at.isoformat(),
+            ),
+        )
+
     @staticmethod
     def _stored_invoice(row: sqlite3.Row) -> StoredInvoice:
         invoice = Invoice(
@@ -1268,6 +1485,32 @@ class SqliteRepository:
             version=row["version"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _vendor(row: sqlite3.Row) -> Vendor:
+        return Vendor(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            legal_name=row["legal_name"],
+            approved_wallet_address=row["approved_wallet_address"],
+            autopay_limit=Decimal(row["autopay_limit"]),
+            risk_tier=row["risk_tier"],
+            active=bool(row["active"]),
+        )
+
+    @staticmethod
+    def _wallet_event(row: sqlite3.Row) -> VendorWalletEvent:
+        return VendorWalletEvent(
+            organization_id=row["organization_id"],
+            vendor_id=row["vendor_id"],
+            event_type=WalletEventType(row["event_type"]),
+            wallet_address=row["wallet_address"],
+            previous_wallet_address=row["previous_wallet_address"],
+            verification_method=WalletVerificationMethod(row["verification_method"]),
+            verification_reference=row["verification_reference"],
+            verified_by_user_id=row["verified_by_user_id"],
+            verified_at=datetime.fromisoformat(row["verified_at"]),
         )
 
     @staticmethod

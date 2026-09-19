@@ -66,12 +66,13 @@ Implemented foundation:
 - Explicit fail-closed outcomes for missing PO and delivery evidence
 - Evidence normalization into invoice, PO, and delivery domain records with confidence gates
 - Verified vendor-wallet onboarding and append-only wallet replacement history
+- Persistent vendor APIs enforce finance-operator RBAC, optimistic current-wallet checks, explicit verification references, tenant isolation, and restart-safe history
 - Authenticated multipart evidence upload persists original bytes and links exactly one invoice, purchase order, and delivery document per invoice
 - Structured JSON is extracted with exact JSON pointers; PDF/image observations require explicit page or bounding-box provenance
 - Evidence downloads and metadata lists are tenant-scoped, size-capped, and audit recorded
 
 - Organization and user authentication
-- Vendor onboarding and verified wallet history
+- Vendor onboarding and verified wallet history (API complete)
 - Invoice upload: PDF, image, JSON, and seeded fixtures (API complete)
 - Purchase-order import
 - Delivery/acceptance evidence import

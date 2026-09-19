@@ -27,7 +27,7 @@ from .auth import (
     Role,
     authorize,
 )
-from .models import Invoice
+from .models import Invoice, Vendor
 from .network import ArcNetworkConfig
 from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
 from .evidence import (
@@ -48,6 +48,7 @@ from .settlement import (
     SettlementService,
     SimulatedArcAdapter,
 )
+from .vendors import VendorDirectoryError, WalletVerificationMethod
 from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 
@@ -182,6 +183,18 @@ def _invoice_json(stored: StoredInvoice) -> dict[str, Any]:
         "version": stored.version,
         "created_at": stored.created_at.isoformat(),
         "updated_at": stored.updated_at.isoformat(),
+    }
+
+
+def _vendor_json(vendor: Vendor) -> dict[str, Any]:
+    return {
+        "id": vendor.id,
+        "organization_id": vendor.organization_id,
+        "legal_name": vendor.legal_name,
+        "approved_wallet_address": vendor.approved_wallet_address,
+        "autopay_limit": format(vendor.autopay_limit, "f"),
+        "risk_tier": vendor.risk_tier,
+        "active": vendor.active,
     }
 
 
@@ -383,6 +396,11 @@ def create_app(
         status = 404 if "not found" in str(exc).lower() else 409
         return _error("APPROVAL_ERROR", str(exc), status)
 
+    @app.errorhandler(VendorDirectoryError)
+    def vendor_directory_error(exc: VendorDirectoryError):
+        status = 404 if "not found" in str(exc).lower() else 409
+        return _error("VENDOR_ERROR", str(exc), status)
+
     @app.errorhandler(WorkflowError)
     def workflow_error(exc: WorkflowError):
         return _error("WORKFLOW_ERROR", str(exc), 409)
@@ -500,6 +518,109 @@ def create_app(
                         "expected_action": item.expected_action.value,
                     }
                     for item in scenario_catalog()
+                ]
+            }
+        )
+
+    @app.post("/api/vendors")
+    @require(Permission.VENDOR_WRITE)
+    def onboard_vendor():
+        payload = request.get_json(silent=False) or {}
+        method = WalletVerificationMethod(
+            str(payload["verification_method"]).strip().upper()
+        )
+        vendor = Vendor(
+            id=str(payload["id"]),
+            organization_id=g.principal.organization_id,
+            legal_name=str(payload["legal_name"]),
+            approved_wallet_address=str(payload["approved_wallet_address"]),
+            autopay_limit=Decimal(str(payload["autopay_limit"])),
+            risk_tier=str(payload.get("risk_tier", "standard")),
+            active=bool(payload.get("active", True)),
+        )
+        stored = repository.onboard_vendor(
+            vendor,
+            verification_method=method,
+            verification_reference=str(payload["verification_reference"]),
+            verified_by_user_id=g.principal.user_id,
+        )
+        repository.append(
+            aggregate_type="vendor",
+            aggregate_id=stored.id,
+            event_type="VENDOR_ONBOARDED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "vendor_id": stored.id,
+                "wallet_address": stored.approved_wallet_address,
+                "verification_method": method.value,
+                "verification_reference": str(payload["verification_reference"]),
+                "verified_by_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify({"vendor": _vendor_json(stored)}), 201
+
+    @app.get("/api/vendors")
+    @require(Permission.INVOICE_READ)
+    def list_vendors():
+        items = repository.list_vendors(
+            organization_id=g.principal.organization_id
+        )
+        return jsonify({"items": [_vendor_json(item) for item in items]})
+
+    @app.patch("/api/vendors/<vendor_id>/wallet")
+    @require(Permission.VENDOR_WRITE)
+    def replace_vendor_wallet(vendor_id: str):
+        payload = request.get_json(silent=False) or {}
+        method = WalletVerificationMethod(
+            str(payload["verification_method"]).strip().upper()
+        )
+        stored = repository.replace_vendor_wallet(
+            organization_id=g.principal.organization_id,
+            vendor_id=vendor_id,
+            expected_current_wallet=str(payload["expected_current_wallet"]),
+            new_wallet=str(payload["new_wallet"]),
+            verification_method=method,
+            verification_reference=str(payload["verification_reference"]),
+            verified_by_user_id=g.principal.user_id,
+        )
+        repository.append(
+            aggregate_type="vendor_wallet_change",
+            aggregate_id=f"{vendor_id}:{uuid4().hex}",
+            event_type="VENDOR_WALLET_REPLACED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "vendor_id": stored.id,
+                "previous_wallet_address": str(payload["expected_current_wallet"]).strip().lower(),
+                "wallet_address": stored.approved_wallet_address,
+                "verification_method": method.value,
+                "verification_reference": str(payload["verification_reference"]),
+                "verified_by_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify({"vendor": _vendor_json(stored)})
+
+    @app.get("/api/vendors/<vendor_id>/wallet-history")
+    @require(Permission.INVOICE_READ)
+    def vendor_wallet_history(vendor_id: str):
+        history = repository.vendor_wallet_history(
+            organization_id=g.principal.organization_id,
+            vendor_id=vendor_id,
+        )
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "organization_id": item.organization_id,
+                        "vendor_id": item.vendor_id,
+                        "event_type": item.event_type.value,
+                        "wallet_address": item.wallet_address,
+                        "previous_wallet_address": item.previous_wallet_address,
+                        "verification_method": item.verification_method.value,
+                        "verification_reference": item.verification_reference,
+                        "verified_by_user_id": item.verified_by_user_id,
+                        "verified_at": item.verified_at.isoformat(),
+                    }
+                    for item in history
                 ]
             }
         )

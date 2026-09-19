@@ -274,6 +274,112 @@ def test_auditor_cannot_create_invoice(tmp_path):
     assert response.get_json()["error"]["code"] == "AUTHORIZATION_DENIED"
 
 
+def test_vendor_wallet_verification_history_is_durable_tenant_scoped_and_audited(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    original_wallet = "0x2222222222222222222222222222222222222222"
+    replacement_wallet = "0x3333333333333333333333333333333333333333"
+
+    created = client.post(
+        "/api/vendors",
+        json={
+            "id": "vendor-verified",
+            "legal_name": "Verified Supplies Ltd",
+            "approved_wallet_address": original_wallet,
+            "autopay_limit": "2500.00",
+            "risk_tier": "low",
+            "verification_method": "signed_challenge",
+            "verification_reference": "challenge-2026-09-20-001",
+        },
+        headers=headers(operator, "vendor-onboard"),
+    )
+    assert created.status_code == 201
+    assert created.get_json()["vendor"]["organization_id"] == "demo-org"
+
+    forbidden = client.post(
+        "/api/vendors",
+        json={
+            "id": "auditor-vendor",
+            "legal_name": "Must Fail",
+            "approved_wallet_address": original_wallet,
+            "autopay_limit": "1",
+            "verification_method": "MANUAL_REVIEW",
+            "verification_reference": "forbidden",
+        },
+        headers=headers(auditor, "vendor-forbidden"),
+    )
+    assert forbidden.status_code == 403
+
+    stale = client.patch(
+        "/api/vendors/vendor-verified/wallet",
+        json={
+            "expected_current_wallet": WALLET,
+            "new_wallet": replacement_wallet,
+            "verification_method": "OUT_OF_BAND_CALL",
+            "verification_reference": "call-001",
+        },
+        headers=headers(operator, "vendor-stale"),
+    )
+    assert stale.status_code == 409
+    assert stale.get_json()["error"]["code"] == "VENDOR_ERROR"
+
+    replaced = client.patch(
+        "/api/vendors/vendor-verified/wallet",
+        json={
+            "expected_current_wallet": original_wallet,
+            "new_wallet": replacement_wallet,
+            "verification_method": "OUT_OF_BAND_CALL",
+            "verification_reference": "call-001",
+        },
+        headers=headers(operator, "vendor-replace"),
+    )
+    assert replaced.status_code == 200
+    assert replaced.get_json()["vendor"]["approved_wallet_address"] == replacement_wallet
+
+    listed = client.get("/api/vendors", headers=headers(auditor)).get_json()["items"]
+    assert [item["id"] for item in listed] == ["vendor-verified"]
+    history = client.get(
+        "/api/vendors/vendor-verified/wallet-history",
+        headers=headers(auditor),
+    ).get_json()["items"]
+    assert [item["event_type"] for item in history] == ["VERIFIED", "REPLACED"]
+    assert history[0]["verification_reference"] == "challenge-2026-09-20-001"
+    assert history[1]["previous_wallet_address"] == original_wallet
+
+    repository = app.extensions["tallyguard_repository"]
+    repository.create_organization(organization_id="vendor-other", name="Vendor Other")
+    repository.create_user(
+        organization_id="vendor-other",
+        user_id="other-auditor",
+        display_name="Other Auditor",
+        roles=(Role.AUDITOR.value,),
+    )
+    other_token, _ = app.extensions["tallyguard_authenticator"].issue_session(
+        Principal(
+            user_id="other-auditor",
+            organization_id="vendor-other",
+            roles=(Role.AUDITOR,),
+        )
+    )
+    assert client.get("/api/vendors", headers=headers(other_token)).get_json()["items"] == []
+    invisible = client.get(
+        "/api/vendors/vendor-verified/wallet-history",
+        headers=headers(other_token),
+    )
+    assert invisible.status_code == 404
+
+    audit = client.get("/api/audit/events", headers=headers(auditor)).get_json()
+    assert audit["chain_valid"] is True
+    event_types = [item["event_type"] for item in audit["items"]]
+    assert event_types[-2:] == ["VENDOR_ONBOARDED", "VENDOR_WALLET_REPLACED"]
+
+
 def test_cross_tenant_invoice_is_invisible(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()

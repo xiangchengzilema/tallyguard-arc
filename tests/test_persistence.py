@@ -14,11 +14,12 @@ from tallyguard.evidence import (
     ExtractionMethod,
     SourceLocation,
 )
-from tallyguard.models import Invoice
+from tallyguard.models import Invoice, Vendor
 from tallyguard.network import ArcNetwork
 from tallyguard.persistence import PersistenceError, SqliteRepository
 from tallyguard.settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from tallyguard.workflow import InvoiceStatus, WorkflowError
+from tallyguard.vendors import WalletVerificationMethod
 
 
 WALLET = "0x1111111111111111111111111111111111111111"
@@ -75,6 +76,56 @@ def test_evidence_round_trips_with_provenance(tmp_path):
     restored = repo.get_evidence(organization_id="org-1", document_id="doc-1")
     assert restored == record
     assert restored.fields[0].source.json_pointer == "/invoice_number"
+
+
+def test_verified_vendor_wallet_history_survives_restart(tmp_path):
+    database = tmp_path / "tallyguard.sqlite3"
+    repo = SqliteRepository(database)
+    repo.create_organization(organization_id="org-1", name="Northwind AI")
+    repo.create_user(
+        organization_id="org-1",
+        user_id="operator-1",
+        display_name="Finance Operator",
+        roles=(Role.FINANCE_OPERATOR.value,),
+    )
+    original_wallet = "0x2222222222222222222222222222222222222222"
+    replacement_wallet = "0x3333333333333333333333333333333333333333"
+    repo.onboard_vendor(
+        Vendor(
+            id="vendor-1",
+            organization_id="org-1",
+            legal_name="Verified Supplies Ltd",
+            approved_wallet_address=original_wallet,
+            autopay_limit=Decimal("2500"),
+            risk_tier="low",
+        ),
+        verification_method=WalletVerificationMethod.SIGNED_CHALLENGE,
+        verification_reference="challenge-001",
+        verified_by_user_id="operator-1",
+    )
+    repo.replace_vendor_wallet(
+        organization_id="org-1",
+        vendor_id="vendor-1",
+        expected_current_wallet=original_wallet,
+        new_wallet=replacement_wallet,
+        verification_method=WalletVerificationMethod.OUT_OF_BAND_CALL,
+        verification_reference="call-001",
+        verified_by_user_id="operator-1",
+    )
+    repo.close()
+
+    restarted = SqliteRepository(database)
+    vendor = restarted.get_vendor(organization_id="org-1", vendor_id="vendor-1")
+    history = restarted.vendor_wallet_history(
+        organization_id="org-1", vendor_id="vendor-1"
+    )
+
+    assert vendor.approved_wallet_address == replacement_wallet
+    assert [item.verification_reference for item in history] == [
+        "challenge-001",
+        "call-001",
+    ]
+    assert history[1].previous_wallet_address == original_wallet
 
 
 def test_evidence_content_is_unique_within_tenant(tmp_path):
