@@ -165,6 +165,11 @@ GET    /api/treasury/summary
 GET    /api/health
 ```
 
+`POST /api/invoices/{id}/evaluate` binds the immutable evidence-package manifest to the
+verified vendor record, active policy content hash, latest source-referenced treasury snapshot,
+and current Arc route. Repeating an already completed evaluation returns its original decision;
+activating a newer policy cannot silently rewrite that historical authorization.
+
 ## 7. Demo scenarios
 
 The seeded demo should include:

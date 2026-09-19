@@ -40,6 +40,7 @@ Every payment answers four questions:
 - Authenticated multipart evidence API persists original PDF, PNG, JPEG, and JSON bytes with signature checks, SHA-256 addressing, invoice binding, and field-level provenance
 - Persistent vendor directory API requires an explicit verification method and reference for onboarding or wallet replacement, and retains an append-only tenant-scoped wallet history
 - Immutable policy versions, active-policy selection, field-level diffs, and source-referenced treasury snapshots persist across restarts and are exposed through role-scoped APIs
+- Real uploaded invoice, purchase-order, and delivery evidence can be normalized against the verified vendor, active policy, and latest treasury snapshot to produce an idempotent auditable decision
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration

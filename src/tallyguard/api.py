@@ -31,6 +31,7 @@ from .models import Invoice, TreasurySnapshot, Vendor
 from .network import ArcNetworkConfig
 from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
 from .evidence import (
+    EvidencePackage,
     EvidenceRecord,
     EvidenceStore,
     EvidenceType,
@@ -38,6 +39,7 @@ from .evidence import (
     ExtractionMethod,
     SourceLocation,
 )
+from .normalization import EvidenceNormalizer
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
@@ -903,6 +905,20 @@ def create_app(
             }
         ), 201
 
+    @app.get("/api/decisions/<decision_id>")
+    @require(Permission.INVOICE_READ)
+    def get_decision(decision_id: str):
+        record = decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        return jsonify(
+            {
+                "decision": _decision_json(record),
+                "correlation_id": _correlation_id(),
+            }
+        )
+
     @app.post("/api/approvals/<approval_id>/resolve")
     @require(Permission.PAYMENT_APPROVE)
     def resolve_approval(approval_id: str):
@@ -998,6 +1014,8 @@ def create_app(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
         )
+        if stored.status != InvoiceStatus.DRAFT:
+            raise WorkflowError("Evidence cannot be changed after evaluation begins.")
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("Evidence upload requires a multipart file field named 'file'.")
@@ -1059,6 +1077,89 @@ def create_app(
                 "correlation_id": _correlation_id(),
             }
         ), 201
+
+    @app.post("/api/invoices/<invoice_id>/evaluate")
+    @require(Permission.DECISION_RUN)
+    def evaluate_invoice(invoice_id: str):
+        stored = repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        if stored.status not in {InvoiceStatus.DRAFT, InvoiceStatus.EVALUATING}:
+            existing = repository.latest_decision_for_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=invoice_id,
+            )
+            return jsonify(
+                {
+                    "invoice": _invoice_json(stored),
+                    "decision": _decision_json(existing),
+                    "correlation_id": _correlation_id(),
+                }
+            )
+        records = repository.list_invoice_evidence(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        normalized = EvidenceNormalizer().normalize(
+            EvidencePackage(
+                id=f"package:{invoice_id}",
+                organization_id=g.principal.organization_id,
+                records=records,
+            )
+        )
+        if normalized.invoice != stored.invoice:
+            raise WorkflowError(
+                "Normalized invoice evidence does not exactly match the immutable invoice record."
+            )
+        vendor = repository.get_vendor(
+            organization_id=g.principal.organization_id,
+            vendor_id=stored.invoice.vendor_id,
+        )
+        policy = repository.active_policy(
+            organization_id=g.principal.organization_id
+        ).policy
+        treasury = repository.latest_treasury_snapshot(
+            organization_id=g.principal.organization_id
+        ).snapshot
+
+        if stored.status == InvoiceStatus.DRAFT:
+            stored = repository.transition_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=invoice_id,
+                target_status=InvoiceStatus.EVALUATING,
+                expected_version=stored.version,
+                actor_user_id=g.principal.user_id,
+                correlation_id=_correlation_id(),
+            )
+        decision = decision_service.evaluate(
+            evidence=normalized,
+            vendor=vendor,
+            treasury=treasury,
+            policy=policy,
+            known_invoice_fingerprints=repository.known_invoice_fingerprints(
+                organization_id=g.principal.organization_id,
+                exclude_invoice_id=invoice_id,
+            ),
+            asset=stored.invoice.currency,
+            network=network_config.name.value,
+        )
+        target_status = status_for_decision(decision.final_action)
+        stored = repository.transition_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+            target_status=target_status,
+            expected_version=stored.version,
+            actor_user_id="tallyguard-policy-engine",
+            correlation_id=_correlation_id(),
+        )
+        return jsonify(
+            {
+                "invoice": _invoice_json(stored),
+                "decision": _decision_json(decision),
+                "correlation_id": _correlation_id(),
+            }
+        )
 
     @app.get("/api/invoices/<invoice_id>/evidence")
     @require(Permission.INVOICE_READ)

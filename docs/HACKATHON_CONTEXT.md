@@ -56,6 +56,7 @@ Strongly encouraged:
 - Authenticated Flask API now exposes health/readiness and tenant-scoped invoice workflows
 - Vendor onboarding and wallet replacement now persist in SQLite with tenant-scoped read APIs, explicit verification references, stale-wallet rejection, and append-only history
 - Immutable policy versions and source-referenced treasury snapshots now persist across restarts and are available through role-scoped APIs
+- Real uploaded invoice, purchase-order, and delivery evidence now flows through the verified vendor, active policy, treasury snapshot, and Arc route into an immutable decision
 - A real local HTTP smoke test created and retrieved an invoice through the public API surface
 - Seven judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter

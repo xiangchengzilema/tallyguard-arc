@@ -1148,6 +1148,22 @@ class SqliteRepository:
             next_cursor=next_cursor,
         )
 
+    def known_invoice_fingerprints(
+        self,
+        *,
+        organization_id: str,
+        exclude_invoice_id: str | None = None,
+    ) -> tuple[str, ...]:
+        query = "SELECT * FROM invoices WHERE organization_id = ?"
+        values: list[object] = [organization_id]
+        if exclude_invoice_id is not None:
+            query += " AND id <> ?"
+            values.append(exclude_invoice_id)
+        query += " ORDER BY id"
+        with self._guard:
+            rows = self._connection.execute(query, values).fetchall()
+        return tuple(self._stored_invoice(row).invoice.fingerprint for row in rows)
+
     def transition_invoice(
         self,
         *,
@@ -1295,7 +1311,7 @@ class SqliteRepository:
                     organization_id=record.organization_id,
                     decision_id=record.id,
                 )
-                if existing != record:
+                if not self._same_decision_content(existing, record):
                     raise PersistenceError("Decision ID is already bound to different content.") from exc
                 return existing, False
 
@@ -1307,6 +1323,25 @@ class SqliteRepository:
             ).fetchone()
         if row is None:
             raise KeyError("Decision was not found in this organization.")
+        return self._decision_record(row)
+
+    def latest_decision_for_invoice(
+        self,
+        *,
+        organization_id: str,
+        invoice_id: str,
+    ) -> DecisionRecord:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM decisions
+                WHERE organization_id = ? AND invoice_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """,
+                (organization_id, invoice_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("No decision exists for this invoice in this organization.")
         return self._decision_record(row)
 
     def create_or_get_approval(self, request: ApprovalRequest) -> ApprovalRequest:
@@ -1951,6 +1986,20 @@ class SqliteRepository:
         )
         if not same:
             raise PersistenceError("Decision is already bound to a different payment intent.")
+
+    @staticmethod
+    def _same_decision_content(existing: DecisionRecord, proposed: DecisionRecord) -> bool:
+        return (
+            existing.id == proposed.id
+            and existing.organization_id == proposed.organization_id
+            and existing.invoice_id == proposed.invoice_id
+            and existing.evidence_manifest_hash == proposed.evidence_manifest_hash
+            and existing.policy_version == proposed.policy_version
+            and existing.policy_content_hash == proposed.policy_content_hash
+            and existing.agent_recommendation == proposed.agent_recommendation
+            and existing.policy_decision == proposed.policy_decision
+            and existing.final_action == proposed.final_action
+        )
 
     @staticmethod
     def _encode_cursor(updated_at: str, invoice_id: str) -> str:

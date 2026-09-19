@@ -265,6 +265,175 @@ def test_evidence_upload_rejects_bad_signature_and_oversized_file(tmp_path, monk
     assert oversized.get_json()["error"]["code"] == "REQUEST_TOO_LARGE"
 
 
+def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    admin = client.post(
+        "/api/demo/session", json={"role": "admin"}
+    ).get_json()["access_token"]
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    vendor_wallet = "0x2222222222222222222222222222222222222222"
+
+    assert client.post(
+        "/api/policies",
+        json={
+            "version": "payables-v1",
+            "daily_payment_limit_usdc": "5000",
+            "minimum_cash_reserve_usdc": "1000",
+            "maximum_autonomous_payment_usdc": "2000",
+            "po_amount_tolerance_usdc": "0",
+            "allowed_asset": "USDC",
+            "allowed_network": "ARC-TESTNET",
+            "kill_switch_enabled": False,
+        },
+        headers=headers(admin),
+    ).status_code == 201
+    assert client.post(
+        "/api/treasury/snapshots",
+        json={
+            "available_usdc": "10000",
+            "spent_today_usdc": "500",
+            "source_reference": "circle-test-wallet-balance-001",
+        },
+        headers=headers(operator),
+    ).status_code == 201
+    assert client.post(
+        "/api/vendors",
+        json={
+            "id": "vendor-live",
+            "legal_name": "Live Evidence Vendor",
+            "approved_wallet_address": vendor_wallet,
+            "autopay_limit": "2000",
+            "verification_method": "SIGNED_CHALLENGE",
+            "verification_reference": "wallet-proof-001",
+        },
+        headers=headers(operator),
+    ).status_code == 201
+
+    invoice_document = json.dumps(
+        {
+            "invoice_id": "invoice-live",
+            "vendor_id": "vendor-live",
+            "invoice_number": "INV-LIVE-001",
+            "currency": "USDC",
+            "amount": "1200",
+            "due_date": "2026-10-08",
+            "payment_wallet_address": vendor_wallet,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert client.post(
+        "/api/invoices",
+        json={
+            "id": "invoice-live",
+            "vendor_id": "vendor-live",
+            "invoice_number": "INV-LIVE-001",
+            "currency": "USDC",
+            "amount": "1200",
+            "due_date": "2026-10-08",
+            "payment_wallet_address": vendor_wallet,
+            "source_document_hash": hashlib.sha256(invoice_document).hexdigest(),
+        },
+        headers=headers(operator),
+    ).status_code == 201
+
+    evidence_documents = (
+        ("INVOICE", "invoice.json", invoice_document),
+        (
+            "PURCHASE_ORDER",
+            "purchase-order.json",
+            json.dumps(
+                {
+                    "purchase_order_id": "po-live-001",
+                    "vendor_id": "vendor-live",
+                    "po_number": "PO-LIVE-001",
+                    "currency": "USDC",
+                    "authorized_amount": "1200",
+                },
+                separators=(",", ":"),
+            ).encode("utf-8"),
+        ),
+        (
+            "DELIVERY",
+            "delivery.json",
+            json.dumps(
+                {
+                    "delivery_id": "delivery-live-001",
+                    "purchase_order_id": "po-live-001",
+                    "delivered_value": "1200",
+                },
+                separators=(",", ":"),
+            ).encode("utf-8"),
+        ),
+    )
+    for evidence_type, filename, content in evidence_documents:
+        uploaded = client.post(
+            "/api/invoices/invoice-live/evidence",
+            data={
+                "evidence_type": evidence_type,
+                "file": (BytesIO(content), filename, "application/json"),
+            },
+            content_type="multipart/form-data",
+            headers=headers(operator),
+        )
+        assert uploaded.status_code == 201
+
+    first = client.post(
+        "/api/invoices/invoice-live/evaluate", headers=headers(operator, "evaluate-1")
+    )
+    assert first.status_code == 200
+    result = first.get_json()
+    assert result["decision"]["final_action"] == "PAY"
+    assert result["invoice"]["status"] == "READY"
+    assert result["decision"]["reason_codes"] == []
+
+    assert client.post(
+        "/api/policies",
+        json={
+            "version": "payables-v2-emergency-stop",
+            "daily_payment_limit_usdc": "5000",
+            "minimum_cash_reserve_usdc": "1000",
+            "maximum_autonomous_payment_usdc": "2000",
+            "po_amount_tolerance_usdc": "0",
+            "allowed_asset": "USDC",
+            "allowed_network": "ARC-TESTNET",
+            "kill_switch_enabled": True,
+        },
+        headers=headers(admin),
+    ).status_code == 201
+
+    repeated = client.post(
+        "/api/invoices/invoice-live/evaluate", headers=headers(operator, "evaluate-2")
+    )
+    assert repeated.status_code == 200
+    assert repeated.get_json()["decision"]["id"] == result["decision"]["id"]
+    assert repeated.get_json()["decision"]["policy_version"] == "payables-v1"
+    fetched = client.get(
+        f"/api/decisions/{result['decision']['id']}", headers=headers(auditor)
+    )
+    assert fetched.status_code == 200
+    assert fetched.get_json()["decision"]["evidence_manifest_hash"] == result[
+        "decision"
+    ]["evidence_manifest_hash"]
+
+    locked = client.post(
+        "/api/invoices/invoice-live/evidence",
+        data={
+            "evidence_type": "DELIVERY",
+            "file": (BytesIO(b'{"delivery_id":"other"}'), "other.json", "application/json"),
+        },
+        content_type="multipart/form-data",
+        headers=headers(operator),
+    )
+    assert locked.status_code == 409
+    assert locked.get_json()["error"]["code"] == "WORKFLOW_ERROR"
+
+
 def test_auditor_cannot_create_invoice(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()

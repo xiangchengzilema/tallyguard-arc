@@ -103,8 +103,10 @@ Implemented foundation:
 - Durable invoice state machine with optimistic concurrency and immutable transition history
 - Durable policy decisions and optimistic approval records survive service restarts
 - Approved settlement authorization is reconstructed from the bound decision and approval instead of trusted from process memory
+- The authenticated evaluation API now normalizes real uploaded three-way-match evidence and binds it to the verified vendor, active policy, latest treasury snapshot, and Arc network
+- Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
 
-- Agent-generated evidence summary
+- Agent-generated evidence summary (structured deterministic fallback pending model adapter)
 - Recommended action with structured reason codes
 - Deterministic policy override boundary
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows
