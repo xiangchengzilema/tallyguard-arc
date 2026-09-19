@@ -57,6 +57,7 @@ Status: in progress.
 
 Implemented foundation:
 
+- Opaque bearer sessions with hashed token storage, expiry, revocation, and tenant-aware RBAC
 - Immutable PDF/image/JSON intake with MIME signature validation and SHA-256 content addressing
 - Field-level extraction confidence and page/bounding-box/JSON-pointer provenance
 - Tenant-safe, deterministic evidence-package manifest hashes
