@@ -6,11 +6,11 @@ safe simulation mode and never requires wallet credentials.
 
 ## Public judge deployment
 
-The container runs Gunicorn with one process and eight threads. One process is a
-deliberate correctness constraint: decision records and approval state are still
-transient, although bearer sessions are already durable. Multiple threads allow
-concurrent judge traffic, while one process prevents requests from landing on a
-worker that does not own the corresponding transient state.
+The container currently runs Gunicorn with one process and eight threads. Core
+sessions, decisions, approvals, invoices, payment intents, and receipts are all
+restart-safe. The remaining one-process constraint comes from the in-process
+rate limiter and audit-chain accumulator; multiple threads still allow concurrent
+judge traffic without presenting the service as horizontally scalable.
 
 SQLite stores invoices, state transitions, payment intents, and receipts. On a
 free ephemeral host the database can reset after a restart or idle spin-down.
@@ -21,11 +21,10 @@ scenario on demand. It is not an acceptable production persistence model.
 
 Before a real multi-instance deployment:
 
-1. Move decisions and approvals into a shared durable database; sessions are already durable.
-2. Replace local SQLite with managed Postgres.
-3. Add tenant-aware distributed rate limiting.
-4. Enable multiple Gunicorn workers and run worker-restart recovery tests.
-5. Keep `TALLYGUARD_MODE=simulation` on public infrastructure unless a dedicated
+1. Replace local SQLite with managed Postgres.
+2. Move the rate limiter and audit-chain accumulator to shared infrastructure.
+3. Enable multiple Gunicorn workers and run worker-restart recovery tests.
+4. Keep `TALLYGUARD_MODE=simulation` on public infrastructure unless a dedicated
    test wallet and environment-only Circle credentials are configured.
 
 ## Local container run

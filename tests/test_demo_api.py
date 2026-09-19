@@ -93,6 +93,45 @@ def test_large_invoice_requires_role_separated_approval(tmp_path):
     assert payment["receipt"]["status"] == "CONFIRMED"
 
 
+def test_approved_escalation_can_settle_after_service_restart(tmp_path):
+    database = tmp_path / "demo.sqlite3"
+    first_app = create_app(database_path=database, testing=True)
+    first_client = first_app.test_client()
+    operator_headers = auth(first_client, "operator")
+    approver_headers = auth(first_client, "approver")
+    run = first_client.post(
+        "/api/demo/scenarios/large-invoice/run",
+        headers=operator_headers,
+    ).get_json()
+    approval = first_client.post(
+        f"/api/decisions/{run['decision']['id']}/request-approval",
+        headers=operator_headers,
+    ).get_json()["approval"]
+    resolved = first_client.post(
+        f"/api/approvals/{approval['id']}/resolve",
+        headers=approver_headers,
+        json={"approve": True, "note": "Durable approval", "expected_version": 1},
+    )
+    assert resolved.status_code == 200
+    first_app.extensions["tallyguard_repository"].close()
+
+    restarted_app = create_app(database_path=database, testing=True)
+    restarted = restarted_app.test_client()
+    settled = restarted.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        headers=approver_headers,
+        json={
+            "decision_id": run["decision"]["id"],
+            "approval_reference": approval["id"],
+        },
+    )
+
+    assert settled.status_code == 200
+    payment = settled.get_json()["payment"]
+    assert payment["intent"]["approval_reference"] == approval["id"]
+    assert payment["invoice"]["status"] == "RECONCILED"
+
+
 def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
     app = create_app(database_path=tmp_path / "demo.sqlite3", testing=True)
     client = app.test_client()

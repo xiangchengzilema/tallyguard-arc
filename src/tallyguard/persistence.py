@@ -12,7 +12,9 @@ import sqlite3
 from threading import RLock
 
 from .audit import canonical_json
+from .approvals import ApprovalError, ApprovalRequest, ApprovalStatus
 from .auth import Principal, Role, Session
+from .decisions import AgentRecommendation, DecisionRecord
 from .evidence import (
     EvidenceDocument,
     EvidenceRecord,
@@ -23,6 +25,7 @@ from .evidence import (
 )
 from .models import Invoice
 from .network import ArcNetwork
+from .policy import Decision, DecisionAction, RuleDisposition, RuleResult
 from .settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from .workflow import InvoiceStatus, WorkflowError, require_transition
 
@@ -128,6 +131,47 @@ CREATE TABLE IF NOT EXISTS invoices (
 
 CREATE INDEX IF NOT EXISTS idx_invoices_tenant_status
     ON invoices (organization_id, status, updated_at, id);
+
+CREATE TABLE IF NOT EXISTS decisions (
+    organization_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    evidence_manifest_hash TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    policy_content_hash TEXT NOT NULL,
+    agent_recommendation_json TEXT,
+    policy_decision_json TEXT NOT NULL,
+    final_action TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, id),
+    FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_tenant_invoice
+    ON decisions (organization_id, invoice_id, created_at);
+
+CREATE TABLE IF NOT EXISTS approvals (
+    organization_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    decision_id TEXT NOT NULL,
+    requested_by_user_id TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    resolved_by_user_id TEXT,
+    resolved_at TEXT,
+    resolution_note TEXT,
+    PRIMARY KEY (organization_id, id),
+    UNIQUE (organization_id, decision_id),
+    FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices(organization_id, id),
+    FOREIGN KEY (organization_id, decision_id) REFERENCES decisions(organization_id, id),
+    FOREIGN KEY (organization_id, requested_by_user_id) REFERENCES users(organization_id, id),
+    FOREIGN KEY (organization_id, resolved_by_user_id) REFERENCES users(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_tenant_status
+    ON approvals (organization_id, status, requested_at);
 
 CREATE TABLE IF NOT EXISTS invoice_transitions (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -536,6 +580,199 @@ class SqliteRepository:
             for row in rows
         )
 
+    def store_decision(self, record: DecisionRecord) -> tuple[DecisionRecord, bool]:
+        agent_json = (
+            canonical_json(
+                {
+                    "action": record.agent_recommendation.action.value,
+                    "summary": record.agent_recommendation.summary,
+                    "reason_codes": record.agent_recommendation.reason_codes,
+                    "confidence": format(record.agent_recommendation.confidence, "f"),
+                }
+            )
+            if record.agent_recommendation is not None
+            else None
+        )
+        policy_json = canonical_json(
+            {
+                "action": record.policy_decision.action.value,
+                "policy_version": record.policy_decision.policy_version,
+                "invoice_fingerprint": record.policy_decision.invoice_fingerprint,
+                "approval_reference": record.policy_decision.approval_reference,
+                "rule_results": [
+                    {
+                        "code": result.code,
+                        "disposition": result.disposition.value,
+                        "message": result.message,
+                        "remediation": result.remediation,
+                    }
+                    for result in record.policy_decision.rule_results
+                ],
+            }
+        )
+        with self._guard:
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO decisions
+                        (organization_id, id, invoice_id, evidence_manifest_hash,
+                         policy_version, policy_content_hash, agent_recommendation_json,
+                         policy_decision_json, final_action, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.organization_id,
+                        record.id,
+                        record.invoice_id,
+                        record.evidence_manifest_hash,
+                        record.policy_version,
+                        record.policy_content_hash,
+                        agent_json,
+                        policy_json,
+                        record.final_action.value,
+                        record.created_at.isoformat(),
+                    ),
+                )
+                return record, True
+            except sqlite3.IntegrityError as exc:
+                existing = self.get_decision(
+                    organization_id=record.organization_id,
+                    decision_id=record.id,
+                )
+                if existing != record:
+                    raise PersistenceError("Decision ID is already bound to different content.") from exc
+                return existing, False
+
+    def get_decision(self, *, organization_id: str, decision_id: str) -> DecisionRecord:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM decisions WHERE organization_id = ? AND id = ?",
+                (organization_id, decision_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError("Decision was not found in this organization.")
+        return self._decision_record(row)
+
+    def create_or_get_approval(self, request: ApprovalRequest) -> ApprovalRequest:
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._connection.execute(
+                    """
+                    SELECT * FROM approvals
+                    WHERE organization_id = ? AND decision_id = ?
+                    """,
+                    (request.organization_id, request.decision_id),
+                ).fetchone()
+                if existing is not None:
+                    self._connection.execute("COMMIT")
+                    return self._approval(existing)
+                self._connection.execute(
+                    """
+                    INSERT INTO approvals
+                        (organization_id, id, invoice_id, decision_id,
+                         requested_by_user_id, requested_at, status, version,
+                         resolved_by_user_id, resolved_at, resolution_note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        request.organization_id,
+                        request.id,
+                        request.invoice_id,
+                        request.decision_id,
+                        request.requested_by_user_id,
+                        request.requested_at.isoformat(),
+                        request.status.value,
+                        request.version,
+                        request.resolved_by_user_id,
+                        request.resolved_at.isoformat() if request.resolved_at else None,
+                        request.resolution_note,
+                    ),
+                )
+                self._connection.execute("COMMIT")
+                return request
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def resolve_approval(
+        self,
+        *,
+        organization_id: str,
+        approval_id: str,
+        approver_user_id: str,
+        approve: bool,
+        resolution_note: str,
+        expected_version: int,
+        resolved_at: datetime,
+    ) -> ApprovalRequest:
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM approvals WHERE organization_id = ? AND id = ?",
+                    (organization_id, approval_id),
+                ).fetchone()
+                if row is None:
+                    raise ApprovalError("Approval request was not found in this organization.")
+                current = self._approval(row)
+                if current.requested_by_user_id == approver_user_id:
+                    raise ApprovalError("Requester and approver must be different users.")
+                if current.status != ApprovalStatus.PENDING:
+                    raise ApprovalError("Approval request has already been resolved.")
+                if current.version != expected_version:
+                    raise ApprovalError("Approval request was updated by another operation.")
+                status = ApprovalStatus.APPROVED if approve else ApprovalStatus.REJECTED
+                self._connection.execute(
+                    """
+                    UPDATE approvals
+                    SET status = ?, version = ?, resolved_by_user_id = ?,
+                        resolved_at = ?, resolution_note = ?
+                    WHERE organization_id = ? AND id = ? AND version = ?
+                    """,
+                    (
+                        status.value,
+                        expected_version + 1,
+                        approver_user_id,
+                        resolved_at.isoformat(),
+                        resolution_note,
+                        organization_id,
+                        approval_id,
+                        expected_version,
+                    ),
+                )
+                updated = self._connection.execute(
+                    "SELECT * FROM approvals WHERE organization_id = ? AND id = ?",
+                    (organization_id, approval_id),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                return self._approval(updated)
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def get_approval(
+        self, *, organization_id: str, approval_id: str
+    ) -> ApprovalRequest | None:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM approvals WHERE organization_id = ? AND id = ?",
+                (organization_id, approval_id),
+            ).fetchone()
+        return self._approval(row) if row is not None else None
+
+    def pending_approvals(self, *, organization_id: str) -> tuple[ApprovalRequest, ...]:
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM approvals
+                WHERE organization_id = ? AND status = ?
+                ORDER BY requested_at, id
+                """,
+                (organization_id, ApprovalStatus.PENDING.value),
+            ).fetchall()
+        return tuple(self._approval(row) for row in rows)
+
     def create_or_get_payment_intent(
         self,
         intent: PaymentIntent,
@@ -738,6 +975,72 @@ class SqliteRepository:
                 if row["revoked_at"] is not None
                 else None
             ),
+        )
+
+    @staticmethod
+    def _decision_record(row: sqlite3.Row) -> DecisionRecord:
+        policy_data = json.loads(row["policy_decision_json"])
+        agent_data = (
+            json.loads(row["agent_recommendation_json"])
+            if row["agent_recommendation_json"] is not None
+            else None
+        )
+        decision = Decision(
+            action=DecisionAction(policy_data["action"]),
+            policy_version=policy_data["policy_version"],
+            invoice_fingerprint=policy_data["invoice_fingerprint"],
+            rule_results=tuple(
+                RuleResult(
+                    code=item["code"],
+                    disposition=RuleDisposition(item["disposition"]),
+                    message=item["message"],
+                    remediation=item.get("remediation"),
+                )
+                for item in policy_data["rule_results"]
+            ),
+            approval_reference=policy_data.get("approval_reference"),
+        )
+        recommendation = (
+            AgentRecommendation(
+                action=DecisionAction(agent_data["action"]),
+                summary=agent_data["summary"],
+                reason_codes=tuple(agent_data["reason_codes"]),
+                confidence=Decimal(agent_data["confidence"]),
+            )
+            if agent_data is not None
+            else None
+        )
+        return DecisionRecord(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            invoice_id=row["invoice_id"],
+            evidence_manifest_hash=row["evidence_manifest_hash"],
+            policy_version=row["policy_version"],
+            policy_content_hash=row["policy_content_hash"],
+            agent_recommendation=recommendation,
+            policy_decision=decision,
+            final_action=DecisionAction(row["final_action"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    @staticmethod
+    def _approval(row: sqlite3.Row) -> ApprovalRequest:
+        return ApprovalRequest(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            invoice_id=row["invoice_id"],
+            decision_id=row["decision_id"],
+            requested_by_user_id=row["requested_by_user_id"],
+            requested_at=datetime.fromisoformat(row["requested_at"]),
+            status=ApprovalStatus(row["status"]),
+            version=row["version"],
+            resolved_by_user_id=row["resolved_by_user_id"],
+            resolved_at=(
+                datetime.fromisoformat(row["resolved_at"])
+                if row["resolved_at"] is not None
+                else None
+            ),
+            resolution_note=row["resolution_note"],
         )
 
     @staticmethod

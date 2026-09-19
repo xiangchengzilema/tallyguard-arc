@@ -95,6 +95,8 @@ Implemented foundation:
 - Segregated exception inbox: requester cannot self-approve and only pure escalations are overridable
 - Approved decisions and payment intents must carry the exact same approval reference
 - Durable invoice state machine with optimistic concurrency and immutable transition history
+- Durable policy decisions and optimistic approval records survive service restarts
+- Approved settlement authorization is reconstructed from the bound decision and approval instead of trusted from process memory
 
 - Agent-generated evidence summary
 - Recommended action with structured reason codes

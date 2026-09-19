@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 import hashlib
 from threading import Lock
-from typing import Iterable
+from typing import Iterable, Protocol
 
 from .audit import AuditChain, canonical_json
 from .models import TreasurySnapshot, Vendor
@@ -52,12 +52,18 @@ class DecisionRecord:
         return self.agent_recommendation is not None and self.agent_recommendation.action != self.final_action
 
 
+class DecisionStore(Protocol):
+    def store_decision(self, record: DecisionRecord) -> tuple[DecisionRecord, bool]: ...
+
+    def get_decision(self, *, organization_id: str, decision_id: str) -> DecisionRecord: ...
+
+
 class DecisionRepository:
     def __init__(self) -> None:
         self._guard = Lock()
         self._records: dict[tuple[str, str], DecisionRecord] = {}
 
-    def store(self, record: DecisionRecord) -> tuple[DecisionRecord, bool]:
+    def store_decision(self, record: DecisionRecord) -> tuple[DecisionRecord, bool]:
         scope = (record.organization_id, record.id)
         with self._guard:
             existing = self._records.get(scope)
@@ -66,7 +72,7 @@ class DecisionRepository:
             self._records[scope] = record
         return record, True
 
-    def get(self, *, organization_id: str, decision_id: str) -> DecisionRecord:
+    def get_decision(self, *, organization_id: str, decision_id: str) -> DecisionRecord:
         with self._guard:
             try:
                 return self._records[(organization_id, decision_id)]
@@ -79,7 +85,7 @@ class DecisionService:
         self,
         *,
         policy_engine: PolicyEngine | None = None,
-        repository: DecisionRepository | None = None,
+        repository: DecisionStore | None = None,
         audit_chain: AuditChain | None = None,
     ) -> None:
         self.policy_engine = policy_engine or PolicyEngine()
@@ -138,7 +144,7 @@ class DecisionService:
             final_action=decision.action,
             created_at=created_at or datetime.now(timezone.utc),
         )
-        stored, created = self.repository.store(record)
+        stored, created = self.repository.store_decision(record)
         if created:
             self.audit_chain.append(
                 aggregate_type="decision",

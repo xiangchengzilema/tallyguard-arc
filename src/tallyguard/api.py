@@ -155,9 +155,8 @@ def create_app(
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
     authenticator = Authenticator(store=repository)
-    decision_service = DecisionService()
-    approval_inbox = ApprovalInbox()
-    authorized_decisions: dict[tuple[str, str], Any] = {}
+    decision_service = DecisionService(repository=repository)
+    approval_inbox = ApprovalInbox(store=repository)
     network_config = settlement_config or ArcNetworkConfig.from_env()
     if settlement_adapter is None:
         mode = "simulation" if testing else os.getenv("TALLYGUARD_MODE", "simulation").strip().lower()
@@ -189,7 +188,6 @@ def create_app(
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
     app.extensions["tallyguard_approval_inbox"] = approval_inbox
-    app.extensions["tallyguard_authorized_decisions"] = authorized_decisions
     app.extensions["tallyguard_network"] = network_config
     app.extensions["tallyguard_settlement_adapter"] = settlement_adapter
     app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
@@ -422,7 +420,7 @@ def create_app(
     @app.post("/api/decisions/<decision_id>/request-approval")
     @require(Permission.DECISION_RUN)
     def request_approval(decision_id: str):
-        decision = decision_service.repository.get(
+        decision = decision_service.repository.get_decision(
             organization_id=g.principal.organization_id,
             decision_id=decision_id,
         )
@@ -458,12 +456,11 @@ def create_app(
         )
         final_action = None
         if resolved.status.value == "APPROVED":
-            decision = decision_service.repository.get(
+            decision = decision_service.repository.get_decision(
                 organization_id=g.principal.organization_id,
                 decision_id=resolved.decision_id,
             )
             authorized = apply_approved_escalation(decision, resolved)
-            authorized_decisions[(g.principal.organization_id, resolved.id)] = authorized
             final_action = authorized.action.value
             invoice = repository.get_invoice(
                 organization_id=g.principal.organization_id,
@@ -554,7 +551,7 @@ def create_app(
         decision_id = str(payload.get("decision_id", "")).strip()
         if not decision_id:
             raise ValueError("Settlement requires a decision_id.")
-        record = decision_service.repository.get(
+        record = decision_service.repository.get_decision(
             organization_id=g.principal.organization_id,
             decision_id=decision_id,
         )
@@ -564,10 +561,7 @@ def create_app(
         decision = record.policy_decision
         if decision.action.value != "PAY":
             approval_reference = str(payload.get("approval_reference", "")).strip()
-            approved = authorized_decisions.get(
-                (g.principal.organization_id, approval_reference)
-            )
-            if approved is None or approved.approval_reference != approval_reference:
+            if not approval_reference:
                 raise ApprovalError("An approved escalation reference is required for settlement.")
             approval = approval_inbox.get(
                 organization_id=g.principal.organization_id,
@@ -575,7 +569,7 @@ def create_app(
             )
             if approval.decision_id != record.id or approval.invoice_id != invoice_id:
                 raise ApprovalError("Approval is not bound to this decision and invoice.")
-            decision = approved
+            decision = apply_approved_escalation(record, approval)
 
         stored = repository.get_invoice(
             organization_id=g.principal.organization_id,
