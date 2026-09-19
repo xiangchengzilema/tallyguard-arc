@@ -109,4 +109,6 @@ constraint and the production migration boundary.
 - [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md)
 - [Deployment model](docs/DEPLOYMENT.md)
+- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
+- [Security model and live-testing protocol](docs/SECURITY_MODEL.md)
 - [Hackathon context and submission checklist](docs/HACKATHON_CONTEXT.md)

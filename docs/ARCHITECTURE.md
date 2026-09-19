@@ -1,0 +1,136 @@
+# TallyGuard architecture and trust boundaries
+
+## System shape
+
+TallyGuard separates probabilistic interpretation from deterministic payment authority. The
+agent may summarize evidence and recommend an action, but only the policy service can produce a
+payable decision, and only the settlement service can turn that decision into an immutable
+payment intent.
+
+```mermaid
+flowchart LR
+    reviewer[Finance reviewer] -->|JSON / PDF / image| api[Authenticated Flask API]
+    api --> evidence[(Immutable evidence store)]
+    api --> vendors[(Verified vendor wallets)]
+    api --> treasury[(Treasury snapshots)]
+    evidence --> normalizer[Evidence normalizer]
+    normalizer --> agent[Constrained evidence analyst]
+    normalizer --> policy[Deterministic policy engine]
+    vendors --> policy
+    treasury --> policy
+    agent -. recommendation only .-> policy
+    policy -->|PAY / SCHEDULE / HOLD / REJECT / ESCALATE| decisions[(Decision ledger)]
+    decisions --> approval[Role-separated approval]
+    decisions --> settlement[Idempotent settlement service]
+    approval --> settlement
+    settlement -->|submit| circle[Circle Developer-Controlled Wallets]
+    circle -->|transaction lifecycle| settlement
+    settlement -->|independent receipt + Transfer log verification| arc[Arc JSON-RPC]
+    settlement --> receipts[(Reconciled receipts)]
+    api --> audit[(Per-tenant hash-chained audit log)]
+```
+
+Solid arrows can affect durable state. The dotted arrow is advisory and cannot contain a
+recipient, amount, network, transaction, or approval value.
+
+## Trust zones
+
+| Zone | Trusted for | Explicitly not trusted for |
+| --- | --- | --- |
+| Browser console | Human review and initiating authenticated actions | Policy enforcement, tenant isolation, settlement facts |
+| API and RBAC | Authentication, authorization, tenant scope, input limits | Making a payable decision by itself |
+| Evidence store | Original bytes, hashes, field provenance, package manifest | Deciding whether evidence is sufficient |
+| Evidence analyst | Structured explanation, confidence, reason codes | Recipient, amount, network, approval, or payment authority |
+| Policy engine | Deterministic final action and remediation | Signing or submitting a transaction |
+| Approval service | Segregated authorization of pure escalations | Overriding HOLD or REJECT controls |
+| Settlement service | Immutable intent, idempotency, reconciliation | Reinterpreting evidence or changing the decision |
+| Circle Wallets | Transaction origination and lifecycle | Final proof that the expected Arc transfer occurred |
+| Arc RPC | Independent onchain receipt and exact Transfer log | Business authorization |
+
+## Evidence-to-payment sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant API
+    participant Store as Evidence + tenant store
+    participant Agent as Evidence analyst
+    participant Policy as Deterministic policy
+    participant Approver
+    participant Circle
+    participant Arc as Arc RPC
+
+    Operator->>API: Upload invoice, PO, delivery
+    API->>Store: Verify MIME, hash bytes, store provenance
+    API->>Agent: Normalized evidence without wallet address
+    Agent-->>API: Recommendation + reason codes
+    API->>Policy: Evidence + vendor + treasury + policy version
+    Policy-->>API: Final action + rule trace
+    API->>Store: Persist decision and audit event
+    alt Pure escalation
+        Operator->>API: Request approval
+        Approver->>API: Approve with note and version
+        API->>Store: Bind approval to decision
+    end
+    alt Final action is PAY
+        API->>Store: Persist immutable intent + UUID v4
+        API->>Circle: Submit canonical Arc USDC transfer
+        Circle-->>API: COMPLETE + transaction hash
+        API->>Arc: Read receipt, transaction, and logs
+        Arc-->>API: Chain ID + successful exact Transfer event
+        API->>Store: Persist reconciled receipt
+    else Any other action
+        API-->>Operator: Fail closed with remediation
+    end
+```
+
+## Settlement invariants
+
+1. Only a deterministic `PAY` decision can reach an adapter.
+2. Mainnet additionally requires an explicit runtime flag and a recorded approval reference.
+3. The intent's tenant, invoice, decision, recipient, amount, network, and idempotency key are
+   immutable after creation.
+4. A retry reuses the persisted UUID v4 and returns the stored receipt after confirmation.
+5. Circle `COMPLETE` is necessary but not sufficient.
+6. Arc RPC must independently prove the expected chain, successful receipt, canonical USDC
+   contract call, recipient topic, and six-decimal atomic amount.
+7. A mismatch at any boundary fails closed and creates no confirmed receipt.
+
+## Tenant isolation
+
+Every durable financial record carries `organization_id`. Repository reads and mutations require
+that scope, and authorization checks compare it with the authenticated principal before access.
+Opaque bearer tokens are stored only as SHA-256 digests. Cross-tenant read probes are part of the
+10,000-workflow reliability suite and all 100 recorded probes were denied.
+
+```mermaid
+flowchart TB
+    request[Authenticated request] --> principal[Resolve opaque session digest]
+    principal --> scope{Principal tenant matches resource tenant?}
+    scope -->|No| deny[403 fail closed]
+    scope -->|Yes| role{Role permits action?}
+    role -->|No| deny
+    role -->|Yes| repository[Tenant-scoped repository query]
+    repository --> audit[Append tenant audit event]
+```
+
+## Runtime profiles
+
+| Profile | Settlement | Demo identities | Intended use |
+| --- | --- | --- | --- |
+| Public judge | Deterministic simulator | Enabled | Safe product walkthrough and adversarial scenarios |
+| Arc Testnet acceptance | Circle + Arc RPC | Isolated local test identities only | Real test USDC and failure-path verification |
+| Arc Mainnet proof | Circle + Arc RPC, low cap, explicit gate and approval | Disabled | A deliberately low-value final proof only |
+
+The public deployment never needs wallet credentials. Live Circle mode disables the demo-session
+endpoint by default.
+
+## Current deployment boundary
+
+The hackathon deployment uses one Gunicorn process with multiple threads and SQLite. This is
+appropriate for a reproducible judge environment and local acceptance testing, but not for a
+multi-instance production treasury. Production migration requires managed Postgres, shared rate
+limits, external identity, secret management, webhook-driven reconciliation, and worker-restart
+recovery drills.
+

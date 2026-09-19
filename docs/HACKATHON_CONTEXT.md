@@ -69,6 +69,9 @@ Strongly encouraged:
 - Circle completion is independently reconciled against Arc RPC and the exact USDC transfer event
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - Automated test suite passing
+- Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
+- Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations
+- Runtime safety boundary is visible in the judge console and sourced from the readiness API
 
 Milestone 2 is complete. Milestones 3, 4, and 5 are in progress. SQLite persistence now retains
 tenant-scoped evidence, provenance, vendor wallet verification history, invoice state, optimistic versions, and transition history
