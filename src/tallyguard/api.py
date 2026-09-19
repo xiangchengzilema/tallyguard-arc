@@ -143,7 +143,10 @@ def create_app(
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
 ) -> Flask:
-    frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    default_frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    frontend_dist = Path(
+        os.getenv("TALLYGUARD_FRONTEND_DIST", str(default_frontend_dist))
+    ).resolve()
     app = Flask(__name__, static_folder=None)
     app.config.update(TESTING=testing)
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")

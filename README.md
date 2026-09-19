@@ -74,6 +74,14 @@ Run a local reliability baseline:
 
 The checked-in [baseline report](docs/reports/LOAD_TEST_BASELINE.md) records zero failed workflows, zero duplicate payments, and 100/100 denied cross-tenant reads.
 
+## Deploy the public judge playground
+
+The repository includes a multi-stage `Dockerfile` and `render.yaml`. The public
+deployment intentionally starts in simulation mode, serves the built React
+console from the API container, and exposes `/api/readiness` for platform health
+checks. See [Deployment model](docs/DEPLOYMENT.md) for the single-process safety
+constraint and the production migration boundary.
+
 ## Canonical planning documents
 
 - [Competitor and implementation blueprint](docs/COMPETITOR_IMPLEMENTATION_BLUEPRINT.md)
@@ -81,4 +89,5 @@ The checked-in [baseline report](docs/reports/LOAD_TEST_BASELINE.md) records zer
 - [Frontend reference map](docs/FRONTEND_REFERENCE_MAP.md)
 - [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md)
+- [Deployment model](docs/DEPLOYMENT.md)
 - [Hackathon context and submission checklist](docs/HACKATHON_CONTEXT.md)

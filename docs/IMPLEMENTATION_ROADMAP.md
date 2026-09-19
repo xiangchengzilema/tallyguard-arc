@@ -243,6 +243,16 @@ The public report will call this a multi-tenant load test. It will not be repres
 
 ### Milestone 8 — Submission package
 
+Status: in progress.
+
+Implemented foundation:
+
+- Multi-stage container builds the React console and Python service reproducibly
+- Non-root Gunicorn runtime with public-safe simulation defaults
+- Render Blueprint with readiness health check and explicit environment controls
+- GitHub Actions verifies frontend build, Python tests, compilation, and secret scan
+- Deployment boundary documents the temporary single-process and ephemeral SQLite constraints
+
 - Public GitHub repository and reproducible setup
 - Architecture and trust-boundary diagrams
 - Live deployment with seeded judge account

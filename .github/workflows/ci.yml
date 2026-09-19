@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Python dependencies
+        run: pip install -e ".[circle,dev]"
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+      - name: Run Python tests
+        run: python -m pytest
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tests
+
+      - name: Scan tracked files for committed secrets
+        shell: bash
+        run: |
+          token_prefix="ghp"_
+          api_assignment="API"_"KEY=.{10}"
+          if git grep -n -E "${token_prefix}|${api_assignment}" -- ':!AGENTS.md'; then
+            echo "Potential committed secret detected."
+            exit 1
+          fi

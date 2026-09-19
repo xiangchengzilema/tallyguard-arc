@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: tallyguard-arc
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/readiness
+    autoDeployTrigger: commit
+    envVars:
+      - key: TALLYGUARD_MODE
+        value: simulation
+      - key: TALLYGUARD_ARC_NETWORK
+        value: ARC-TESTNET
+      - key: TALLYGUARD_ALLOW_MAINNET
+        value: "false"
+      - key: TALLYGUARD_MAX_TRANSFER_USDC
+        value: "5.00"
+      - key: TALLYGUARD_DATABASE_PATH
+        value: /tmp/tallyguard.sqlite3
+      - key: TALLYGUARD_FRONTEND_DIST
+        value: /app/web/dist

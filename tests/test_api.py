@@ -42,6 +42,19 @@ def test_api_responses_include_browser_security_headers(tmp_path):
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
+def test_frontend_bundle_path_can_be_overridden_for_packaged_deployments(tmp_path, monkeypatch):
+    frontend_dist = tmp_path / "frontend"
+    frontend_dist.mkdir()
+    (frontend_dist / "index.html").write_text("<h1>TallyGuard deployed</h1>", encoding="utf-8")
+    monkeypatch.setenv("TALLYGUARD_FRONTEND_DIST", str(frontend_dist))
+
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    response = app.test_client().get("/")
+
+    assert response.status_code == 200
+    assert b"TallyGuard deployed" in response.data
+
+
 def test_invoice_endpoints_require_authentication(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     response = app.test_client().get("/api/invoices")
