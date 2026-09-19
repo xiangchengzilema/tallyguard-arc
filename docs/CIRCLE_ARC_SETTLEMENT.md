@@ -12,6 +12,10 @@ TallyGuard uses Circle Developer-Controlled Wallets to originate an Arc USDC tra
 
 Mainnet remains disabled by default. The live adapter also enforces an independent per-transfer cap from `TALLYGUARD_MAX_TRANSFER_USDC`; this is separate from the organization policy limit.
 
+TallyGuard deliberately uses `ARC-MAINNET` as its internal mainnet label, while Circle's
+Wallets API uses `ARC`. The adapter maps between them explicitly and verifies Circle's
+completed transaction against the mapped value. `ARC-TESTNET` is identical in both systems.
+
 ## Verification sequence
 
 1. The deterministic decision engine must return `PAY`.
@@ -46,6 +50,30 @@ keep mainnet disabled, set a deliberately small maximum transfer amount, and pro
 `CIRCLE_WEB3_API_KEY`, `CIRCLE_ENTITY_SECRET`, and `CIRCLE_WALLET_ID` only in that local file.
 
 Do not paste the entity secret, API key, private key, or recovery material into chat, issues, logs, screenshots, or committed files.
+
+### Read-only preflight
+
+Probe the configured Arc RPC, expected chain ID, latest block, and canonical USDC contract
+without loading Circle credentials:
+
+```powershell
+tallyguard-preflight --network-only
+```
+
+After placing the three Circle values in local environment variables, run the full preflight:
+
+```powershell
+tallyguard-preflight
+```
+
+The full check reads the configured Circle wallet, verifies that it is `LIVE` on the selected
+Arc network, and confirms that Circle returns the canonical USDC asset balance. It never signs,
+estimates, or submits a transaction. Wallet addresses are redacted in terminal output, and
+secrets are never printed. A full preflight returns a ready verdict only when every check passes.
+
+For mainnet, the preflight additionally requires `TALLYGUARD_ALLOW_MAINNET=true` and refuses a
+hard adapter cap above 5 USDC. This does not bypass the product's separate recorded-approval
+requirement; it only establishes that the runtime configuration is internally consistent.
 
 ## Testnet acceptance gate
 

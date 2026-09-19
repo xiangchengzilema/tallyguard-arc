@@ -10,6 +10,7 @@ from tallyguard.circle_arc import (
     CircleSdkGateway,
     CircleTransaction,
     CircleTransactionState,
+    CircleWalletSnapshot,
     TRANSFER_TOPIC,
 )
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
@@ -271,3 +272,71 @@ def test_official_sdk_request_uses_arc_usdc_and_explicit_uuid4():
     assert str(body["blockchain"].value) == ArcNetwork.TESTNET.value
     assert body["tokenAddress"] == gateway.config.usdc_contract_address
     assert body["walletId"] == gateway.wallet_id
+
+
+def test_circle_mainnet_uses_official_arc_identifier_not_internal_label():
+    sdk = pytest.importorskip("circle.web3.developer_controlled_wallets")
+
+    class FakeTransactions:
+        request = None
+
+        def create_developer_transaction_transfer(self, *, create_transfer_transaction_for_developer_request):
+            self.request = create_transfer_transaction_for_developer_request
+            return SimpleNamespace(
+                data=SimpleNamespace(id="circle-provider-id", state=CircleTransactionState.INITIATED)
+            )
+
+    transactions = FakeTransactions()
+    gateway = object.__new__(CircleSdkGateway)
+    gateway._sdk = sdk
+    gateway._transactions = transactions
+    gateway.wallet_id = "301e9038-e4c3-5a77-a9fe-95fd644f4c85"
+    gateway.config = ArcNetworkConfig.for_network(ArcNetwork.MAINNET)
+
+    gateway.create_usdc_transfer(payment(network=ArcNetwork.MAINNET))
+
+    assert transactions.request.to_dict()["blockchain"].value == "ARC"
+
+
+def test_circle_wallet_inspection_reads_exact_canonical_usdc_balance():
+    class FakeWallets:
+        def get_wallet(self, *, id):
+            assert id == "wallet-id"
+            return SimpleNamespace(
+                data=SimpleNamespace(
+                    wallet=SimpleNamespace(
+                        id=id,
+                        address=RECIPIENT,
+                        blockchain=SimpleNamespace(value="ARC-TESTNET"),
+                        state=SimpleNamespace(value="LIVE"),
+                    )
+                )
+            )
+
+        def list_wallet_balance(self, *, id, include_all, token_address):
+            assert id == "wallet-id"
+            assert include_all is True
+            assert token_address == "0x3600000000000000000000000000000000000000"
+            return SimpleNamespace(
+                data=SimpleNamespace(
+                    token_balances=[
+                        SimpleNamespace(
+                            amount="2.75",
+                            token=SimpleNamespace(token_address=token_address),
+                        )
+                    ]
+                )
+            )
+
+    gateway = object.__new__(CircleSdkGateway)
+    gateway._wallets = FakeWallets()
+    gateway.wallet_id = "wallet-id"
+    gateway.config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    assert gateway.inspect_wallet() == CircleWalletSnapshot(
+        wallet_id="wallet-id",
+        address=RECIPIENT,
+        blockchain="ARC-TESTNET",
+        state="LIVE",
+        usdc_balance=Decimal("2.75"),
+    )

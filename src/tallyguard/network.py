@@ -30,6 +30,17 @@ class ArcNetworkConfig:
     def is_mainnet(self) -> bool:
         return self.name == ArcNetwork.MAINNET
 
+    @property
+    def circle_blockchain(self) -> str:
+        """Return Circle's API identifier for the selected Arc network.
+
+        TallyGuard keeps the explicit ``ARC-MAINNET`` label internally so an
+        operator cannot confuse a production intent with a testnet intent.
+        Circle's Wallets API calls the same network simply ``ARC``.
+        """
+
+        return "ARC" if self.is_mainnet else ArcNetwork.TESTNET.value
+
     @classmethod
     def for_network(cls, network: ArcNetwork | str) -> "ArcNetworkConfig":
         selected = network if isinstance(network, ArcNetwork) else ArcNetwork(network.strip().upper())

@@ -78,6 +78,22 @@ class ArcTransferProof:
     block_number: int
 
 
+@dataclass(frozen=True, slots=True)
+class ArcNetworkStatus:
+    chain_id: int
+    latest_block: int
+    usdc_contract_has_code: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CircleWalletSnapshot:
+    wallet_id: str
+    address: str
+    blockchain: str
+    state: str
+    usdc_balance: Decimal | None
+
+
 class ArcRpcClient:
     """Minimal Arc JSON-RPC reader that verifies the exact USDC transfer log."""
 
@@ -91,6 +107,29 @@ class ArcRpcClient:
         self.config = config
         self.timeout_seconds = timeout_seconds
         self._transport = transport or self._http_call
+
+    def inspect_network(self) -> ArcNetworkStatus:
+        """Read Arc network health without submitting or signing anything."""
+
+        chain_id = _hex_int(self._transport("eth_chainId", []), field="chain ID")
+        if chain_id != self.config.chain_id:
+            raise SettlementDenied(
+                f"Arc RPC chain mismatch: expected {self.config.chain_id}, received {chain_id}."
+            )
+        latest_block = _hex_int(self._transport("eth_blockNumber", []), field="latest block")
+        if latest_block < 1:
+            raise SettlementDenied("Arc RPC returned an invalid latest block.")
+        code = self._transport("eth_getCode", [self.config.usdc_contract_address, "latest"])
+        if not isinstance(code, str) or not code.startswith("0x"):
+            raise SettlementDenied("Arc RPC returned invalid USDC contract code.")
+        has_code = code.lower() not in {"0x", "0x0", "0x00"}
+        if not has_code:
+            raise SettlementDenied("Canonical Arc USDC contract has no deployed code.")
+        return ArcNetworkStatus(
+            chain_id=chain_id,
+            latest_block=latest_block,
+            usdc_contract_has_code=has_code,
+        )
 
     def confirm_usdc_transfer(
         self,
@@ -191,6 +230,7 @@ class CircleSdkGateway:
         )
         self._sdk = developer_controlled_wallets
         self._transactions = developer_controlled_wallets.TransactionsApi(client)
+        self._wallets = developer_controlled_wallets.WalletsApi(client)
         self.wallet_id = wallet_id
         self.config = config
 
@@ -219,7 +259,7 @@ class CircleSdkGateway:
                 "destinationAddress": intent.recipient,
                 "feeLevel": "MEDIUM",
                 "tokenAddress": self.config.usdc_contract_address,
-                "blockchain": intent.network.value,
+                "blockchain": self.config.circle_blockchain,
                 "walletId": self.wallet_id,
                 "refId": intent.id,
             }
@@ -246,6 +286,35 @@ class CircleSdkGateway:
             transaction_hash=transaction.tx_hash,
             block_height=transaction.block_height,
             error_reason=transaction.error_reason,
+        )
+
+    def inspect_wallet(self) -> CircleWalletSnapshot:
+        """Read the configured Circle wallet and canonical Arc USDC balance."""
+
+        response = self._wallets.get_wallet(id=self.wallet_id)
+        wallet = response.data.wallet
+        if wallet is None:
+            raise CircleConfigurationError("Circle returned an empty wallet record.")
+
+        balances_response = self._wallets.list_wallet_balance(
+            id=self.wallet_id,
+            include_all=True,
+            token_address=self.config.usdc_contract_address,
+        )
+        usdc_balance: Decimal | None = None
+        for balance in balances_response.data.token_balances or ():
+            token = balance.token
+            token_address = (token.token_address or "").lower()
+            if token_address == self.config.usdc_contract_address.lower():
+                usdc_balance = Decimal(str(balance.amount))
+                break
+
+        return CircleWalletSnapshot(
+            wallet_id=str(wallet.id),
+            address=str(wallet.address),
+            blockchain=_enum_value(wallet.blockchain),
+            state=_enum_value(wallet.state),
+            usdc_balance=usdc_balance,
         )
 
 
@@ -340,7 +409,7 @@ class CircleArcAdapter:
         )
 
     def _validate_circle_result(self, intent: PaymentIntent, result: CircleTransaction) -> None:
-        if result.blockchain != intent.network.value:
+        if result.blockchain != self.config.circle_blockchain:
             raise SettlementDenied("Circle completed the transaction on the wrong network.")
         if (result.destination_address or "").lower() != intent.recipient:
             raise SettlementDenied("Circle completed the transaction to the wrong recipient.")
