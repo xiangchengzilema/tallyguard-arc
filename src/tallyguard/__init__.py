@@ -1,6 +1,7 @@
 """TallyGuard core domain package."""
 
 from .audit import AuditChain, AuditEvent
+from .approvals import ApprovalInbox, ApprovalRequest, ApprovalStatus, apply_approved_escalation
 from .auth import Authenticator, Permission, Principal, Role, authorize
 from .decisions import AgentRecommendation, DecisionRecord, DecisionRepository, DecisionService
 from .evidence import (
@@ -31,6 +32,9 @@ __all__ = [
     "AuditChain",
     "AuditEvent",
     "AgentRecommendation",
+    "ApprovalInbox",
+    "ApprovalRequest",
+    "ApprovalStatus",
     "Authenticator",
     "Decision",
     "DecisionAction",
@@ -66,5 +70,6 @@ __all__ = [
     "VendorWalletEvent",
     "WalletVerificationMethod",
     "authorize",
+    "apply_approved_escalation",
     "policy_content_hash",
 ]

@@ -151,6 +151,8 @@ class SettlementService:
             raise SettlementDenied(f"Decision {decision.action} cannot create a payment.")
         if intent.organization_id.strip() == "":
             raise SettlementDenied("Organization scope is required.")
+        if decision.approval_reference is not None and intent.approval_reference != decision.approval_reference:
+            raise SettlementDenied("Payment intent is not bound to the decision approval reference.")
         if intent.network != self.config.name:
             raise SettlementDenied("Payment intent network does not match the configured Arc network.")
         require_mainnet_authorization(

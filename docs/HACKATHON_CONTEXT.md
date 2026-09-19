@@ -52,6 +52,7 @@ Strongly encouraged:
 - Missing PO and delivery evidence now fail closed with explicit remediation
 - Agent recommendations are separated from deterministic, evidence-bound control decisions
 - Versioned policy history, policy diffs, and scheduled-payment outcomes implemented
+- Human exception approval is segregated and explicitly bound to settlement intent
 - Automated test suite passing
 
 Milestone 2 remains active. Evidence-to-domain normalization, verified vendor wallet history,

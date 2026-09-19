@@ -75,6 +75,7 @@ class Decision:
     policy_version: str
     invoice_fingerprint: str
     rule_results: tuple[RuleResult, ...]
+    approval_reference: str | None = None
 
     @property
     def reason_codes(self) -> tuple[str, ...]:

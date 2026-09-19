@@ -97,6 +97,22 @@ def test_mainnet_requires_approval_reference_even_when_enabled():
         service.execute(intent=intent(ArcNetwork.MAINNET), decision=decision())
 
 
+def test_approved_decision_must_match_payment_approval_reference():
+    service = SettlementService(
+        config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+        adapter=SimulatedArcAdapter(),
+    )
+    approved = replace(decision(), approval_reference="approval-1")
+    with pytest.raises(SettlementDenied, match="approval reference"):
+        service.execute(intent=intent(), decision=approved)
+
+    receipt = service.execute(
+        intent=intent(approval_reference="approval-1"),
+        decision=approved,
+    )
+    assert receipt.payment_intent_id == "payment-1"
+
+
 class WrongRecipientAdapter:
     name = "bad-provider"
 

@@ -91,6 +91,8 @@ Implemented foundation:
 - Stable evidence-and-policy-bound decision IDs with tamper-evident audit events
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` control outcomes
 - Immutable policy versions, content hashes, active-version lookup, and field-level diffs
+- Segregated exception inbox: requester cannot self-approve and only pure escalations are overridable
+- Approved decisions and payment intents must carry the exact same approval reference
 
 - Agent-generated evidence summary
 - Recommended action with structured reason codes
