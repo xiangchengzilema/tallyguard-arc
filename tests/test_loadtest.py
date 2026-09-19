@@ -8,6 +8,7 @@ def test_synthetic_multi_tenant_load_smoke_has_no_double_payment():
             invoices=20,
             concurrency=8,
             duplicate_storm=20,
+            treasury_contention=8,
             timeout_seconds=10,
         )
     )
@@ -20,3 +21,9 @@ def test_synthetic_multi_tenant_load_smoke_has_no_double_payment():
     assert summary["duplicate_storm_successes"] == 20
     assert summary["duplicate_storm_unique_transaction_hashes"] == 1
     assert summary["duplicate_storm_provider_submissions"] == 1
+    assert summary["treasury_contention_requests"] == 8
+    assert summary["treasury_contention_successes"] == 4
+    assert summary["treasury_contention_denied"] == 4
+    assert summary["treasury_contention_provider_submissions"] == 4
+    assert summary["treasury_contention_unique_transaction_hashes"] == 4
+    assert summary["treasury_atomic_limit_preserved"] is True

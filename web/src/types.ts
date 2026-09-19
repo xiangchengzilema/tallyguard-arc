@@ -335,6 +335,7 @@ export interface ReliabilityReport {
     duplicate_storm: number;
     invoices: number;
     organizations: number;
+    treasury_contention: number;
     timeout_seconds: number;
   };
   methodology: {
@@ -353,6 +354,13 @@ export interface ReliabilityReport {
     failed_workflows: number;
     http_requests: number;
     successful_workflows: number;
+    treasury_atomic_limit_preserved: boolean;
+    treasury_contention_denied: number;
+    treasury_contention_expected_successes: number;
+    treasury_contention_provider_submissions: number;
+    treasury_contention_requests: number;
+    treasury_contention_successes: number;
+    treasury_contention_unique_transaction_hashes: number;
     workflow_error_rate: number;
     workflow_throughput_per_second: number;
   };

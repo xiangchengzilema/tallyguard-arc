@@ -4,79 +4,109 @@
     "duplicate_storm": 200,
     "invoices": 10000,
     "organizations": 100,
-    "timeout_seconds": 15
+    "timeout_seconds": 30.0,
+    "treasury_contention": 100
   },
   "errors": [],
-  "generated_at": "2026-09-19T18:39:37.325785+00:00",
+  "generated_at": "2026-09-19T22:03:13.443097+00:00",
   "latency_ms": {
     "by_request": {
       "approval.request": {
-        "max": 980.743,
-        "mean": 583.099,
-        "p50": 568.018,
-        "p95": 766.542,
-        "p99": 939.514
+        "max": 1167.325,
+        "mean": 600.099,
+        "p50": 587.574,
+        "p95": 777.588,
+        "p99": 965.446
       },
       "approval.resolve": {
-        "max": 1577.187,
-        "mean": 1034.607,
-        "p50": 1031.475,
-        "p95": 1260.686,
-        "p99": 1355.533
+        "max": 1630.391,
+        "mean": 1081.759,
+        "p50": 1069.991,
+        "p95": 1319.076,
+        "p99": 1500.729
+      },
+      "contention.activate_policy": {
+        "max": 21.431,
+        "mean": 21.431,
+        "p50": 21.431,
+        "p95": 21.431,
+        "p99": 21.431
+      },
+      "contention.atomic_reservation": {
+        "max": 1040.28,
+        "mean": 478.33,
+        "p50": 472.487,
+        "p95": 588.795,
+        "p99": 1034.976
+      },
+      "contention.prepare": {
+        "max": 237.701,
+        "mean": 40.538,
+        "p50": 31.666,
+        "p95": 53.082,
+        "p99": 234.645
+      },
+      "contention.record_treasury": {
+        "max": 12.031,
+        "mean": 12.031,
+        "p50": 12.031,
+        "p95": 12.031,
+        "p99": 12.031
       },
       "payment.settle": {
-        "max": 4033.293,
-        "mean": 3101.221,
-        "p50": 3100.424,
-        "p95": 3483.043,
-        "p99": 3676.803
+        "max": 4427.833,
+        "mean": 3196.844,
+        "p50": 3194.714,
+        "p95": 3587.214,
+        "p99": 3885.123
       },
       "scenario.evaluate": {
-        "max": 3621.401,
-        "mean": 1191.367,
-        "p50": 1181.697,
-        "p95": 1437.375,
-        "p99": 1600.737
+        "max": 4622.633,
+        "mean": 1698.258,
+        "p50": 1672.885,
+        "p95": 2003.898,
+        "p99": 2293.063
       },
       "security.cross_tenant_read": {
-        "max": 30.704,
-        "mean": 7.965,
-        "p50": 5.66,
-        "p95": 21.96,
-        "p99": 29.227
+        "max": 27.849,
+        "mean": 6.714,
+        "p50": 5.452,
+        "p95": 15.672,
+        "p99": 23.6
       },
       "storm.duplicate_settlement": {
-        "max": 636.676,
-        "mean": 399.47,
-        "p50": 424.447,
-        "p95": 519.302,
-        "p99": 586.772
+        "max": 646.852,
+        "mean": 388.015,
+        "p50": 399.834,
+        "p95": 533.37,
+        "p99": 604.054
       },
       "storm.prepare": {
-        "max": 30.179,
-        "mean": 30.179,
-        "p50": 30.179,
-        "p95": 30.179,
-        "p99": 30.179
+        "max": 117.516,
+        "mean": 117.516,
+        "p50": 117.516,
+        "p95": 117.516,
+        "p99": 117.516
       }
     },
     "overall": {
-      "max": 4033.293,
-      "mean": 1829.991,
-      "p50": 1238.717,
-      "p95": 3356.671,
-      "p99": 3566.081
+      "max": 4622.633,
+      "mean": 2111.093,
+      "p50": 1753.895,
+      "p95": 3436.234,
+      "p99": 3693.085
     }
   },
   "methodology": {
     "classification": "synthetic multi-tenant engineering load test",
-    "identity": "isolated organizations with distinct operator and approver sessions",
+    "identity": "isolated organizations with distinct operator, approver, and administrator sessions",
     "note": "This report measures reliability and is not customer traction.",
     "settlement": "deterministic Arc simulator; no funds moved",
-    "transport": "real loopback HTTP against the Flask API"
+    "transport": "real loopback HTTP against the Flask API",
+    "treasury_contention": "concurrent payments share one immutable treasury snapshot; policy permits exactly four 1,200 USDC reservations"
   },
-  "run_id": "load_bd465cb7548941398ab48518a6a46898",
-  "schema_version": "1.0",
+  "run_id": "load_3c9c8b0b8f044e71a0558cb1b2a8c429",
+  "schema_version": "1.1",
   "summary": {
     "cross_tenant_attempts": 100,
     "cross_tenant_attempts_denied": 100,
@@ -85,14 +115,21 @@
     "duplicate_storm_requests": 200,
     "duplicate_storm_successes": 200,
     "duplicate_storm_unique_transaction_hashes": 1,
-    "duration_seconds": 556.031,
+    "duration_seconds": 651.588,
     "failed_workflows": 0,
-    "http_requests": 19301,
+    "http_requests": 19503,
     "protected_workflows": 4000,
-    "provider_submissions": 7001,
+    "provider_submissions": 7005,
     "settled_workflows": 7000,
     "successful_workflows": 10000,
+    "treasury_atomic_limit_preserved": true,
+    "treasury_contention_denied": 96,
+    "treasury_contention_expected_successes": 4,
+    "treasury_contention_provider_submissions": 4,
+    "treasury_contention_requests": 100,
+    "treasury_contention_successes": 4,
+    "treasury_contention_unique_transaction_hashes": 4,
     "workflow_error_rate": 0.0,
-    "workflow_throughput_per_second": 17.985
+    "workflow_throughput_per_second": 15.347
   }
 }

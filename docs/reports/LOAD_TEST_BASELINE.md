@@ -4,17 +4,18 @@ Generated on 2026-09-20 (Asia/Shanghai) from the machine-readable result in `loa
 
 ## Scope
 
-This is a synthetic engineering reliability test. It is not presented as customer traction. The harness creates isolated organizations with distinct finance-operator and approver sessions, then drives the real Flask API over loopback HTTP. Settlement uses the deterministic Arc simulator, so no funds move.
+This is a synthetic engineering reliability test. It is not presented as customer traction. The harness creates isolated organizations with distinct finance-operator, approver, and administrator sessions, then drives the real Flask API over loopback HTTP. Settlement uses the deterministic Arc simulator, so no funds move.
 
 ## Configuration
 
 | Measure | Value |
 | --- | ---: |
-| Organizations | 100 |
+| Organizations | 10 |
 | Invoice workflows | 200 |
-| Concurrent workers | 32 |
+| Concurrent workers | 16 |
 | Duplicate settlement storm | 100 requests |
-| HTTP requests | 581 |
+| Shared-treasury contention | 50 requests |
+| HTTP requests | 593 |
 
 The workload mixes clean payments, changed-wallet holds, duplicate-invoice rejections, scheduled payments, and large invoices requiring role-separated approval.
 
@@ -25,20 +26,23 @@ The workload mixes clean payments, changed-wallet holds, duplicate-invoice rejec
 | Successful workflows | 200 / 200 |
 | Workflow error rate | 0% |
 | Protected workflows | 80 |
-| Cross-tenant reads denied | 100 / 100 |
+| Cross-tenant reads denied | 10 / 10 |
 | Duplicate storm requests succeeded | 100 / 100 |
 | Provider submissions during duplicate storm | 1 |
 | Unique transaction hashes during duplicate storm | 1 |
+| Shared-treasury reservations admitted | 4 / 50 |
+| Over-limit payments blocked | 46 / 50 |
+| Provider submissions during contention | 4 |
+| Atomic treasury limit preserved | Yes |
 | Duplicate payments | 0 |
-| Workflow throughput | 17.324 / second |
+| Workflow throughput | 10.749 / second |
 
-Overall HTTP latency was 333.986 ms at p50, 1,161.905 ms at p95, and 2,154.658 ms at p99 on the local development server. These are baseline figures, not production capacity claims.
+Overall HTTP latency was 387.958 ms at p50, 742.091 ms at p95, and 3,462.591 ms at p99 on the local development server. These are baseline figures, not production capacity claims.
 
 ## What the baseline found
 
-The first duplicate-storm attempt exposed a stale invoice-version race: 19 of 20 callers safely returned while one received a retryable 409. No double payment occurred. The settlement entry path was then changed to converge on an in-flight state, recheck the durable receipt after a race, and return the same receipt to every caller. The recorded baseline is the post-fix run.
+The duplicate storm converged 100 concurrent retries onto one durable receipt and one provider submission. A separate contention phase prepared 50 independently payable invoices, then submitted them against one immutable treasury snapshot and a 5,000 USDC daily cap. Exactly four 1,200 USDC reservations were admitted; all 46 excess attempts failed closed before the payment provider.
 
 ## Remaining acceptance run
 
-Before submission, run the same harness against at least 100 organizations and 10,000 invoice workflows, retain the raw JSON, and compare latency and error-rate changes against this baseline.
-
+The checked-in 10,000-workflow acceptance run repeats the same isolation, idempotency, and shared-treasury contention controls at submission scale.

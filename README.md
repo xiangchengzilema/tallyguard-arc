@@ -77,7 +77,7 @@ Every payment answers four questions:
 - Finance operators can select up to 25 `READY` invoices from the durable work queue and settle them as one batch; each item keeps its own authorization, idempotency key, receipt, and failure result, so one exception cannot mask or roll back the rest
 - A tenant-scoped schedule runner refuses early execution, derives the release date from the sealed policy decision, and revalidates current vendor, policy, treasury, evidence, route, and duplicate controls before any due invoice can settle
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
-- Real-HTTP synthetic multi-tenant load harness with latency, isolation, and duplicate-payment metrics
+- Real-HTTP synthetic multi-tenant load harness with latency, isolation, duplicate-payment, and shared-treasury contention metrics
 - Auditor-visible reliability panel loads the checked-in 10,000-workflow result through a content-addressed API and labels it explicitly as synthetic engineering evidence rather than customer traction
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics
 
@@ -97,13 +97,15 @@ Run a local reliability baseline:
 
 ```powershell
 .\.venv\Scripts\python.exe -m tallyguard.loadtest `
-  --organizations 100 --invoices 200 --concurrency 32 `
-  --duplicate-storm 100 --output docs\reports\load-test-baseline.json
+  --organizations 10 --invoices 200 --concurrency 16 `
+  --duplicate-storm 100 --treasury-contention 50 `
+  --output docs\reports\load-test-baseline.json
 ```
 
 The checked-in [10,000-workflow report](docs/reports/LOAD_TEST_10000.md) records
-zero failed workflows, zero duplicate payments, and 100/100 denied cross-tenant
-reads across 19,301 real loopback HTTP requests. The smaller
+zero failed workflows, zero duplicate payments, 100/100 denied cross-tenant
+reads, and 96/100 over-limit payments blocked while exactly four safe
+reservations reached the provider. The smaller
 [development baseline](docs/reports/LOAD_TEST_BASELINE.md) remains available for
 fast regression checks.
 

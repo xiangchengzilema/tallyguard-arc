@@ -263,12 +263,14 @@ Implemented foundation:
 - Mixed clean, hold, reject, schedule, escalation, approval, and settlement workflows
 - Cross-tenant identifier attack probes
 - Concurrent duplicate settlement storm with provider-submission accounting
+- Concurrent independent payments contending for one immutable treasury snapshot and daily limit
 - JSON output with throughput, p50/p95/p99, error rate, and duplicate-payment count
 - 100-organization baseline: 200/200 workflows succeeded, 100/100 isolation probes denied, and 100 duplicate requests produced one provider submission
-- Full 10,000-workflow run: 10,000/10,000 succeeded across 19,301 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission
-- Current full-run throughput reached 17.985 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.483 seconds under SQLite contention
+- Full 10,000-workflow run: 10,000/10,000 succeeded across 19,503 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission
+- One hundred independent 1,200 USDC payments raced for a shared 5,000 USDC daily limit: exactly four reservations reached the provider, 96 failed closed, and the atomic limit was preserved
+- Current full-run throughput reached 15.347 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.587 seconds under SQLite contention
 - The baseline discovered and verified a fix for a stale-version settlement race
-- The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, throughput, and P95 figures
+- The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, atomic treasury contention, throughput, and P95 figures
 
 Two distinct test classes will be reported honestly:
 
@@ -281,6 +283,7 @@ Synthetic load suite:
 - At least 10,000 invoices across clean and adversarial scenarios (complete)
 - Concurrent ingestion, evaluation, approval, and receipt reads
 - Duplicate submission storms against the same idempotency key
+- Independent payment attempts racing for the same daily-limit and reserve headroom
 - Cross-tenant identifier attacks
 - Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection
 - Database contention and worker restart recovery

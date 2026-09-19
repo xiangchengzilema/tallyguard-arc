@@ -34,6 +34,7 @@ class LoadConfiguration:
     invoices: int = 100
     concurrency: int = 16
     duplicate_storm: int = 50
+    treasury_contention: int = 20
     timeout_seconds: float = 15
 
     def __post_init__(self) -> None:
@@ -45,6 +46,8 @@ class LoadConfiguration:
             raise ValueError("Concurrency must be positive.")
         if self.duplicate_storm < 2:
             raise ValueError("Duplicate storm size must be at least two.")
+        if self.treasury_contention < 2:
+            raise ValueError("Treasury contention size must be at least two.")
         if self.timeout_seconds <= 0:
             raise ValueError("HTTP timeout must be positive.")
 
@@ -278,12 +281,13 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
         repository = app.extensions["tallyguard_repository"]
         authenticator = app.extensions["tallyguard_authenticator"]
         adapter = app.extensions["tallyguard_settlement_adapter"]
-        identities: dict[str, tuple[str, str]] = {}
+        identities: dict[str, tuple[str, str, str]] = {}
 
         for index in range(configuration.organizations):
             organization_id = f"load-org-{index:04d}"
             operator_id = f"load-operator-{index:04d}"
             approver_id = f"load-approver-{index:04d}"
+            admin_id = f"load-admin-{index:04d}"
             repository.create_organization(
                 organization_id=organization_id,
                 name=f"Synthetic Organization {index:04d}",
@@ -300,6 +304,12 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 display_name=f"Approver {index:04d}",
                 roles=(Role.APPROVER.value,),
             )
+            repository.create_user(
+                organization_id=organization_id,
+                user_id=admin_id,
+                display_name=f"Administrator {index:04d}",
+                roles=(Role.ADMIN.value,),
+            )
             operator_token, _ = authenticator.issue_session(
                 Principal(
                     user_id=operator_id,
@@ -314,7 +324,14 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                     roles=(Role.APPROVER,),
                 )
             )
-            identities[organization_id] = (operator_token, approver_token)
+            admin_token, _ = authenticator.issue_session(
+                Principal(
+                    user_id=admin_id,
+                    organization_id=organization_id,
+                    roles=(Role.ADMIN,),
+                )
+            )
+            identities[organization_id] = (operator_token, approver_token, admin_token)
 
         started = perf_counter()
         with LocalHttpServer(app) as server:
@@ -322,7 +339,7 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
             with ThreadPoolExecutor(max_workers=configuration.concurrency) as pool:
                 for index in range(configuration.invoices):
                     organization_id = f"load-org-{index % configuration.organizations:04d}"
-                    operator_token, approver_token = identities[organization_id]
+                    operator_token, approver_token, _admin_token = identities[organization_id]
                     futures.append(
                         pool.submit(
                             _run_workflow,
@@ -361,7 +378,7 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                     cross_tenant_denied += 1
 
             storm_org = organizations[0]
-            storm_operator, storm_approver = identities[storm_org]
+            storm_operator, storm_approver, storm_admin = identities[storm_org]
             storm_run = _http_json(
                 base_url=server.base_url,
                 path="/api/demo/scenarios/clean-payment/run",
@@ -395,11 +412,120 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
             }
             storm_provider_submissions = adapter.submission_count - submissions_before_storm
 
+            # Prepare independent PAY decisions, then make every worker contend for
+            # the same immutable treasury snapshot and policy headroom. The final
+            # policy admits only four 1,200 USDC payments. Correctness therefore
+            # requires exactly four provider submissions regardless of thread order.
+            contention_samples: list[RequestSample] = []
+            contention_errors: list[str] = []
+            contention_items: list[tuple[str, str]] = []
+            for _ in range(configuration.treasury_contention):
+                prepared = _http_json(
+                    base_url=server.base_url,
+                    path="/api/demo/scenarios/clean-payment/run",
+                    name="contention.prepare",
+                    token=storm_operator,
+                    timeout_seconds=configuration.timeout_seconds,
+                    body={},
+                )
+                contention_samples.append(prepared.sample)
+                if prepared.status != 200:
+                    contention_errors.append(
+                        f"contention preparation returned {prepared.status}"
+                    )
+                    continue
+                contention_items.append(
+                    (
+                        str(prepared.payload["invoice"]["id"]),
+                        str(prepared.payload["decision"]["id"]),
+                    )
+                )
+
+            contention_policy = _http_json(
+                base_url=server.base_url,
+                path="/api/policies",
+                name="contention.activate_policy",
+                token=storm_admin,
+                timeout_seconds=configuration.timeout_seconds,
+                body={
+                    "version": f"contention-{uuid4().hex}",
+                    "daily_payment_limit_usdc": "5000",
+                    "minimum_cash_reserve_usdc": "3000",
+                    "maximum_autonomous_payment_usdc": "2000",
+                    "po_amount_tolerance_usdc": "0",
+                    "allowed_asset": "USDC",
+                    "allowed_network": "ARC-TESTNET",
+                    "kill_switch_enabled": False,
+                },
+            )
+            contention_samples.append(contention_policy.sample)
+            if contention_policy.status != 201:
+                contention_errors.append(
+                    f"contention policy activation returned {contention_policy.status}"
+                )
+
+            contention_snapshot = _http_json(
+                base_url=server.base_url,
+                path="/api/treasury/snapshots",
+                name="contention.record_treasury",
+                token=storm_operator,
+                timeout_seconds=configuration.timeout_seconds,
+                body={
+                    "available_usdc": "10000",
+                    "spent_today_usdc": "0",
+                    "source_reference": f"synthetic-contention-{uuid4().hex}",
+                },
+            )
+            contention_samples.append(contention_snapshot.sample)
+            if contention_snapshot.status != 201:
+                contention_errors.append(
+                    f"contention treasury snapshot returned {contention_snapshot.status}"
+                )
+
+            submissions_before_contention = adapter.submission_count
+            contention_results: list[HttpResult] = []
+            with ThreadPoolExecutor(max_workers=configuration.concurrency) as pool:
+                contention_futures = [
+                    pool.submit(
+                        _http_json,
+                        base_url=server.base_url,
+                        path=f"/api/invoices/{invoice_id}/settle",
+                        name="contention.atomic_reservation",
+                        token=storm_approver,
+                        timeout_seconds=configuration.timeout_seconds,
+                        body={"decision_id": decision_id},
+                    )
+                    for invoice_id, decision_id in contention_items
+                ]
+                contention_results = [
+                    future.result() for future in as_completed(contention_futures)
+                ]
+            contention_samples.extend(result.sample for result in contention_results)
+            contention_provider_submissions = (
+                adapter.submission_count - submissions_before_contention
+            )
+            contention_hashes = {
+                str(result.payload["payment"]["receipt"]["transaction_hash"])
+                for result in contention_results
+                if result.status == 200
+            }
+            contention_denied = sum(result.status == 409 for result in contention_results)
+            contention_expected_successes = 4
+            for result in contention_results:
+                if result.status not in {200, 409}:
+                    contention_errors.append(
+                        f"contention settlement returned {result.status}"
+                    )
+
         duration_seconds = perf_counter() - started
         workflow_samples = [sample for result in workflows for sample in result.samples]
-        all_samples = workflow_samples + cross_tenant_samples + [storm_run.sample] + [
-            result.sample for result in storm_results
-        ]
+        all_samples = (
+            workflow_samples
+            + cross_tenant_samples
+            + [storm_run.sample]
+            + [result.sample for result in storm_results]
+            + contention_samples
+        )
         successful = [result for result in workflows if result.error is None]
         transaction_hashes = {
             result.transaction_hash for result in successful if result.transaction_hash is not None
@@ -409,14 +535,15 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
             by_request[name] = _latency_summary([sample for sample in all_samples if sample.name == name])
 
         report = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "run_id": f"load_{uuid4().hex}",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "methodology": {
                 "classification": "synthetic multi-tenant engineering load test",
                 "transport": "real loopback HTTP against the Flask API",
                 "settlement": "deterministic Arc simulator; no funds moved",
-                "identity": "isolated organizations with distinct operator and approver sessions",
+                "identity": "isolated organizations with distinct operator, approver, and administrator sessions",
+                "treasury_contention": "concurrent payments share one immutable treasury snapshot; policy permits exactly four 1,200 USDC reservations",
                 "note": "This report measures reliability and is not customer traction.",
             },
             "configuration": asdict(configuration),
@@ -430,19 +557,50 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 "settled_workflows": len(transaction_hashes),
                 "protected_workflows": sum(result.protected for result in successful),
                 "provider_submissions": adapter.submission_count,
-                "duplicate_payment_count": max(0, adapter.submission_count - len(transaction_hashes) - len(storm_hashes)),
+                "duplicate_payment_count": max(
+                    0,
+                    adapter.submission_count
+                    - len(transaction_hashes)
+                    - len(storm_hashes)
+                    - len(contention_hashes),
+                ),
                 "cross_tenant_attempts": len(cross_tenant_samples),
                 "cross_tenant_attempts_denied": cross_tenant_denied,
                 "duplicate_storm_requests": len(storm_results),
                 "duplicate_storm_successes": sum(result.status == 200 for result in storm_results),
                 "duplicate_storm_unique_transaction_hashes": len(storm_hashes),
                 "duplicate_storm_provider_submissions": storm_provider_submissions,
+                "treasury_contention_requests": len(contention_results),
+                "treasury_contention_successes": sum(
+                    result.status == 200 for result in contention_results
+                ),
+                "treasury_contention_denied": contention_denied,
+                "treasury_contention_expected_successes": contention_expected_successes,
+                "treasury_contention_provider_submissions": contention_provider_submissions,
+                "treasury_contention_unique_transaction_hashes": len(
+                    contention_hashes
+                ),
+                "treasury_atomic_limit_preserved": (
+                    len(contention_items) == configuration.treasury_contention
+                    and sum(result.status == 200 for result in contention_results)
+                    == contention_expected_successes
+                    and contention_denied
+                    == configuration.treasury_contention
+                    - contention_expected_successes
+                    and contention_provider_submissions
+                    == contention_expected_successes
+                    and len(contention_hashes) == contention_expected_successes
+                    and not contention_errors
+                ),
             },
             "latency_ms": {
                 "overall": _latency_summary(all_samples),
                 "by_request": by_request,
             },
-            "errors": [result.error for result in workflows if result.error is not None][:25],
+            "errors": (
+                [result.error for result in workflows if result.error is not None]
+                + contention_errors
+            )[:25],
         }
         repository.close()
         return report
@@ -454,6 +612,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--invoices", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=16)
     parser.add_argument("--duplicate-storm", type=int, default=50)
+    parser.add_argument("--treasury-contention", type=int, default=20)
     parser.add_argument("--timeout-seconds", type=float, default=15)
     parser.add_argument("--output", type=Path)
     return parser
@@ -467,6 +626,7 @@ def main() -> None:
             invoices=arguments.invoices,
             concurrency=arguments.concurrency,
             duplicate_storm=arguments.duplicate_storm,
+            treasury_contention=arguments.treasury_contention,
             timeout_seconds=arguments.timeout_seconds,
         )
     )
@@ -479,4 +639,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
