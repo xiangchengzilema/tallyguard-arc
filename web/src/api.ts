@@ -459,4 +459,35 @@ export async function verifyDecisionReplay(
   return payload.verification;
 }
 
+export async function downloadEvidencePacket(
+  invoiceId: string,
+  auditorToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `/api/invoices/${encodeURIComponent(invoiceId)}/evidence-packet`,
+    { headers: { Authorization: `Bearer ${auditorToken}` } },
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.error;
+    throw new ApiError(
+      detail?.message ?? 'TallyGuard could not assemble the evidence packet.',
+      response.status,
+      detail?.code,
+    );
+  }
+  const packetHash = response.headers.get('X-TallyGuard-Packet-SHA256') ?? '';
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `tallyguard-${invoiceId}-evidence-packet.json`;
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+  return packetHash;
+}
+
 export { ApiError };

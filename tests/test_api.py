@@ -5,6 +5,7 @@ from io import BytesIO
 import json
 
 from tallyguard.api import create_app
+from tallyguard.audit import canonical_json
 from tallyguard.auth import Principal, Role
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.settlement import PaymentIntent, ProviderSubmission
@@ -551,6 +552,58 @@ def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):
     )
     assert len(payload["artifact"]["sha256"]) == 64
     assert payload["artifact"]["immutable"] is True
+
+
+def test_payment_evidence_packet_binds_replay_settlement_and_audit(tmp_path):
+    app = create_app(database_path=tmp_path / "packet.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    approver = client.post(
+        "/api/demo/session", json={"role": "approver"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=headers(operator, "packet-run"),
+    ).get_json()
+    before_settlement = client.get(
+        f"/api/invoices/{run['invoice']['id']}/evidence-packet",
+        headers=headers(auditor, "packet-before-settlement"),
+    )
+    assert before_settlement.status_code == 200
+    assert before_settlement.get_json()["packet"]["payment"] is None
+
+    settled = client.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        json={"decision_id": run["decision"]["id"]},
+        headers=headers(approver, "packet-settle"),
+    )
+    assert settled.status_code == 200
+
+    response = client.get(
+        f"/api/invoices/{run['invoice']['id']}/evidence-packet",
+        headers=headers(auditor, "packet-download"),
+    )
+    assert response.status_code == 200
+    assert response.headers["Content-Disposition"].endswith("-evidence-packet.json\"")
+    envelope = response.get_json()
+    packet = envelope["packet"]
+    recomputed = hashlib.sha256(canonical_json(packet).encode("utf-8")).hexdigest()
+    assert envelope["packet_sha256"] == recomputed
+    assert envelope["packet_sha256"] != before_settlement.get_json()["packet_sha256"]
+    assert response.headers["X-TallyGuard-Packet-SHA256"] == recomputed
+    assert packet["invoice"]["status"] == "RECONCILED"
+    assert packet["decision"]["sealed_replay_inputs"] is not None
+    assert packet["replay_verification"]["verified"] is True
+    assert len(packet["replay_verification"]["checks"]) == 11
+    assert packet["payment"]["receipt"]["status"] == "CONFIRMED"
+    assert packet["audit"]["tenant_chain_valid"] is True
+    assert packet["audit"]["last_invoice_event_hash"] is not None
 
 
 def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):

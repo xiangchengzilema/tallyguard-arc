@@ -23,7 +23,8 @@ from .agent import (
     EvidenceAnalyst,
     OpenAICompatibleEvidenceAnalyst,
 )
-from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
+from .audit import canonical_json
+from .approvals import ApprovalError, ApprovalInbox, ApprovalRequest, apply_approved_escalation
 from .auth import (
     AuthenticationDenied,
     Authenticator,
@@ -317,6 +318,35 @@ def _payment_json(outcome: PaymentOutcome, config: ArcNetworkConfig) -> dict[str
         },
         "invoice": _invoice_json(outcome.invoice),
         "reused_receipt": outcome.reused_receipt,
+    }
+
+
+def _approval_json(approval: ApprovalRequest) -> dict[str, Any]:
+    return {
+        "id": approval.id,
+        "organization_id": approval.organization_id,
+        "invoice_id": approval.invoice_id,
+        "decision_id": approval.decision_id,
+        "requested_by_user_id": approval.requested_by_user_id,
+        "requested_at": approval.requested_at.isoformat(),
+        "status": approval.status.value,
+        "version": approval.version,
+        "resolved_by_user_id": approval.resolved_by_user_id,
+        "resolved_at": approval.resolved_at.isoformat() if approval.resolved_at else None,
+        "resolution_note": approval.resolution_note,
+    }
+
+
+def _audit_event_json(event: Any) -> dict[str, Any]:
+    return {
+        "sequence": event.sequence,
+        "aggregate_type": event.aggregate_type,
+        "aggregate_id": event.aggregate_id,
+        "event_type": event.event_type,
+        "payload": event.payload,
+        "previous_hash": event.previous_hash,
+        "event_hash": event.event_hash,
+        "created_at": event.created_at.isoformat(),
     }
 
 
@@ -1414,6 +1444,118 @@ def create_app(
         )
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()})
 
+    @app.get("/api/invoices/<invoice_id>/evidence-packet")
+    @require(Permission.AUDIT_READ)
+    def get_invoice_evidence_packet(invoice_id: str):
+        organization_id = g.principal.organization_id
+        stored = repository.get_invoice(
+            organization_id=organization_id,
+            invoice_id=invoice_id,
+        )
+        decision = repository.latest_decision_for_invoice(
+            organization_id=organization_id,
+            invoice_id=invoice_id,
+        )
+        replay = (
+            decision_service.verify_replay(decision)
+            if decision.replay_inputs is not None and decision.replay_input_hash is not None
+            else None
+        )
+        evidence = repository.list_invoice_evidence(
+            organization_id=organization_id,
+            invoice_id=invoice_id,
+        )
+        approval = repository.find_approval_for_decision(
+            organization_id=organization_id,
+            decision_id=decision.id,
+        )
+        payment = None
+        try:
+            intent = repository.get_payment_intent_for_decision(
+                organization_id=organization_id,
+                decision_id=decision.id,
+            )
+            receipt = repository.find_settlement_receipt(
+                organization_id=organization_id,
+                payment_intent_id=intent.id,
+            )
+            if receipt is not None:
+                payment = _payment_json(
+                    PaymentOutcome(
+                        intent=intent,
+                        receipt=receipt,
+                        invoice=stored,
+                        reused_receipt=True,
+                    ),
+                    network_config,
+                )
+        except PersistenceError:
+            pass
+
+        invoice_events = tuple(
+            event
+            for event in repository.audit_events(organization_id=organization_id)
+            if event.aggregate_id == invoice_id
+            or event.payload.get("invoice_id") == invoice_id
+        )
+        packet = {
+            "schema_version": "1.0",
+            "organization_id": organization_id,
+            "invoice": _invoice_json(stored),
+            "evidence": [_evidence_json(record) for record in evidence],
+            "decision": {
+                **_decision_json(decision),
+                "sealed_replay_inputs": (
+                    decision.replay_inputs.to_payload()
+                    if decision.replay_inputs is not None
+                    else None
+                ),
+            },
+            "replay_verification": {
+                "verified": replay.verified if replay is not None else False,
+                "original_decision_id": decision.id,
+                "replayed_decision_id": (
+                    replay.replayed_decision_id if replay is not None else None
+                ),
+                "input_snapshot_hash": decision.replay_input_hash,
+                "checks": [
+                    {
+                        "code": check.code,
+                        "passed": check.passed,
+                        "expected": check.expected,
+                        "actual": check.actual,
+                    }
+                    for check in (replay.checks if replay is not None else ())
+                ],
+            },
+            "approval": _approval_json(approval) if approval is not None else None,
+            "payment": payment,
+            "audit": {
+                "tenant_chain_valid": repository.verify_audit_chain(
+                    organization_id=organization_id
+                ),
+                "invoice_events": [_audit_event_json(event) for event in invoice_events],
+                "last_invoice_event_hash": (
+                    invoice_events[-1].event_hash if invoice_events else None
+                ),
+            },
+        }
+        canonical_packet = canonical_json(packet).encode("utf-8")
+        packet_hash = sha256(canonical_packet).hexdigest()
+        envelope = {
+            "packet_id": f"packet_{packet_hash[:24]}",
+            "packet_sha256": packet_hash,
+            "hash_scope": "UTF-8 canonical JSON of the packet field",
+            "packet": packet,
+        }
+        body = json.dumps(envelope, indent=2, ensure_ascii=False).encode("utf-8")
+        response = Response(body, mimetype="application/json")
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="tallyguard-{secure_filename(invoice_id)}-evidence-packet.json"'
+        )
+        response.headers["X-TallyGuard-Packet-SHA256"] = packet_hash
+        return response
+
     def execute_settlement(
         *,
         invoice_id: str,
@@ -1597,16 +1739,7 @@ def create_app(
                     organization_id=g.principal.organization_id
                 ),
                 "items": [
-                    {
-                        "sequence": event.sequence,
-                        "aggregate_type": event.aggregate_type,
-                        "aggregate_id": event.aggregate_id,
-                        "event_type": event.event_type,
-                        "payload": event.payload,
-                        "previous_hash": event.previous_hash,
-                        "event_hash": event.event_hash,
-                        "created_at": event.created_at.isoformat(),
-                    }
+                    _audit_event_json(event)
                     for event in events
                 ],
                 "correlation_id": _correlation_id(),

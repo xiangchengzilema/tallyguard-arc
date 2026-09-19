@@ -114,6 +114,15 @@ snapshot hash, organization, invoice, evidence manifest, policy version, policy 
 final action, invoice fingerprint, full rule trace, and decision ID. Current vendor, treasury, and
 policy state are deliberately not consulted, so configuration changes cannot rewrite history.
 
+## Payment Evidence Packet
+
+The auditor can export one content-addressed JSON packet per invoice. The packet binds evidence
+metadata and source hashes, sealed replay inputs, the 11 replay checks, any role-separated approval,
+the reconciled settlement receipt, and invoice-scoped audit events. The response exposes the
+SHA-256 of canonical packet JSON in both the body and `X-TallyGuard-Packet-SHA256`. Original source
+bytes remain available through separately authorized evidence downloads and are not copied into
+the packet.
+
 ## Tenant isolation
 
 Every durable financial record carries `organization_id`. Repository reads and mutations require

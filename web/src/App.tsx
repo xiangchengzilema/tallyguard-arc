@@ -16,6 +16,7 @@ import {
   ArrowRight,
   CheckmarkFilled,
   Document,
+  Download,
   Launch,
   Locked,
   Money,
@@ -29,6 +30,7 @@ import {
 import {
   ApiError,
   bootstrap,
+  downloadEvidencePacket,
   fetchInvoiceAudit,
   fetchOperationsOverview,
   requestApproval,
@@ -726,7 +728,17 @@ function ReceiptPanel({ payment }: { payment: Payment }) {
   );
 }
 
-function AuditTimeline({ trail }: { trail: AuditTrail }) {
+function AuditTimeline({
+  trail,
+  packetHash,
+  busy,
+  onDownloadPacket,
+}: {
+  trail: AuditTrail;
+  packetHash: string | null;
+  busy: boolean;
+  onDownloadPacket: () => void;
+}) {
   const items = [...trail.events].reverse().slice(0, 10);
   return (
     <section className="audit-panel" aria-label="Tamper-evident audit trail">
@@ -735,9 +747,14 @@ function AuditTimeline({ trail }: { trail: AuditTrail }) {
           <span className="eyebrow">Independent audit view</span>
           <h2>Every mutation leaves a linked proof.</h2>
         </div>
-        <Tag type={trail.chainValid ? 'green' : 'red'}>
-          {trail.chainValid ? 'Chain verified' : 'Chain invalid'}
-        </Tag>
+        <div className="audit-panel__actions">
+          <Tag type={trail.chainValid ? 'green' : 'red'}>
+            {trail.chainValid ? 'Chain verified' : 'Chain invalid'}
+          </Tag>
+          <Button size="sm" kind="tertiary" renderIcon={Download} disabled={busy} onClick={onDownloadPacket}>
+            Download evidence packet
+          </Button>
+        </div>
       </div>
       <div className="audit-list">
         {items.map((event) => (
@@ -753,7 +770,7 @@ function AuditTimeline({ trail }: { trail: AuditTrail }) {
       </div>
       <div className="audit-panel__foot">
         <Locked size={16} />
-        <span>Each SHA-256 event hash commits to the prior hash, timestamp, aggregate, and payload.</span>
+        <span>{packetHash ? `Downloaded packet ${shorten(packetHash, 12, 10)} · ` : ''}Each SHA-256 event hash commits to the prior hash, timestamp, aggregate, and payload.</span>
       </div>
     </section>
   );
@@ -773,6 +790,7 @@ function App() {
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
   const [batch, setBatch] = useState<PaymentBatch | null>(null);
+  const [packetHash, setPacketHash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -813,6 +831,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
@@ -838,6 +857,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
@@ -856,6 +876,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
@@ -892,6 +913,13 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
+
+  const handleDownloadPacket = useCallback(() => {
+    if (!data || !run) return;
+    void act('Assembling a content-addressed payment evidence packet', async () => {
+      setPacketHash(await downloadEvidencePacket(run.invoice.id, data.sessions.auditor));
+    });
+  }, [act, data, run]);
 
   const selectedScenario = useMemo(
     () => data?.scenarios.find((item) => item.key === selectedKey),
@@ -955,10 +983,10 @@ function App() {
               scenarios={data.scenarios}
               activeKey={selectedKey}
               busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); }}
+              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); setPacketHash(null); }}
               onRun={handleRun}
               mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); }}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); setPacketHash(null); }}
               onRunLive={handleRunLive}
             />
             <main className="workbench">
@@ -983,7 +1011,14 @@ function App() {
                     />
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}
-                  {auditTrail ? <AuditTimeline trail={auditTrail} /> : null}
+                  {auditTrail ? (
+                    <AuditTimeline
+                      trail={auditTrail}
+                      packetHash={packetHash}
+                      busy={busy !== null}
+                      onDownloadPacket={handleDownloadPacket}
+                    />
+                  ) : null}
                 </>
               ) : mode === 'live' ? (
                 <LiveEvidenceWorkbench busy={busy !== null} onEvaluate={handleUploadedEvidence} />

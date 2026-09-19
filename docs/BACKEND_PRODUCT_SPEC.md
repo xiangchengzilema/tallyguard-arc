@@ -162,6 +162,7 @@ POST   /api/invoices
 GET    /api/invoices
 GET    /api/invoices/{id}
 GET    /api/operations/overview
+GET    /api/invoices/{id}/evidence-packet
 POST   /api/invoices/{id}/evidence
 POST   /api/invoices/{id}/evaluate
 POST   /api/invoices/{id}/approve
@@ -189,6 +190,11 @@ independently, while successful items remain committed and become receipt-reusin
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response
 explicitly distinguishes reliability evidence from customer traction and states that no funds moved.
+
+`GET /api/invoices/{id}/evidence-packet` requires audit-read permission and returns a downloadable
+JSON envelope. Its packet hash covers canonical UTF-8 JSON containing the immutable invoice,
+source evidence metadata and hashes, sealed replay inputs, replay verification, approval, optional
+settlement proof, and invoice-scoped audit events. Raw uploaded files are not duplicated in the packet.
 
 ## 7. Demo scenarios
 

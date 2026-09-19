@@ -362,6 +362,7 @@ body {
 .audit-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .audit-panel__head h2 { max-width: 18ch; margin: .35rem 0 0; font-size: 1.5rem; font-weight: 500; letter-spacing: -.03em; text-wrap: balance; }
 .audit-panel__head .cds--tag { margin: 0; }
+.audit-panel__actions { display: flex; align-items: center; gap: .75rem; }
 .audit-list { margin-top: 1.5rem; border-top: 1px solid var(--tg-line); }
 .audit-event { display: grid; grid-template-columns: 4rem minmax(0, 1fr) minmax(130px, auto); align-items: center; gap: 1rem; min-height: 70px; border-bottom: 1px solid var(--tg-line); }
 .audit-event__sequence { color: var(--tg-accent-dark); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
@@ -445,6 +446,7 @@ body {
   .receipt-grid__wide { grid-column: auto; }
   .audit-event { grid-template-columns: 3rem minmax(0, 1fr); gap: .65rem; padding: .75rem 0; }
   .audit-event code { grid-column: 2; justify-self: start; }
+  .audit-panel__head, .audit-panel__actions { align-items: stretch; flex-direction: column; }
   .live-workbench__intro { grid-template-columns: 1fr; }
   .upload-grid, .evidence-review__grid { grid-template-columns: 1fr; }
   .evidence-review__grid > div { border-right: 0; }

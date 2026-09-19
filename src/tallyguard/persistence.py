@@ -1565,6 +1565,19 @@ class SqliteRepository:
             ).fetchone()
         return self._approval(row) if row is not None else None
 
+    def find_approval_for_decision(
+        self, *, organization_id: str, decision_id: str
+    ) -> ApprovalRequest | None:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM approvals
+                WHERE organization_id = ? AND decision_id = ?
+                """,
+                (organization_id, decision_id),
+            ).fetchone()
+        return self._approval(row) if row is not None else None
+
     def pending_approvals(self, *, organization_id: str) -> tuple[ApprovalRequest, ...]:
         with self._guard:
             rows = self._connection.execute(
