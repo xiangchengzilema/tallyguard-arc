@@ -208,6 +208,8 @@ Implemented foundation:
 - Settlement receipt with provider, network, block, transaction hash, and idempotency state
 - Honest visual distinction between public simulation and live Arc proof
 - Loading, empty, error, desktop, and mobile states
+- A judge-facing live-evidence mode now creates a fresh tenant dataset, uploads invoice/PO/delivery JSON as immutable multipart evidence, invokes the production-shaped evaluation endpoint, shows the agent's exact evidence citations, and completes the same idempotent settlement flow used by the API
+- Browser acceptance confirms the live path reaches a 12/12 deterministic `PAY` decision and a reconciled Arc-simulator receipt with no console errors
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve
 - Invoice work queue with fast filters
@@ -218,6 +220,7 @@ Implemented foundation:
 - Vendor risk and wallet-change history
 - Audit explorer with chain verification
 - Seeded scenario switcher for fast judging
+- User-supplied document picker and extraction review before evaluation
 
 Exit criteria:
 

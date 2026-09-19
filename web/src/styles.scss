@@ -141,6 +141,32 @@ body {
   background: #edf2f0;
 }
 
+.workflow-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: -.5rem -.5rem 1.75rem;
+  padding: .25rem;
+  border: 1px solid #cbd5d2;
+  background: #e3eae8;
+}
+
+.workflow-switch__tab {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--tg-muted);
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.workflow-switch__tab:hover { color: var(--tg-ink); }
+.workflow-switch__tab:active { transform: translateY(1px); }
+.workflow-switch__tab:focus-visible { outline: 2px solid var(--tg-accent); outline-offset: 2px; }
+.workflow-switch__tab--active { background: #fff; color: var(--tg-accent-dark); box-shadow: 0 1px 3px rgba(21, 52, 48, .1); }
+
 .section-heading h2, .panel-title h2, .empty-workbench h2, .receipt-panel h2, .decision-panel h2 {
   margin: .35rem 0 .5rem;
   font-size: 1.5rem;
@@ -169,6 +195,8 @@ body {
 
 .scenario-row:last-child { border-bottom: 1px solid #d4ddda; }
 .scenario-row:hover { background: #e2e9e7; }
+.scenario-row:active { transform: translateY(1px); }
+.scenario-row:focus-visible { outline: 2px solid var(--tg-accent); outline-offset: -2px; }
 .scenario-row--active { background: #fff; box-shadow: inset 3px 0 0 var(--tg-accent); }
 .scenario-row__index { color: #70807d; font-family: IBM Plex Mono, monospace; font-size: .6875rem; padding-top: .2rem; }
 .scenario-row__copy { display: grid; gap: .25rem; }
@@ -177,10 +205,22 @@ body {
 .scenario-row .cds--tag { align-self: start; margin: 0; }
 .run-button { width: 100%; max-width: none; margin-top: 1.25rem; justify-content: space-between; }
 
+.live-rail { display: flex; flex: 1; flex-direction: column; }
+.live-steps { display: grid; margin: 1.5rem 0 0; padding: 0; list-style: none; border-top: 1px solid #d4ddda; }
+.live-steps li { display: grid; grid-template-columns: 2rem 1fr; gap: .7rem; padding: 1rem 0; border-bottom: 1px solid #d4ddda; }
+.live-steps li > span { color: var(--tg-accent-dark); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
+.live-steps li div { display: grid; gap: .25rem; }
+.live-steps strong { font-size: .8125rem; font-weight: 600; }
+.live-steps small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
+.live-boundary { display: flex; align-items: flex-start; gap: .55rem; margin-top: auto; padding: 1rem; background: #dfe9e6; color: #304441; font-size: .6875rem; line-height: 1.45; }
+
 .workbench { min-width: 0; background: #fff; }
 .empty-workbench { display: grid; place-items: start; align-content: center; min-height: 100%; max-width: 620px; margin: 0 auto; padding: 4rem; }
 .empty-workbench__icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 2rem; background: #d9fbf6; color: var(--tg-accent-dark); }
 .empty-workbench h2 { font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; }
+.empty-workbench--live { max-width: 760px; }
+.empty-workbench--live h2 { max-width: 13ch; text-wrap: balance; }
+.empty-workbench--live p { max-width: 62ch; text-wrap: pretty; }
 .flow-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem; color: var(--tg-muted); font-size: .75rem; }
 .flow-preview span { display: flex; align-items: center; gap: .4rem; color: var(--tg-ink); }
 
@@ -243,6 +283,10 @@ body {
 .agent-note__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: .75rem; font-weight: 600; }
 .agent-note__head .cds--tag { margin: 0; }
 .agent-note p, .remediation li, .approval-record small { color: var(--tg-muted); font-size: .75rem; line-height: 1.5; }
+.agent-note__refs { display: grid; gap: .5rem; margin-top: .85rem; }
+.agent-note__refs > span { color: var(--tg-muted); font-size: .625rem; text-transform: uppercase; letter-spacing: .06em; }
+.agent-note__refs > div { display: flex; flex-wrap: wrap; gap: .35rem; }
+.agent-note__refs code { padding: .25rem .4rem; border: 1px solid var(--tg-line); background: #fff; font-size: .625rem; }
 .remediation strong { font-size: .75rem; }
 .remediation ul { margin: .75rem 0 0; padding-left: 1.1rem; }
 .action-stack { display: grid; gap: .75rem; padding: 1.5rem 0; }

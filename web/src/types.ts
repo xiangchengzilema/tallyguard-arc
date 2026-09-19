@@ -37,6 +37,7 @@ export interface AgentRecommendation {
   summary: string;
   reason_codes: string[];
   confidence: string;
+  evidence_refs: string[];
 }
 
 export interface Decision {
@@ -56,7 +57,7 @@ export interface Decision {
 }
 
 export interface RunResult {
-  scenario: Pick<Scenario, 'key' | 'title'>;
+  scenario?: Pick<Scenario, 'key' | 'title'>;
   invoice: Invoice;
   decision: Decision;
   correlation_id: string;
@@ -104,7 +105,7 @@ export interface Payment {
 
 export interface BootstrapData {
   scenarios: Scenario[];
-  sessions: Record<'operator' | 'approver' | 'auditor', string>;
+  sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   readiness: {
     status: string;
     database: string;

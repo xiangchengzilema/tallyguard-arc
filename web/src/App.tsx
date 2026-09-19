@@ -31,6 +31,7 @@ import {
   bootstrap,
   requestApproval,
   resolveApproval,
+  runLiveEvidenceWorkflow,
   runScenario,
   settleInvoice,
 } from './api';
@@ -66,6 +67,13 @@ const shorten = (value: string, head = 8, tail = 6) =>
 const formatMoney = (value: string) =>
   new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(Number(value));
 
+const LIVE_STEPS = [
+  ['01', 'Verify vendor', 'Bind a signed Arc wallet proof to a tenant vendor.'],
+  ['02', 'Lock controls', 'Activate an immutable policy and treasury snapshot.'],
+  ['03', 'Ingest evidence', 'Hash and upload invoice, PO, and delivery JSON.'],
+  ['04', 'Evaluate', 'Compare the agent opinion with deterministic controls.'],
+] as const;
+
 function StatusTag({ action }: { action: DecisionAction }) {
   return <Tag type={ACTION_TAG[action]}>{ACTION_LABEL[action]}</Tag>;
 }
@@ -98,48 +106,103 @@ function ScenarioRail({
   busy,
   onSelect,
   onRun,
+  mode,
+  onModeChange,
+  onRunLive,
 }: {
   scenarios: Scenario[];
   activeKey: string;
   busy: boolean;
   onSelect: (key: string) => void;
   onRun: (key: string) => void;
+  mode: 'scenario' | 'live';
+  onModeChange: (mode: 'scenario' | 'live') => void;
+  onRunLive: () => void;
 }) {
   return (
-    <aside className="scenario-rail" aria-label="Risk scenario library">
-      <div className="section-heading">
-        <span className="eyebrow">Judge scenario library</span>
-        <h2>Test the controls</h2>
-        <p>Each case runs through the same evidence, policy, approval, and settlement code used by the API.</p>
+    <aside className="scenario-rail" aria-label="Evaluation workspace">
+      <div className="workflow-switch" role="tablist" aria-label="Evaluation mode">
+        <button
+          className={mode === 'scenario' ? 'workflow-switch__tab workflow-switch__tab--active' : 'workflow-switch__tab'}
+          type="button"
+          role="tab"
+          aria-selected={mode === 'scenario'}
+          onClick={() => onModeChange('scenario')}
+        >
+          Control lab
+        </button>
+        <button
+          className={mode === 'live' ? 'workflow-switch__tab workflow-switch__tab--active' : 'workflow-switch__tab'}
+          type="button"
+          role="tab"
+          aria-selected={mode === 'live'}
+          onClick={() => onModeChange('live')}
+        >
+          Live evidence
+        </button>
       </div>
-      <Button
-        className="run-button"
-        renderIcon={busy ? Renew : PlayFilled}
-        disabled={busy}
-        onClick={() => onRun(activeKey)}
-      >
-        {busy ? 'Evaluating controls' : 'Run selected scenario'}
-      </Button>
-      <div className="scenario-list">
-        {scenarios.map((scenario, index) => {
-          const active = scenario.key === activeKey;
-          return (
-            <button
-              className={`scenario-row${active ? ' scenario-row--active' : ''}`}
-              key={scenario.key}
-              type="button"
-              onClick={() => onSelect(scenario.key)}
-            >
-              <span className="scenario-row__index">{String(index + 1).padStart(2, '0')}</span>
-              <span className="scenario-row__copy">
-                <strong>{scenario.title}</strong>
-                <small>{scenario.description}</small>
-              </span>
-              <StatusTag action={scenario.expected_action} />
-            </button>
-          );
-        })}
-      </div>
+      {mode === 'scenario' ? (
+        <>
+          <div className="section-heading">
+            <span className="eyebrow">Judge scenario library</span>
+            <h2>Test the controls</h2>
+            <p>Each case runs through the same evidence, policy, approval, and settlement code used by the API.</p>
+          </div>
+          <Button
+            className="run-button"
+            renderIcon={busy ? Renew : PlayFilled}
+            disabled={busy}
+            onClick={() => onRun(activeKey)}
+          >
+            {busy ? 'Evaluating controls' : 'Run selected scenario'}
+          </Button>
+          <div className="scenario-list">
+            {scenarios.map((scenario, index) => {
+              const active = scenario.key === activeKey;
+              return (
+                <button
+                  className={`scenario-row${active ? ' scenario-row--active' : ''}`}
+                  key={scenario.key}
+                  type="button"
+                  onClick={() => onSelect(scenario.key)}
+                >
+                  <span className="scenario-row__index">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="scenario-row__copy">
+                    <strong>{scenario.title}</strong>
+                    <small>{scenario.description}</small>
+                  </span>
+                  <StatusTag action={scenario.expected_action} />
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="live-rail">
+          <div className="section-heading">
+            <span className="eyebrow">Production-shaped path</span>
+            <h2>Run fresh evidence</h2>
+            <p>This creates new tenant records and uploads three immutable documents through the public API.</p>
+          </div>
+          <Button
+            className="run-button"
+            renderIcon={busy ? Renew : PlayFilled}
+            disabled={busy}
+            onClick={onRunLive}
+          >
+            {busy ? 'Building evidence package' : 'Run live evidence workflow'}
+          </Button>
+          <ol className="live-steps">
+            {LIVE_STEPS.map(([index, title, detail]) => (
+              <li key={index}>
+                <span>{index}</span>
+                <div><strong>{title}</strong><small>{detail}</small></div>
+              </li>
+            ))}
+          </ol>
+          <div className="live-boundary"><Locked size={16} /><span>No private keys. Settlement remains a separate approver action.</span></div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -162,6 +225,24 @@ function EmptyWorkbench({ scenario }: { scenario?: Scenario }) {
   );
 }
 
+function LiveEmptyWorkbench() {
+  return (
+    <section className="empty-workbench empty-workbench--live">
+      <div className="empty-workbench__icon"><Document size={32} /></div>
+      <span className="eyebrow">Fresh tenant-scoped records</span>
+      <h2>From raw documents to a payable decision.</h2>
+      <p>Create a verified vendor, policy, treasury snapshot, invoice, purchase order, and delivery proof. TallyGuard hashes every source before the agent and policy engine review it.</p>
+      <div className="flow-preview" aria-label="Live evidence flow">
+        <span><Document size={16} /> 3 documents</span>
+        <ArrowRight size={16} />
+        <span><Rule size={16} /> 12 controls</span>
+        <ArrowRight size={16} />
+        <span><Wallet size={16} /> Approval boundary</span>
+      </div>
+    </section>
+  );
+}
+
 function EvidencePanel({ run }: { run: RunResult }) {
   const invoice = run.invoice;
   const decision = run.decision;
@@ -179,7 +260,7 @@ function EvidencePanel({ run }: { run: RunResult }) {
       <div className="invoice-summary">
         <div>
           <span>Vendor</span>
-          <strong>Acme Data LLC</strong>
+          <code>{shorten(invoice.vendor_id, 14, 8)}</code>
         </div>
         <div>
           <span>Amount</span>
@@ -271,6 +352,16 @@ function DecisionPanel({
             </Tag>
           </div>
           <p>{decision.agent_recommendation.summary}</p>
+          {decision.agent_recommendation.evidence_refs.length > 0 ? (
+            <div className="agent-note__refs">
+              <span>Evidence citations</span>
+              <div>
+                {decision.agent_recommendation.evidence_refs.map((reference) => (
+                  <code key={reference}>{shorten(reference, 12, 10)}</code>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -357,6 +448,7 @@ function App() {
   const [payment, setPayment] = useState<Payment | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'scenario' | 'live'>('scenario');
 
   useEffect(() => {
     let cancelled = false;
@@ -403,6 +495,20 @@ function App() {
       setApproval(await requestApproval(run.decision.id, data.sessions.operator));
     });
   }, [act, data, run]);
+
+  const handleRunLive = useCallback(() => {
+    if (!data) return;
+    void act('Creating fresh records and evaluating uploaded evidence', async () => {
+      const result = await runLiveEvidenceWorkflow(
+        data.sessions.admin,
+        data.sessions.operator,
+      );
+      setRun(result);
+      setHistory((items) => [result, ...items].slice(0, 12));
+      setApproval(null);
+      setPayment(null);
+    });
+  }, [act, data]);
 
   const handleApprove = useCallback(() => {
     if (!data || !approval) return;
@@ -478,6 +584,9 @@ function App() {
               busy={busy !== null}
               onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); }}
               onRun={handleRun}
+              mode={mode}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); }}
+              onRunLive={handleRunLive}
             />
             <main className="workbench">
               {run ? (
@@ -500,7 +609,7 @@ function App() {
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}
                 </>
-              ) : <EmptyWorkbench scenario={selectedScenario} />}
+              ) : mode === 'live' ? <LiveEmptyWorkbench /> : <EmptyWorkbench scenario={selectedScenario} />}
             </main>
           </div>
         )}
