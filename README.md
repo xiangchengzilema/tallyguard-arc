@@ -59,6 +59,7 @@ Every payment answers four questions:
 - Transient provider failures return a retryable 503, move the invoice to `SUBMISSION_FAILED`, retain the original intent and idempotency key, recheck current execution controls on retry, and record both failure and recovery in the audit chain
 - Every provider attempt is durably classified as retryable, locked, reconciliation-mismatched, or confirmed; only an explicitly retryable latest attempt can re-enter automatic settlement
 - The settlement exception center shows open retries, locked mismatches, recovered incidents, attempt count, correlation reference, and a one-way hash of the provider idempotency key without exposing the key itself
+- A worker-restart recovery drill proves a provider-accepted transfer is recovered with the original durable idempotency key and only one provider-side transfer
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
 - Approver-only governance overview combines the active policy authority with an enriched global exception inbox; approving advances an escalated invoice to `READY`, while rejection closes it as `REJECTED` without creating a payment intent
 - Restart-safe opaque sessions stored only as SHA-256 token digests

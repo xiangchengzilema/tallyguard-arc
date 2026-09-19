@@ -16,6 +16,7 @@ from tallyguard.settlement import (
     ProviderSubmission,
     SettlementDenied,
     SettlementService,
+    SettlementUnavailable,
     SimulatedArcAdapter,
 )
 from tallyguard.workflow import InvoiceStatus, WorkflowError
@@ -144,6 +145,42 @@ class WrongRecipientAdapter:
         )
 
 
+class DurableIdempotentProvider:
+    """Minimal provider ledger that survives an application worker restart."""
+
+    def __init__(self) -> None:
+        self.accepted: dict[str, ProviderSubmission] = {}
+        self.create_calls = 0
+
+    def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+        existing = self.accepted.get(intent.idempotency_key)
+        if existing is not None:
+            return existing
+        self.create_calls += 1
+        receipt = ProviderSubmission(
+            provider_reference="provider-durable-1",
+            transaction_hash="0x" + "c" * 64,
+            recipient=intent.recipient,
+            amount_usdc=intent.amount_usdc,
+            network=intent.network,
+            block_number=88,
+        )
+        self.accepted[intent.idempotency_key] = receipt
+        raise SettlementUnavailable(
+            "Provider accepted the transfer, but the worker lost confirmation before persisting it."
+        )
+
+
+class RestartedProviderAdapter:
+    name = "durable-idempotent-provider"
+
+    def __init__(self, provider: DurableIdempotentProvider) -> None:
+        self.provider = provider
+
+    def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+        return self.provider.submit(intent)
+
+
 def test_reconciliation_mismatch_is_locked_and_cannot_be_resubmitted(tmp_path):
     repo, stored = ready_repository(tmp_path / "payments.sqlite3")
     with pytest.raises(SettlementDenied, match="wrong recipient"):
@@ -174,6 +211,54 @@ def test_reconciliation_mismatch_is_locked_and_cannot_be_resubmitted(tmp_path):
             actor_user_id="approver-1",
             correlation_id="request-2",
         )
+
+
+def test_worker_restart_recovers_provider_accepted_transfer_without_duplicate(tmp_path):
+    database = tmp_path / "restart-recovery.sqlite3"
+    repo, stored = ready_repository(database)
+    provider = DurableIdempotentProvider()
+
+    with pytest.raises(SettlementUnavailable, match="lost confirmation"):
+        orchestrator(repo, RestartedProviderAdapter(provider)).settle(
+            invoice=stored,
+            decision_id="decision-1",
+            decision=authorized_decision(),
+            actor_user_id="approver-1",
+            correlation_id="before-worker-restart",
+        )
+    intent_before_restart = repo.get_payment_intent_for_decision(
+        organization_id="org-1", decision_id="decision-1"
+    )
+    assert repo.get_invoice(
+        organization_id="org-1", invoice_id="invoice-1"
+    ).status == InvoiceStatus.SUBMISSION_FAILED
+    repo.close()
+
+    restarted = SqliteRepository(database)
+    recovered = orchestrator(
+        restarted, RestartedProviderAdapter(provider)
+    ).settle(
+        invoice=restarted.get_invoice(
+            organization_id="org-1", invoice_id="invoice-1"
+        ),
+        decision_id="decision-1",
+        decision=authorized_decision(),
+        actor_user_id="approver-1",
+        correlation_id="after-worker-restart",
+    )
+
+    assert recovered.invoice.status == InvoiceStatus.RECONCILED
+    assert recovered.intent.idempotency_key == intent_before_restart.idempotency_key
+    assert recovered.receipt.provider_reference == "provider-durable-1"
+    assert provider.create_calls == 1
+    assert len(provider.accepted) == 1
+    attempts = restarted.settlement_attempts(
+        organization_id="org-1", payment_intent_id=recovered.intent.id
+    )
+    assert [attempt.outcome.value for attempt in attempts] == [
+        "CONFIRMED",
+        "FAILED_RETRYABLE",
+    ]
 
 
 def test_non_usdc_invoice_never_creates_payment_intent(tmp_path):

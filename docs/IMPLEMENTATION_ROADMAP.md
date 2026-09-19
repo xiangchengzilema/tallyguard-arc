@@ -273,6 +273,7 @@ Implemented foundation:
 - A provider-timeout recovery drill proves a transient 503 leaves the invoice retryable, preserves the original durable intent and idempotency key, rechecks current controls, and produces exactly one accepted provider submission after recovery
 - A tenant-scoped settlement-attempt ledger classifies every provider call; the exception center exposes safe retries, locked mismatches, and resolved incidents while returning only a hash fingerprint of the idempotency key
 - Wrong-network, wrong-recipient, wrong-amount, malformed-hash, and invalid-block responses now enter terminal `RECONCILIATION_MISMATCH` instead of the retry queue
+- A worker-restart drill closes and reopens the application repository after the provider accepts a transfer but before local confirmation; recovery reuses the same durable key and observes exactly one provider-side transfer
 - The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, atomic treasury contention, throughput, and P95 figures
 
 Two distinct test classes will be reported honestly:
@@ -289,7 +290,7 @@ Synthetic load suite:
 - Independent payment attempts racing for the same daily-limit and reserve headroom
 - Cross-tenant identifier attacks
 - Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection (timeout/retry, durable attempt history, malformed receipt, and wrong-recipient lockout complete; slow-provider load injection remains optional)
-- Database contention and worker restart recovery
+- Database contention and worker restart recovery (complete)
 - Measured throughput, p50/p95/p99 latency, error rate, and duplicate-payment count
 
 The public report and console call this a multi-tenant engineering load test. It is not represented as genuine customer traction. For traction, the goal is at least one real business or self-operated business workflow, which the event rules explicitly allow.
