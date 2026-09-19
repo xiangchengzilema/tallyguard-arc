@@ -139,6 +139,8 @@ Implemented foundation:
 - Tenant-scoped invoice create/read/list endpoints with opaque bearer authentication
 - Stable status filtering and cursor pagination
 - Correlation IDs and fail-closed JSON errors
+- Seven deterministic judge scenarios exercise the real policy engine and persisted workflow
+- Large-invoice scenario supports role-separated request and approval through the API
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries

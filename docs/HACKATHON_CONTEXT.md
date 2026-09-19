@@ -55,6 +55,7 @@ Strongly encouraged:
 - Human exception approval is segregated and explicitly bound to settlement intent
 - Authenticated Flask API now exposes health/readiness and tenant-scoped invoice workflows
 - A real local HTTP smoke test created and retrieved an invoice through the public API surface
+- Seven judge scenarios and the segregated large-invoice approval path are available through API
 - Automated test suite passing
 
 Milestone 2 is complete. SQLite persistence now retains tenant-scoped evidence, provenance,

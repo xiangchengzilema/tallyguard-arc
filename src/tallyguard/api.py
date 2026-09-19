@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from flask import Flask, Response, g, jsonify, request
 
+from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
 from .auth import (
     AuthenticationDenied,
     Authenticator,
@@ -22,8 +23,10 @@ from .auth import (
     authorize,
 )
 from .models import Invoice
+from .decisions import DecisionRecord, DecisionService
+from .demo import build_demo_scenario, scenario_catalog
 from .persistence import PersistenceError, SqliteRepository, StoredInvoice
-from .workflow import InvoiceStatus
+from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 
 DEMO_ORGANIZATION_ID = "demo-org"
@@ -48,6 +51,42 @@ def _invoice_json(stored: StoredInvoice) -> dict[str, Any]:
     }
 
 
+def _decision_json(record: DecisionRecord) -> dict[str, Any]:
+    recommendation = record.agent_recommendation
+    return {
+        "id": record.id,
+        "organization_id": record.organization_id,
+        "invoice_id": record.invoice_id,
+        "evidence_manifest_hash": record.evidence_manifest_hash,
+        "policy_version": record.policy_version,
+        "policy_content_hash": record.policy_content_hash,
+        "agent_recommendation": (
+            {
+                "action": recommendation.action.value,
+                "summary": recommendation.summary,
+                "reason_codes": list(recommendation.reason_codes),
+                "confidence": format(recommendation.confidence, "f"),
+            }
+            if recommendation is not None
+            else None
+        ),
+        "agent_disagreed": record.agent_disagreed,
+        "final_action": record.final_action.value,
+        "reason_codes": list(record.policy_decision.reason_codes),
+        "remediation": list(record.policy_decision.remediation),
+        "rules": [
+            {
+                "code": result.code,
+                "disposition": result.disposition.value,
+                "message": result.message,
+                "remediation": result.remediation,
+            }
+            for result in record.policy_decision.rule_results
+        ],
+        "created_at": record.created_at.isoformat(),
+    }
+
+
 def _error(code: str, message: str, status: int) -> tuple[Response, int]:
     return jsonify({"error": {"code": code, "message": message}, "correlation_id": _correlation_id()}), status
 
@@ -68,8 +107,14 @@ def create_app(
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
     authenticator = Authenticator()
+    decision_service = DecisionService()
+    approval_inbox = ApprovalInbox()
+    authorized_decisions: dict[str, Any] = {}
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
+    app.extensions["tallyguard_decision_service"] = decision_service
+    app.extensions["tallyguard_approval_inbox"] = approval_inbox
+    app.extensions["tallyguard_authorized_decisions"] = authorized_decisions
 
     _seed_demo_identity(repository)
 
@@ -96,6 +141,19 @@ def create_app(
     def persistence_error(exc: PersistenceError):
         status = 404 if "not found" in str(exc).lower() else 409
         return _error("PERSISTENCE_ERROR", str(exc), status)
+
+    @app.errorhandler(ApprovalError)
+    def approval_error(exc: ApprovalError):
+        status = 404 if "not found" in str(exc).lower() else 409
+        return _error("APPROVAL_ERROR", str(exc), status)
+
+    @app.errorhandler(WorkflowError)
+    def workflow_error(exc: WorkflowError):
+        return _error("WORKFLOW_ERROR", str(exc), 409)
+
+    @app.errorhandler(KeyError)
+    def missing_domain_record(exc: KeyError):
+        return _error("NOT_FOUND", str(exc).strip("'"), 404)
 
     @app.errorhandler(ValueError)
     def validation_error(exc: ValueError):
@@ -165,6 +223,143 @@ def create_app(
                     "organization_id": principal.organization_id,
                     "roles": [role.value for role in principal.roles],
                 },
+            }
+        )
+
+    @app.get("/api/demo/scenarios")
+    def demo_scenarios():
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "key": item.key,
+                        "title": item.title,
+                        "description": item.description,
+                        "expected_action": item.expected_action.value,
+                    }
+                    for item in scenario_catalog()
+                ]
+            }
+        )
+
+    @app.post("/api/demo/scenarios/<scenario_key>/run")
+    @require(Permission.DECISION_RUN)
+    def run_demo_scenario(scenario_key: str):
+        invoice_id = f"invoice_{scenario_key.replace('-', '_')}_{uuid4().hex[:12]}"
+        scenario = build_demo_scenario(
+            scenario_key,
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        stored = repository.create_invoice(scenario.evidence.invoice)
+        stored = repository.transition_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+            target_status=InvoiceStatus.EVALUATING,
+            expected_version=stored.version,
+            actor_user_id=g.principal.user_id,
+            correlation_id=_correlation_id(),
+        )
+        decision = decision_service.evaluate(
+            evidence=scenario.evidence,
+            vendor=scenario.vendor,
+            treasury=scenario.treasury,
+            policy=scenario.policy,
+            agent_recommendation=scenario.recommendation,
+            known_invoice_fingerprints=scenario.known_invoice_fingerprints,
+            evaluation_date=scenario.evaluation_date,
+        )
+        if decision.final_action != scenario.definition.expected_action:
+            raise RuntimeError("Demo scenario produced an unexpected control result.")
+        stored = repository.transition_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+            target_status=status_for_decision(decision.final_action),
+            expected_version=stored.version,
+            actor_user_id="tallyguard-policy-engine",
+            correlation_id=_correlation_id(),
+        )
+        return jsonify(
+            {
+                "scenario": {
+                    "key": scenario.definition.key,
+                    "title": scenario.definition.title,
+                },
+                "invoice": _invoice_json(stored),
+                "decision": _decision_json(decision),
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.post("/api/decisions/<decision_id>/request-approval")
+    @require(Permission.DECISION_RUN)
+    def request_approval(decision_id: str):
+        decision = decision_service.repository.get(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        approval = approval_inbox.request(decision, requested_by=g.principal)
+        return jsonify(
+            {
+                "approval": {
+                    "id": approval.id,
+                    "decision_id": approval.decision_id,
+                    "invoice_id": approval.invoice_id,
+                    "status": approval.status.value,
+                    "version": approval.version,
+                    "requested_by_user_id": approval.requested_by_user_id,
+                    "requested_at": approval.requested_at.isoformat(),
+                },
+                "correlation_id": _correlation_id(),
+            }
+        ), 201
+
+    @app.post("/api/approvals/<approval_id>/resolve")
+    @require(Permission.PAYMENT_APPROVE)
+    def resolve_approval(approval_id: str):
+        payload = request.get_json(silent=True) or {}
+        if "approve" not in payload or not isinstance(payload["approve"], bool):
+            raise ValueError("Approval resolution requires a boolean approve field.")
+        resolved = approval_inbox.resolve(
+            organization_id=g.principal.organization_id,
+            approval_id=approval_id,
+            approver=g.principal,
+            approve=payload["approve"],
+            resolution_note=str(payload.get("note", "")),
+            expected_version=int(payload.get("expected_version", 1)),
+        )
+        final_action = None
+        if resolved.status.value == "APPROVED":
+            decision = decision_service.repository.get(
+                organization_id=g.principal.organization_id,
+                decision_id=resolved.decision_id,
+            )
+            authorized = apply_approved_escalation(decision, resolved)
+            authorized_decisions[resolved.id] = authorized
+            final_action = authorized.action.value
+            invoice = repository.get_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=resolved.invoice_id,
+            )
+            repository.transition_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=resolved.invoice_id,
+                target_status=InvoiceStatus.READY,
+                expected_version=invoice.version,
+                actor_user_id=g.principal.user_id,
+                correlation_id=_correlation_id(),
+            )
+        return jsonify(
+            {
+                "approval": {
+                    "id": resolved.id,
+                    "status": resolved.status.value,
+                    "version": resolved.version,
+                    "resolved_by_user_id": resolved.resolved_by_user_id,
+                    "resolution_note": resolved.resolution_note,
+                    "authorized_action": final_action,
+                },
+                "correlation_id": _correlation_id(),
             }
         )
 
