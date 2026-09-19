@@ -1814,6 +1814,43 @@ def create_app(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
         )
+        completed_receipt_exists = False
+        try:
+            existing_intent = repository.get_payment_intent_for_decision(
+                organization_id=g.principal.organization_id,
+                decision_id=decision_id,
+            )
+        except PersistenceError as exc:
+            if "not found" not in str(exc).lower():
+                raise
+        else:
+            completed_receipt_exists = repository.find_settlement_receipt(
+                organization_id=g.principal.organization_id,
+                payment_intent_id=existing_intent.id,
+            ) is not None
+
+        if not completed_receipt_exists:
+            execution_policy = repository.active_policy(
+                organization_id=g.principal.organization_id
+            )
+            if execution_policy.policy.kill_switch_enabled:
+                repository.append(
+                    aggregate_type="settlement_gate",
+                    aggregate_id=decision_id,
+                    event_type="SETTLEMENT_BLOCKED_BY_ACTIVE_KILL_SWITCH",
+                    payload={
+                        "organization_id": g.principal.organization_id,
+                        "invoice_id": invoice_id,
+                        "decision_id": decision_id,
+                        "active_policy_version": execution_policy.policy.version,
+                        "active_policy_hash": execution_policy.content_hash,
+                        "actor_user_id": actor_user_id,
+                        "correlation_id": correlation_id,
+                    },
+                )
+                raise SettlementDenied(
+                    "The active organization policy has engaged the settlement kill switch."
+                )
         outcome = payment_orchestrator.settle(
             invoice=stored,
             decision_id=decision_id,

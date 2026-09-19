@@ -220,6 +220,12 @@ the bound invoice and decision. Resolving an approval uses optimistic version ch
 the invoice from `ESCALATED` to `READY`; rejection moves it to terminal `REJECTED`. Neither operation
 creates a payment intent, and only the approved path can later satisfy settlement authorization.
 
+Every settlement request checks the current active policy's kill switch before creating a new
+intent or calling the provider, even when the bound `PAY` decision predates the emergency policy.
+A blocked execution writes a tenant audit event containing the active policy version and hash. If a
+durable receipt already exists, the request returns that proof as an idempotent replay and does not
+call the provider, so post-payment emergency stops do not hide completed reconciliation evidence.
+
 ## 7. Demo scenarios
 
 The seeded demo should include:

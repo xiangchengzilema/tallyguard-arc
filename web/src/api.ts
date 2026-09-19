@@ -9,6 +9,8 @@ import type {
   OperationsOverview,
   PaymentBatch,
   Payment,
+  PolicyActivation,
+  PolicyDraft,
   PolicySimulation,
   ReliabilityEvidence,
   ReplayVerification,
@@ -87,6 +89,32 @@ export async function fetchGovernanceOverview(approverToken: string): Promise<Go
   return {
     activePolicy: payload.active_policy,
     pendingApprovals: payload.pending_approvals,
+  };
+}
+
+export async function activatePolicyVersion(
+  currentPolicy: GovernanceOverview['activePolicy'],
+  draft: PolicyDraft,
+  adminToken: string,
+): Promise<PolicyActivation> {
+  const version = `ops-${Date.now().toString(36)}-${crypto.randomUUID().replaceAll('-', '').slice(0, 6)}`;
+  const payload = await request<{ policy: PolicyActivation['policy'] }>(
+    '/api/policies',
+    { method: 'POST', body: JSON.stringify({ version, ...draft }) },
+    adminToken,
+  );
+  if (!currentPolicy) {
+    return { policy: payload.policy, previousVersion: null, changes: [] };
+  }
+  const diff = await request<{ changes: PolicyActivation['changes'] }>(
+    `/api/policies/diff?from=${encodeURIComponent(currentPolicy.version)}&to=${encodeURIComponent(version)}`,
+    { method: 'GET' },
+    adminToken,
+  );
+  return {
+    policy: payload.policy,
+    previousVersion: currentPolicy.version,
+    changes: diff.changes,
   };
 }
 

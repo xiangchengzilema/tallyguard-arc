@@ -103,6 +103,9 @@ sequenceDiagram
 7. A mismatch at any boundary fails closed and creates no confirmed receipt.
 8. A batch is only an orchestration envelope. It cannot share authorization or idempotency across
    invoices, and one failed item cannot alter another item's durable intent or receipt.
+9. Before a new intent or provider submission, the active tenant policy's emergency kill switch is
+   checked again. A completed receipt may still be replayed under a later stop because that path
+   returns existing proof and never resubmits funds.
 
 ## Historical decision replay
 
@@ -152,6 +155,13 @@ Approval moves the invoice from `ESCALATED` to `READY`; rejection moves it to te
 Both paths are version-checked and audit recorded. Neither path calls Circle or creates an intent,
 so settlement still passes through the independent deterministic authorization and idempotency
 boundary.
+
+Policy edits never mutate an existing version. The governance workbench sends a complete proposed
+policy, activates a newly named and content-addressed version, then requests a server-side diff
+against the previous version. The active kill switch is additionally checked on the execution path,
+so activating an emergency stop blocks invoices that were already `READY` under an older decision.
+This execution-time gate records the blocking policy version and hash in the audit chain before
+failing closed.
 
 ## Tenant isolation
 

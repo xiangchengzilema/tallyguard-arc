@@ -169,6 +169,29 @@ export interface GovernanceOverview {
   pendingApprovals: ApprovalInboxItem[];
 }
 
+export interface PolicyDraft {
+  daily_payment_limit_usdc: string;
+  minimum_cash_reserve_usdc: string;
+  maximum_autonomous_payment_usdc: string;
+  po_amount_tolerance_usdc: string;
+  allowed_asset: string;
+  allowed_network: string;
+  kill_switch_enabled: boolean;
+  schedule_payments_before_due_days: number | null;
+}
+
+export interface PolicyFieldChange {
+  field: string;
+  before: string | number | boolean | null;
+  after: string | number | boolean | null;
+}
+
+export interface PolicyActivation {
+  policy: ActivePolicy;
+  previousVersion: string | null;
+  changes: PolicyFieldChange[];
+}
+
 export interface Payment {
   intent: {
     id: string;

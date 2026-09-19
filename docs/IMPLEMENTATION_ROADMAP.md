@@ -104,6 +104,7 @@ Implemented foundation:
 - Durable invoice state machine with optimistic concurrency and immutable transition history
 - Durable policy decisions and optimistic approval records survive service restarts
 - Approved settlement authorization is reconstructed from the bound decision and approval instead of trusted from process memory
+- The current tenant kill switch is enforced again at execution time before any new intent or provider submission, including for invoices that became `READY` under an older policy; completed receipt replays remain idempotently readable
 - The authenticated evaluation API now normalizes real uploaded three-way-match evidence and binds it to the verified vendor, active policy, latest treasury snapshot, and Arc network
 - Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
 - A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
@@ -117,7 +118,7 @@ Implemented foundation:
 - Deterministic policy override boundary
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows
 - Human approval inbox for exceptions
-- Versioned policy editor with before/after diff (backend API complete)
+- Versioned policy editor with before/after diff (complete)
 - Decision replay using the exact historical policy version (complete)
 
 Exit criteria:
@@ -229,6 +230,7 @@ Implemented foundation:
 - The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
+- The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)

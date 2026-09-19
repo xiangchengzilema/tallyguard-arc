@@ -1,6 +1,9 @@
 from datetime import date
 
+import pytest
+
 from tallyguard.api import create_app
+from tallyguard.persistence import PersistenceError
 
 
 def auth(client, role):
@@ -344,6 +347,102 @@ def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
         "SETTLEMENT_RECONCILED"
     ) == 1
     assert all(len(item["event_hash"]) == 64 for item in audit["items"])
+
+
+def test_active_kill_switch_blocks_ready_invoice_but_not_completed_receipt_replay(tmp_path):
+    app = create_app(database_path=tmp_path / "execution-kill-switch.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    admin_headers = auth(client, "admin")
+    auditor_headers = auth(client, "auditor")
+
+    blocked_run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=operator_headers,
+    ).get_json()
+    active = client.get(
+        "/api/policies/active", headers=approver_headers
+    ).get_json()["policy"]
+    kill_payload = {
+        key: active[key]
+        for key in (
+            "daily_payment_limit_usdc",
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+            "allowed_asset",
+            "allowed_network",
+            "schedule_payments_before_due_days",
+        )
+    }
+    kill_payload.update({"version": "emergency-stop-v1", "kill_switch_enabled": True})
+    assert client.post(
+        "/api/policies", json=kill_payload, headers=admin_headers
+    ).status_code == 201
+
+    blocked = client.post(
+        f"/api/invoices/{blocked_run['invoice']['id']}/settle",
+        json={"decision_id": blocked_run["decision"]["id"]},
+        headers=approver_headers,
+    )
+    assert blocked.status_code == 409
+    assert "kill switch" in blocked.get_json()["error"]["message"].lower()
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+    with pytest.raises(PersistenceError, match="not found"):
+        app.extensions["tallyguard_repository"].get_payment_intent_for_decision(
+            organization_id="demo-org",
+            decision_id=blocked_run["decision"]["id"],
+        )
+    blocked_audit = client.get(
+        "/api/audit/events", headers=auditor_headers
+    ).get_json()
+    assert blocked_audit["chain_valid"] is True
+    assert blocked_audit["items"][-1]["event_type"] == (
+        "SETTLEMENT_BLOCKED_BY_ACTIVE_KILL_SWITCH"
+    )
+
+    paid_app = create_app(database_path=tmp_path / "paid-replay.sqlite3", testing=True)
+    paid_client = paid_app.test_client()
+    paid_operator = auth(paid_client, "operator")
+    paid_approver = auth(paid_client, "approver")
+    paid_admin = auth(paid_client, "admin")
+    paid_run = paid_client.post(
+        "/api/demo/scenarios/clean-payment/run", headers=paid_operator
+    ).get_json()
+    first = paid_client.post(
+        f"/api/invoices/{paid_run['invoice']['id']}/settle",
+        json={"decision_id": paid_run["decision"]["id"]},
+        headers=paid_approver,
+    )
+    assert first.status_code == 200
+    paid_active = paid_client.get(
+        "/api/policies/active", headers=paid_approver
+    ).get_json()["policy"]
+    paid_kill_payload = {
+        key: paid_active[key]
+        for key in (
+            "daily_payment_limit_usdc",
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+            "allowed_asset",
+            "allowed_network",
+            "schedule_payments_before_due_days",
+        )
+    }
+    paid_kill_payload.update({"version": "post-payment-stop-v1", "kill_switch_enabled": True})
+    assert paid_client.post(
+        "/api/policies", json=paid_kill_payload, headers=paid_admin
+    ).status_code == 201
+    replay = paid_client.post(
+        f"/api/invoices/{paid_run['invoice']['id']}/settle",
+        json={"decision_id": paid_run["decision"]["id"]},
+        headers=paid_approver,
+    )
+    assert replay.status_code == 200
+    assert replay.get_json()["payment"]["reused_receipt"] is True
+    assert paid_app.extensions["tallyguard_settlement_adapter"].submission_count == 1
 
 
 def test_non_pay_decision_cannot_enter_settlement(tmp_path):

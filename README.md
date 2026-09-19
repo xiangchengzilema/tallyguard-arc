@@ -47,6 +47,7 @@ Every payment answers four questions:
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration
 - Mainnet settlement locked behind an explicit runtime flag and approval reference
+- The currently active policy kill switch is rechecked immediately before every new settlement; it blocks already-`READY` invoices without creating an intent, while completed receipt replays remain readable and never resubmit
 - Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation
 - Deterministic Arc simulator for the public demo and load tests
 - Circle developer-wallet adapter with UUID v4 idempotency, lifecycle polling, and hard spend cap
@@ -69,6 +70,7 @@ Every payment answers four questions:
 - An auditor-only timeline filters the tenant hash chain to the active invoice and refreshes after evaluation, approval, and settlement so the judge can verify each state mutation on screen
 - A tenant-scoped operations summary aggregates durable open exposure, blocked value, seven-day due risk, overdue value, reconciled value, treasury headroom, policy reserve, and a due-date-sorted invoice queue
 - A finance-governance panel exposes the active policy hash, autonomy cap, daily limit, reserve floor, settlement route, kill-switch state, and role-separated approve/reject actions across pending exceptions
+- The governance panel can stage a safer policy, activate it as a new immutable content-addressed version, and show the server-computed before/after diff without rewriting historical decisions
 - Finance operators can select up to 25 `READY` invoices from the durable work queue and settle them as one batch; each item keeps its own authorization, idempotency key, receipt, and failure result, so one exception cannot mask or roll back the rest
 - A tenant-scoped schedule runner refuses early execution, derives the release date from the sealed policy decision, and revalidates current vendor, policy, treasury, evidence, route, and duplicate controls before any due invoice can settle
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow

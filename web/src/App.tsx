@@ -30,6 +30,7 @@ import {
 } from '@carbon/icons-react';
 import {
   ApiError,
+  activatePolicyVersion,
   bootstrap,
   downloadEvidencePacket,
   fetchGovernanceOverview,
@@ -58,6 +59,8 @@ import type {
   OperationsOverview,
   Payment,
   PaymentBatch,
+  PolicyActivation,
+  PolicyDraft,
   PolicySimulation,
   ReliabilityEvidence,
   ReplayVerification,
@@ -172,6 +175,7 @@ function OperationsQueue({
   busy,
   batch,
   scheduleRun,
+  settlementStopped,
   onSettleBatch,
   onRunSchedules,
 }: {
@@ -179,6 +183,7 @@ function OperationsQueue({
   busy: boolean;
   batch: PaymentBatch | null;
   scheduleRun: ScheduleRun | null;
+  settlementStopped: boolean;
   onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
   onRunSchedules: () => void;
 }) {
@@ -214,7 +219,7 @@ function OperationsQueue({
             <Button
               size="sm"
               renderIcon={Money}
-              disabled={busy || selectedItems.length === 0}
+              disabled={busy || settlementStopped || selectedItems.length === 0}
               onClick={() => onSettleBatch(selectedItems)}
             >
               Settle {selectedItems.length || ''} selected
@@ -276,13 +281,49 @@ function OperationsQueue({
 function GovernancePanel({
   governance,
   busy,
+  policyActivation,
+  onActivatePolicy,
   onResolve,
 }: {
   governance: GovernanceOverview;
   busy: boolean;
+  policyActivation: PolicyActivation | null;
+  onActivatePolicy: (draft: PolicyDraft) => void;
   onResolve: (item: GovernanceOverview['pendingApprovals'][number], approve: boolean) => void;
 }) {
   const policy = governance.activePolicy;
+  const defaultDraft = useCallback((): PolicyDraft => ({
+    daily_payment_limit_usdc: policy?.daily_payment_limit_usdc ?? '5000',
+    minimum_cash_reserve_usdc: policy?.minimum_cash_reserve_usdc ?? '3000',
+    maximum_autonomous_payment_usdc: policy?.maximum_autonomous_payment_usdc ?? '2000',
+    po_amount_tolerance_usdc: policy?.po_amount_tolerance_usdc ?? '0',
+    allowed_asset: policy?.allowed_asset ?? 'USDC',
+    allowed_network: policy?.allowed_network ?? 'ARC-TESTNET',
+    kill_switch_enabled: policy?.kill_switch_enabled ?? false,
+    schedule_payments_before_due_days: policy?.schedule_payments_before_due_days ?? null,
+  }), [policy]);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draft, setDraft] = useState<PolicyDraft>(defaultDraft);
+  useEffect(() => { setDraft(defaultDraft()); }, [defaultDraft]);
+  const updateMoney = (field: keyof Pick<PolicyDraft, 'daily_payment_limit_usdc' | 'minimum_cash_reserve_usdc' | 'maximum_autonomous_payment_usdc' | 'po_amount_tolerance_usdc'>, value: string) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+  const changedCount = policy
+    ? [
+        policy.daily_payment_limit_usdc !== draft.daily_payment_limit_usdc,
+        policy.minimum_cash_reserve_usdc !== draft.minimum_cash_reserve_usdc,
+        policy.maximum_autonomous_payment_usdc !== draft.maximum_autonomous_payment_usdc,
+        policy.po_amount_tolerance_usdc !== draft.po_amount_tolerance_usdc,
+        policy.kill_switch_enabled !== draft.kill_switch_enabled,
+        policy.schedule_payments_before_due_days !== draft.schedule_payments_before_due_days,
+      ].filter(Boolean).length
+    : 1;
+  const canActivate = changedCount > 0 && [
+    draft.daily_payment_limit_usdc,
+    draft.minimum_cash_reserve_usdc,
+    draft.maximum_autonomous_payment_usdc,
+    draft.po_amount_tolerance_usdc,
+  ].every((value) => value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0);
   return (
     <section className="governance-panel" aria-label="Policy governance and approval inbox">
       <div className="governance-policy">
@@ -302,6 +343,39 @@ function GovernancePanel({
         ) : (
           <p className="governance-empty">Run a control case or create a production policy to establish the tenant's payment authority.</p>
         )}
+        <button className="policy-editor__toggle" type="button" onClick={() => setEditorOpen((open) => !open)}>
+          <span>{editorOpen ? 'Close policy change' : 'Propose immutable policy version'}</span>
+          <span aria-hidden="true">{editorOpen ? '−' : '+'}</span>
+        </button>
+        {editorOpen ? (
+          <div className="policy-editor">
+            <div className="policy-editor__notice">
+              <Locked size={16} />
+              <span>A new content-addressed version becomes active. Historical decisions remain bound to their original policy.</span>
+            </div>
+            <div className="policy-editor__fields">
+              <label><span>Autonomy cap (USDC)</span><input type="number" min="0" step="0.01" value={draft.maximum_autonomous_payment_usdc} onChange={(event) => updateMoney('maximum_autonomous_payment_usdc', event.target.value)} /></label>
+              <label><span>Daily limit (USDC)</span><input type="number" min="0" step="0.01" value={draft.daily_payment_limit_usdc} onChange={(event) => updateMoney('daily_payment_limit_usdc', event.target.value)} /></label>
+              <label><span>Reserve floor (USDC)</span><input type="number" min="0" step="0.01" value={draft.minimum_cash_reserve_usdc} onChange={(event) => updateMoney('minimum_cash_reserve_usdc', event.target.value)} /></label>
+              <label><span>PO tolerance (USDC)</span><input type="number" min="0" step="0.01" value={draft.po_amount_tolerance_usdc} onChange={(event) => updateMoney('po_amount_tolerance_usdc', event.target.value)} /></label>
+              <label><span>Schedule lead (days)</span><input type="number" min="0" step="1" value={draft.schedule_payments_before_due_days ?? ''} placeholder="Immediate" onChange={(event) => setDraft((current) => ({ ...current, schedule_payments_before_due_days: event.target.value === '' ? null : Number(event.target.value) }))} /></label>
+              <label className="policy-editor__switch"><input type="checkbox" checked={draft.kill_switch_enabled} onChange={(event) => setDraft((current) => ({ ...current, kill_switch_enabled: event.target.checked }))} /><span>Emergency settlement kill switch</span></label>
+            </div>
+            <div className="policy-editor__review">
+              <div><span>Scope</span><strong>{draft.allowed_asset} · {draft.allowed_network}</strong></div>
+              <div><span>Review</span><strong>{changedCount} proposed change{changedCount === 1 ? '' : 's'}</strong></div>
+              <Button size="sm" disabled={busy || !canActivate} onClick={() => onActivatePolicy(draft)}>Activate new version</Button>
+            </div>
+          </div>
+        ) : null}
+        {policyActivation ? (
+          <div className="policy-change-result">
+            <div><CheckmarkFilled size={18} /><span>Server-verified policy diff</span><code>{shorten(policyActivation.policy.content_hash, 10, 8)}</code></div>
+            {policyActivation.changes.length > 0 ? policyActivation.changes.map((change) => (
+              <p key={change.field}><strong>{change.field.replaceAll('_', ' ')}</strong><span>{String(change.before)}</span><ArrowRight size={14} /><span>{String(change.after)}</span></p>
+            )) : <p><span>Initial tenant policy activated.</span></p>}
+          </div>
+        ) : null}
       </div>
       <div className="approval-inbox">
         <div className="governance-panel__head">
@@ -663,6 +737,7 @@ function DecisionPanel({
   busy,
   replay,
   simulation,
+  settlementStopped,
   onRequestApproval,
   onApprove,
   onSettle,
@@ -675,6 +750,7 @@ function DecisionPanel({
   busy: string | null;
   replay: ReplayVerification | null;
   simulation: PolicySimulation | null;
+  settlementStopped: boolean;
   onRequestApproval: () => void;
   onApprove: () => void;
   onSettle: () => void;
@@ -785,9 +861,13 @@ function DecisionPanel({
           </Button>
         ) : null}
         {(isPayable || approvalGranted) && !payment ? (
-          <Button renderIcon={Money} onClick={onSettle} disabled={busy !== null}>
-            Settle USDC on Arc
-          </Button>
+          settlementStopped ? (
+            <div className="blocked-action"><Locked size={18} /><span>The current policy kill switch blocks every new settlement, including decisions approved under an older version.</span></div>
+          ) : (
+            <Button renderIcon={Money} onClick={onSettle} disabled={busy !== null}>
+              Settle USDC on Arc
+            </Button>
+          )
         ) : null}
         {busy ? <InlineLoading description={busy} status="active" /> : null}
         {!isPayable && !isEscalated ? (
@@ -906,6 +986,7 @@ function App() {
   const [scheduleRun, setScheduleRun] = useState<ScheduleRun | null>(null);
   const [packetHash, setPacketHash] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<PolicySimulation | null>(null);
+  const [policyActivation, setPolicyActivation] = useState<PolicyActivation | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1033,6 +1114,19 @@ function App() {
       }
     });
   }, [act, approval, data, run]);
+
+  const handleActivatePolicy = useCallback((draft: PolicyDraft) => {
+    if (!data || !governance) return;
+    void act('Activating an immutable policy version and verifying its diff', async () => {
+      const activation = await activatePolicyVersion(
+        governance.activePolicy,
+        draft,
+        data.sessions.admin,
+      );
+      setPolicyActivation(activation);
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+    });
+  }, [act, data, governance]);
 
   const handleSettle = useCallback(() => {
     if (!data || !run) return;
@@ -1164,6 +1258,7 @@ function App() {
                       busy={busy}
                       replay={replay}
                       simulation={simulation}
+                      settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
                       onRequestApproval={handleRequestApproval}
                       onApprove={handleApprove}
                       onSettle={handleSettle}
@@ -1194,6 +1289,7 @@ function App() {
             busy={busy !== null}
             batch={batch}
             scheduleRun={scheduleRun}
+            settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
             onSettleBatch={handleSettleBatch}
             onRunSchedules={handleRunSchedules}
           />
@@ -1203,6 +1299,8 @@ function App() {
           <GovernancePanel
             governance={governance}
             busy={busy !== null}
+            policyActivation={policyActivation}
+            onActivatePolicy={handleActivatePolicy}
             onResolve={handleResolveInboxApproval}
           />
         ) : null}
