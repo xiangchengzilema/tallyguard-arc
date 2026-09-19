@@ -66,25 +66,34 @@ class PaymentOrchestrator:
             payment_intent_id=intent.id,
         )
         if existing is not None:
-            completed = self._advance_to_reconciled(
-                organization_id=intent.organization_id,
-                invoice_id=intent.invoice_id,
+            return self._outcome_from_existing(
+                intent=intent,
+                receipt=existing,
                 actor_user_id=actor_user_id,
                 correlation_id=correlation_id,
             )
-            return PaymentOutcome(
-                intent=intent,
-                receipt=existing,
-                invoice=completed,
-                reused_receipt=True,
-            )
 
-        self._enter_submitting(
+        submitting = self._enter_submitting(
             organization_id=intent.organization_id,
             invoice_id=intent.invoice_id,
             actor_user_id=actor_user_id,
             correlation_id=correlation_id,
         )
+        raced_receipt = self.repository.find_settlement_receipt(
+            organization_id=intent.organization_id,
+            payment_intent_id=intent.id,
+        )
+        if raced_receipt is not None:
+            return self._outcome_from_existing(
+                intent=intent,
+                receipt=raced_receipt,
+                actor_user_id=actor_user_id,
+                correlation_id=correlation_id,
+            )
+        if submitting.status != InvoiceStatus.SUBMITTING:
+            raise WorkflowError(
+                "Invoice advanced without a durable settlement receipt."
+            )
         try:
             receipt = self.settlement_service.execute(intent=intent, decision=decision)
         except Exception:
@@ -118,23 +127,56 @@ class PaymentOrchestrator:
         actor_user_id: str,
         correlation_id: str,
     ) -> StoredInvoice:
-        current = self.repository.get_invoice(
-            organization_id=organization_id,
-            invoice_id=invoice_id,
-        )
-        if current.status == InvoiceStatus.SUBMITTING:
-            return current
-        if current.status not in {InvoiceStatus.READY, InvoiceStatus.SUBMISSION_FAILED}:
-            raise WorkflowError(
-                f"Invoice must be READY or retryable before settlement, not {current.status.value}."
+        in_flight = {
+            InvoiceStatus.SUBMITTING,
+            InvoiceStatus.SUBMITTED,
+            InvoiceStatus.CONFIRMED,
+            InvoiceStatus.RECONCILED,
+        }
+        for _ in range(8):
+            current = self.repository.get_invoice(
+                organization_id=organization_id,
+                invoice_id=invoice_id,
             )
-        return self.repository.transition_invoice(
-            organization_id=organization_id,
-            invoice_id=invoice_id,
-            target_status=InvoiceStatus.SUBMITTING,
-            expected_version=current.version,
+            if current.status in in_flight:
+                return current
+            if current.status not in {InvoiceStatus.READY, InvoiceStatus.SUBMISSION_FAILED}:
+                raise WorkflowError(
+                    f"Invoice must be READY or retryable before settlement, not {current.status.value}."
+                )
+            try:
+                return self.repository.transition_invoice(
+                    organization_id=organization_id,
+                    invoice_id=invoice_id,
+                    target_status=InvoiceStatus.SUBMITTING,
+                    expected_version=current.version,
+                    actor_user_id=actor_user_id,
+                    correlation_id=correlation_id,
+                )
+            except WorkflowError as exc:
+                if "another operation" not in str(exc):
+                    raise
+        raise WorkflowError("Invoice did not converge on a submitting state.")
+
+    def _outcome_from_existing(
+        self,
+        *,
+        intent: PaymentIntent,
+        receipt: SettlementReceipt,
+        actor_user_id: str,
+        correlation_id: str,
+    ) -> PaymentOutcome:
+        completed = self._advance_to_reconciled(
+            organization_id=intent.organization_id,
+            invoice_id=intent.invoice_id,
             actor_user_id=actor_user_id,
             correlation_id=correlation_id,
+        )
+        return PaymentOutcome(
+            intent=intent,
+            receipt=receipt,
+            invoice=completed,
+            reused_receipt=True,
         )
 
     def _mark_submission_failed(

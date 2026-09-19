@@ -50,6 +50,7 @@ Every payment answers four questions:
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with seven live risk scenarios
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
+- Real-HTTP synthetic multi-tenant load harness with latency, isolation, and duplicate-payment metrics
 
 ## Run the judge console
 
@@ -62,6 +63,16 @@ cd ..
 ```
 
 Open `http://127.0.0.1:8000`. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
+
+Run a local reliability baseline:
+
+```powershell
+.\.venv\Scripts\python.exe -m tallyguard.loadtest `
+  --organizations 100 --invoices 200 --concurrency 32 `
+  --duplicate-storm 100 --output docs\reports\load-test-baseline.json
+```
+
+The checked-in [baseline report](docs/reports/LOAD_TEST_BASELINE.md) records zero failed workflows, zero duplicate payments, and 100/100 denied cross-tenant reads.
 
 ## Canonical planning documents
 

@@ -210,6 +210,19 @@ Exit criteria:
 
 ### Milestone 7 — Reliability and multi-user load testing
 
+Status: in progress.
+
+Implemented foundation:
+
+- Repeatable real-HTTP load harness with ephemeral tenant data and no committed credentials
+- Distinct operator and approver identities for every synthetic organization
+- Mixed clean, hold, reject, schedule, escalation, approval, and settlement workflows
+- Cross-tenant identifier attack probes
+- Concurrent duplicate settlement storm with provider-submission accounting
+- JSON output with throughput, p50/p95/p99, error rate, and duplicate-payment count
+- 100-organization baseline: 200/200 workflows succeeded, 100/100 isolation probes denied, and 100 duplicate requests produced one provider submission
+- The baseline discovered and verified a fix for a stale-version settlement race
+
 Two distinct test classes will be reported honestly:
 
 1. **Synthetic multi-tenant load** proves engineering reliability.
