@@ -51,3 +51,4 @@ Every payment answers four questions:
 - [Backend product specification](docs/BACKEND_PRODUCT_SPEC.md)
 - [Frontend reference map](docs/FRONTEND_REFERENCE_MAP.md)
 - [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
+- [Hackathon context and submission checklist](docs/HACKATHON_CONTEXT.md)
