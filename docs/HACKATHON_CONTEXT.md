@@ -50,6 +50,8 @@ Strongly encouraged:
 - Immutable PDF/image/JSON evidence intake and field-level provenance implemented
 - Tenant-scoped exact and near-duplicate invoice detection implemented
 - Missing PO and delivery evidence now fail closed with explicit remediation
+- Agent recommendations are separated from deterministic, evidence-bound control decisions
+- Versioned policy history, policy diffs, and scheduled-payment outcomes implemented
 - Automated test suite passing
 
 Milestone 2 remains active. Evidence-to-domain normalization, verified vendor wallet history,

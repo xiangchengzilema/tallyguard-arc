@@ -2,6 +2,7 @@
 
 from .audit import AuditChain, AuditEvent
 from .auth import Authenticator, Permission, Principal, Role, authorize
+from .decisions import AgentRecommendation, DecisionRecord, DecisionRepository, DecisionService
 from .evidence import (
     DuplicateRegistry,
     EvidenceDocument,
@@ -22,15 +23,20 @@ from .models import (
     Vendor,
 )
 from .normalization import EvidenceNormalizer, NormalizedEvidence
+from .policies import PolicyFieldChange, PolicyRepository, StoredPolicy, policy_content_hash
 from .policy import Decision, DecisionAction, Policy, PolicyEngine
 from .vendors import VendorDirectory, VendorWalletEvent, WalletVerificationMethod
 
 __all__ = [
     "AuditChain",
     "AuditEvent",
+    "AgentRecommendation",
     "Authenticator",
     "Decision",
     "DecisionAction",
+    "DecisionRecord",
+    "DecisionRepository",
+    "DecisionService",
     "DeliveryEvidence",
     "DuplicateRegistry",
     "EvidenceDocument",
@@ -45,16 +51,20 @@ __all__ = [
     "InvoiceIdentity",
     "NormalizedEvidence",
     "Policy",
+    "PolicyFieldChange",
     "PolicyEngine",
+    "PolicyRepository",
     "Permission",
     "Principal",
     "PurchaseOrder",
     "Role",
     "SourceLocation",
+    "StoredPolicy",
     "TreasurySnapshot",
     "Vendor",
     "VendorDirectory",
     "VendorWalletEvent",
     "WalletVerificationMethod",
     "authorize",
+    "policy_content_hash",
 ]

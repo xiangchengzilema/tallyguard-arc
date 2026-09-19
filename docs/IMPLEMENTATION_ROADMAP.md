@@ -82,6 +82,16 @@ Exit criteria:
 
 ### Milestone 3 — Agent decision service
 
+Status: in progress.
+
+Implemented foundation:
+
+- AI recommendations are stored as non-authoritative interpretation only
+- Deterministic policy always owns the final action and visibly records disagreement
+- Stable evidence-and-policy-bound decision IDs with tamper-evident audit events
+- `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` control outcomes
+- Immutable policy versions, content hashes, active-version lookup, and field-level diffs
+
 - Agent-generated evidence summary
 - Recommended action with structured reason codes
 - Deterministic policy override boundary

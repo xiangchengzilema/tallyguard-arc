@@ -209,3 +209,25 @@ def test_missing_delivery_evidence_is_held(case):
     decision = evaluate(case, delivery=None)
     assert decision.action == DecisionAction.HOLD
     assert "MISSING_DELIVERY_EVIDENCE" in decision.reason_codes
+
+
+def test_valid_future_invoice_can_be_scheduled(case):
+    policy = replace(case[-1], schedule_payments_before_due_days=3)
+    decision = evaluate(
+        case,
+        policy=policy,
+        evaluation_date=date(2026, 9, 20),
+    )
+    assert decision.action == DecisionAction.SCHEDULE
+    assert "PAYMENT_SCHEDULED_FOR_DUE_DATE" in decision.reason_codes
+
+
+def test_hold_takes_priority_over_scheduling(case):
+    policy = replace(case[-1], schedule_payments_before_due_days=3)
+    decision = evaluate(
+        case,
+        policy=policy,
+        delivery=None,
+        evaluation_date=date(2026, 9, 20),
+    )
+    assert decision.action == DecisionAction.HOLD

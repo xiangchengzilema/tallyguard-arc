@@ -8,6 +8,7 @@ payment intent may be created.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Iterable
@@ -25,6 +26,7 @@ class DecisionAction(StrEnum):
 
 class RuleDisposition(StrEnum):
     PASS = "PASS"
+    SCHEDULE = "SCHEDULE"
     HOLD = "HOLD"
     REJECT = "REJECT"
     ESCALATE = "ESCALATE"
@@ -53,6 +55,7 @@ class Policy:
     allowed_asset: str = "USDC"
     allowed_network: str = "ARC-TESTNET"
     kill_switch_enabled: bool = False
+    schedule_payments_before_due_days: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -62,6 +65,8 @@ class Policy:
             "po_amount_tolerance_usdc",
         ):
             object.__setattr__(self, field_name, Decimal(str(getattr(self, field_name))))
+        if self.schedule_payments_before_due_days is not None and self.schedule_payments_before_due_days < 0:
+            raise ValueError("Payment scheduling lead time must not be negative.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +104,7 @@ class PolicyEngine:
         known_invoice_fingerprints: Iterable[str] = (),
         asset: str = "USDC",
         network: str = "ARC-TESTNET",
+        evaluation_date: date | None = None,
     ) -> Decision:
         results = (
             self._kill_switch(policy),
@@ -112,6 +118,7 @@ class PolicyEngine:
             self._autonomy_limit(invoice, vendor, policy),
             self._daily_limit(invoice, treasury, policy),
             self._cash_reserve(invoice, treasury, policy),
+            self._payment_timing(invoice, policy, evaluation_date or date.today()),
         )
         action = self._final_action(results)
         return Decision(
@@ -319,6 +326,21 @@ class PolicyEngine:
         return PolicyEngine._pass("MINIMUM_RESERVE_OK", "Post-payment balance preserves the required reserve.")
 
     @staticmethod
+    def _payment_timing(invoice: Invoice, policy: Policy, evaluation_date: date) -> RuleResult:
+        lead_days = policy.schedule_payments_before_due_days
+        if lead_days is None:
+            return PolicyEngine._pass("PAYMENT_TIMING_IMMEDIATE", "Policy permits immediate payment.")
+        scheduled_for = invoice.due_date - timedelta(days=lead_days)
+        if scheduled_for > evaluation_date:
+            return RuleResult(
+                code="PAYMENT_SCHEDULED_FOR_DUE_DATE",
+                disposition=RuleDisposition.SCHEDULE,
+                message=f"Payment should be scheduled for {scheduled_for.isoformat()}.",
+                remediation=f"Queue payment for {scheduled_for.isoformat()} unless a human approves early payment.",
+            )
+        return PolicyEngine._pass("PAYMENT_DUE", "Invoice is within the configured payment window.")
+
+    @staticmethod
     def _final_action(results: tuple[RuleResult, ...]) -> DecisionAction:
         dispositions = {result.disposition for result in results}
         if RuleDisposition.REJECT in dispositions:
@@ -327,4 +349,6 @@ class PolicyEngine:
             return DecisionAction.HOLD
         if RuleDisposition.ESCALATE in dispositions:
             return DecisionAction.ESCALATE
+        if RuleDisposition.SCHEDULE in dispositions:
+            return DecisionAction.SCHEDULE
         return DecisionAction.PAY
