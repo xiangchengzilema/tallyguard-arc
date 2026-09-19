@@ -19,6 +19,7 @@ dependencies = [
 tallyguard-api = "tallyguard.api:main"
 tallyguard-loadtest = "tallyguard.loadtest:main"
 tallyguard-preflight = "tallyguard.preflight:main"
+tallyguard-acceptance = "tallyguard.acceptance:main"
 
 [project.optional-dependencies]
 circle = [

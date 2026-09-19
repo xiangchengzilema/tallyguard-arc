@@ -411,6 +411,12 @@ def create_app(
     app.extensions["tallyguard_rate_limiter"] = rate_limiter
     app.extensions["tallyguard_request_metrics"] = request_metrics
     app.extensions["tallyguard_evidence_analyst"] = evidence_analyst
+    demo_sessions_enabled = (
+        testing
+        or settlement_adapter.name == "arc-simulator"
+        or os.getenv("TALLYGUARD_ENABLE_DEMO_SESSIONS", "false").strip().lower() == "true"
+    )
+    app.extensions["tallyguard_demo_sessions_enabled"] = demo_sessions_enabled
 
     _seed_demo_identity(repository)
 
@@ -552,6 +558,12 @@ def create_app(
 
     @app.post("/api/demo/session")
     def demo_session():
+        if not demo_sessions_enabled:
+            return _error(
+                "DEMO_SESSIONS_DISABLED",
+                "Demo identities are disabled while a live settlement adapter is configured.",
+                404,
+            )
         payload = request.get_json(silent=True) or {}
         role_name = str(payload.get("role", "operator")).lower()
         demo_principals = {

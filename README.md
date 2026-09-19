@@ -51,6 +51,7 @@ Every payment answers four questions:
 - Deterministic Arc simulator for the public demo and load tests
 - Circle developer-wallet adapter with UUID v4 idempotency, lifecycle polling, and hard spend cap
 - Read-only Circle/Arc preflight verifies chain ID, USDC contract code, wallet state, network, and balance before live mode
+- Explicit testnet-only acceptance runner proves real settlement, Arc reconciliation, durable receipt replay, and audit-chain integrity with a maximum 0.10 USDC transfer
 - Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals

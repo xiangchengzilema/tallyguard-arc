@@ -5,6 +5,8 @@ import json
 
 from tallyguard.api import create_app
 from tallyguard.auth import Principal, Role
+from tallyguard.network import ArcNetwork, ArcNetworkConfig
+from tallyguard.settlement import PaymentIntent, ProviderSubmission
 
 
 WALLET = "0x1111111111111111111111111111111111111111"
@@ -37,6 +39,27 @@ def test_health_and_readiness_are_public(tmp_path):
     readiness = client.get("/api/readiness").get_json()
     assert readiness["database"] == "ok"
     assert readiness["evidence_analyst"] == "deterministic-evidence-analyst"
+
+
+def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("TALLYGUARD_ENABLE_DEMO_SESSIONS", raising=False)
+
+    class LiveAdapter:
+        name = "circle-developer-wallets+arc-rpc"
+
+        def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+            raise AssertionError("Login gate must not call settlement.")
+
+    app = create_app(
+        database_path=tmp_path / "live.sqlite3",
+        settlement_adapter=LiveAdapter(),
+        settlement_config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+    )
+
+    response = app.test_client().post("/api/demo/session", json={"role": "admin"})
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
 
 
 def test_metrics_report_aggregate_requests_without_financial_labels(tmp_path):

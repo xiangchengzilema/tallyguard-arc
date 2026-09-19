@@ -51,6 +51,11 @@ keep mainnet disabled, set a deliberately small maximum transfer amount, and pro
 
 Do not paste the entity secret, API key, private key, or recovery material into chat, issues, logs, screenshots, or committed files.
 
+Live Circle mode disables `/api/demo/session` by default. Do not enable
+`TALLYGUARD_ENABLE_DEMO_SESSIONS` on any deployment connected to a funded wallet. The public
+judge deployment remains in credential-free simulation mode, where seeded demo identities are
+safe and automatically available.
+
 ### Read-only preflight
 
 Probe the configured Arc RPC, expected chain ID, latest block, and canonical USDC contract
@@ -76,6 +81,26 @@ hard adapter cap above 5 USDC. This does not bypass the product's separate recor
 requirement; it only establishes that the runtime configuration is internally consistent.
 
 ## Testnet acceptance gate
+
+The acceptance runner is deliberately locked to Arc Testnet, capped at 0.10 USDC, and requires
+an exact confirmation phrase. It creates a fresh isolated SQLite database, submits matching
+invoice/PO/delivery evidence through the real API, obtains a deterministic `PAY` decision,
+settles once through Circle, retries the same request, and verifies that the retry returns the
+same durable receipt without a second provider submission. It then verifies the tenant audit
+hash chain and writes an ignored JSON report alongside the temporary database.
+
+After the full read-only preflight succeeds, run:
+
+```powershell
+tallyguard-acceptance `
+  --confirm MOVE-TESTNET-USDC `
+  --recipient 0xYOUR_CONTROLLED_TESTNET_RECIPIENT `
+  --amount 0.01
+```
+
+This command **does move Arc Testnet USDC**. It refuses mainnet regardless of environment
+configuration. Acceptance artifacts are written under `artifacts/acceptance/`, which is excluded
+from Git.
 
 Before any mainnet proof:
 
