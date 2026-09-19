@@ -12,6 +12,7 @@ import type {
   ReliabilityEvidence,
   ReplayVerification,
   RunResult,
+  ScheduleRun,
 } from './types';
 
 type Role = keyof BootstrapData['sessions'];
@@ -434,6 +435,15 @@ export async function settlePaymentBatch(
     approverToken,
   );
   return payload.batch;
+}
+
+export async function runDueSchedules(approverToken: string): Promise<ScheduleRun> {
+  const payload = await request<{ schedule_run: ScheduleRun }>(
+    '/api/schedules/run',
+    { method: 'POST', body: JSON.stringify({}) },
+    approverToken,
+  );
+  return payload.schedule_run;
 }
 
 export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string): Promise<AuditTrail> {

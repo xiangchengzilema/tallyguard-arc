@@ -524,7 +524,8 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert Decimal(overview["open_exposure_usdc"]) == clean_amount + wallet_amount
     assert Decimal(overview["blocked_exposure_usdc"]) == wallet_amount + duplicate_amount
     assert {item["status"] for item in overview["work_queue"]} == {"READY", "HOLD"}
-    assert overview["treasury_available_usdc"] is None
+    assert overview["treasury_available_usdc"] == "10000"
+    assert overview["minimum_reserve_usdc"] == "3000"
 
 
 def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):

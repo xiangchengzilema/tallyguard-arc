@@ -46,7 +46,15 @@ ALLOWED_TRANSITIONS: dict[InvoiceStatus, frozenset[InvoiceStatus]] = {
     InvoiceStatus.ESCALATED: frozenset(
         {InvoiceStatus.READY, InvoiceStatus.REJECTED, InvoiceStatus.CANCELLED}
     ),
-    InvoiceStatus.SCHEDULED: frozenset({InvoiceStatus.READY, InvoiceStatus.CANCELLED}),
+    InvoiceStatus.SCHEDULED: frozenset(
+        {
+            InvoiceStatus.READY,
+            InvoiceStatus.HOLD,
+            InvoiceStatus.REJECTED,
+            InvoiceStatus.ESCALATED,
+            InvoiceStatus.CANCELLED,
+        }
+    ),
     InvoiceStatus.READY: frozenset({InvoiceStatus.SUBMITTING, InvoiceStatus.CANCELLED}),
     InvoiceStatus.SUBMITTING: frozenset(
         {InvoiceStatus.SUBMITTED, InvoiceStatus.SUBMISSION_FAILED}

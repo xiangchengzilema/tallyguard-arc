@@ -1,3 +1,5 @@
+from datetime import date
+
 from tallyguard.api import create_app
 
 
@@ -39,6 +41,92 @@ def test_missing_delivery_scenario_explains_remediation(tmp_path):
     assert payload["decision"]["final_action"] == "HOLD"
     assert "MISSING_DELIVERY_EVIDENCE" in payload["decision"]["reason_codes"]
     assert any("delivery" in text.lower() for text in payload["decision"]["remediation"])
+
+
+def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_path):
+    clock = {"today": date(2026, 9, 20)}
+    app = create_app(
+        database_path=tmp_path / "schedule.sqlite3",
+        testing=True,
+        date_provider=lambda: clock["today"],
+    )
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    run = client.post(
+        "/api/demo/scenarios/scheduled-payment/run",
+        headers=operator_headers,
+    ).get_json()
+    assert run["decision"]["final_action"] == "SCHEDULE"
+    assert run["decision"]["scheduled_for"] == "2026-10-07"
+
+    assert client.post("/api/schedules/run", headers=operator_headers).status_code == 403
+    waiting = client.post("/api/schedules/run", headers=approver_headers)
+    assert waiting.status_code == 200
+    waiting_run = waiting.get_json()["schedule_run"]
+    assert waiting_run["scanned"] == 1
+    assert waiting_run["waiting"] == 1
+    assert waiting_run["settled"] == 0
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+
+    clock["today"] = date(2026, 10, 7)
+    released = client.post("/api/schedules/run", headers=approver_headers)
+    assert released.status_code == 200
+    release_run = released.get_json()["schedule_run"]
+    assert release_run["settled"] == 1
+    assert release_run["failed"] == 0
+    result = release_run["results"][0]
+    assert result["release_decision"]["final_action"] == "PAY"
+    assert result["payment"]["invoice"]["status"] == "RECONCILED"
+    assert result["payment"]["intent"]["decision_id"] == result["release_decision"]["id"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+    repeated = client.post("/api/schedules/run", headers=approver_headers)
+    assert repeated.status_code == 200
+    assert repeated.get_json()["schedule_run"]["scanned"] == 0
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+
+def test_schedule_release_revalidates_current_kill_switch_before_payment(tmp_path):
+    app = create_app(
+        database_path=tmp_path / "schedule-stop.sqlite3",
+        testing=True,
+        date_provider=lambda: date(2026, 10, 7),
+    )
+    client = app.test_client()
+    run = client.post(
+        "/api/demo/scenarios/scheduled-payment/run",
+        headers=auth(client, "operator"),
+    ).get_json()
+    admin_headers = auth(client, "admin")
+    activated = client.post(
+        "/api/policies",
+        headers=admin_headers,
+        json={
+            "version": "emergency-stop-1",
+            "daily_payment_limit_usdc": "5000",
+            "minimum_cash_reserve_usdc": "3000",
+            "maximum_autonomous_payment_usdc": "2000",
+            "po_amount_tolerance_usdc": "0",
+            "allowed_asset": "USDC",
+            "allowed_network": "ARC-TESTNET",
+            "kill_switch_enabled": True,
+            "schedule_payments_before_due_days": 3,
+        },
+    )
+    assert activated.status_code == 201
+
+    response = client.post("/api/schedules/run", headers=auth(client, "approver"))
+    assert response.status_code == 200
+    schedule_run = response.get_json()["schedule_run"]
+    assert schedule_run["settled"] == 0
+    assert schedule_run["revalidated"] == 1
+    result = schedule_run["results"][0]
+    assert result["release_decision"]["final_action"] == "HOLD"
+    assert "KILL_SWITCH_ACTIVE" in result["release_decision"]["reason_codes"]
+    assert result["invoice"]["status"] == "HOLD"
+    assert result["source_decision_id"] == run["decision"]["id"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
 
 
 def test_large_invoice_requires_role_separated_approval(tmp_path):

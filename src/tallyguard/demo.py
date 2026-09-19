@@ -155,7 +155,7 @@ def build_demo_scenario(
         spent_today_usdc=Decimal("400"),
     )
     policy = Policy(
-        version="demo-2026-09-20.1",
+        version=f"demo-2026-09-20.{invoice_id[-8:]}",
         organization_id=organization_id,
         daily_payment_limit_usdc=Decimal("5000"),
         minimum_cash_reserve_usdc=Decimal("3000"),

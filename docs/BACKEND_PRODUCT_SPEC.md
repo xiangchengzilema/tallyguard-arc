@@ -168,6 +168,7 @@ POST   /api/invoices/{id}/evaluate
 POST   /api/invoices/{id}/approve
 POST   /api/invoices/{id}/settle
 POST   /api/payment-batches/settle
+POST   /api/schedules/run
 GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
 GET    /api/decisions/{id}/replay
@@ -187,6 +188,14 @@ activating a newer policy cannot silently rewrite that historical authorization.
 shared authorization or transaction: every item traverses the same single-invoice decision,
 approval, intent, provider, reconciliation, and receipt boundary. A rejected item is reported
 independently, while successful items remain committed and become receipt-reusing no-ops on retry.
+
+`POST /api/schedules/run` requires settlement-execute permission and scans only `SCHEDULED`
+invoices in the authenticated tenant. An item's earliest release date is derived from its sealed
+decision inputs and cannot be supplied by the caller. Early items remain untouched. Due items are
+re-evaluated with immutable evidence plus the current verified vendor, active policy, latest
+treasury snapshot, duplicate set, and Arc route. Only a fresh `PAY` decision can advance to the
+existing idempotent settlement path; a new hold, rejection, escalation, or schedule produces no
+payment intent.
 
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response

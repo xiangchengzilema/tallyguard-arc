@@ -132,6 +132,16 @@ only. It does not persist a policy or decision, emit an audit mutation, satisfy 
 payment intent, or call a settlement provider. This keeps planning and control analysis outside the
 authorization path.
 
+## Scheduled release boundary
+
+`SCHEDULE` is a durable control outcome, not a delayed provider call. The release date is derived
+from the invoice due date and the schedule lead time inside the sealed decision snapshot. The
+tenant-scoped runner refuses execution before that date. Once due, it evaluates the immutable
+evidence again with the current verified vendor, active policy, latest treasury snapshot, duplicate
+set, and Arc route. Only a new `PAY` decision advances the invoice to `READY` and enters the same
+idempotent settlement orchestrator used by immediate payments. A newly active kill switch, depleted
+treasury, changed wallet, or other failed control therefore stops payment before an intent exists.
+
 ## Tenant isolation
 
 Every durable financial record carries `organization_id`. Repository reads and mutations require

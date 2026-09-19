@@ -332,6 +332,11 @@ body {
 .replay-proof strong { font-size: .8125rem; }
 .replay-proof small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
 .replay-proof .cds--btn { white-space: nowrap; }
+.schedule-boundary { display: grid; grid-template-columns: auto 1fr; gap: .75rem; padding: 1rem 0; border-bottom: 1px solid var(--tg-line); color: var(--tg-accent-dark); }
+.schedule-boundary div { display: grid; gap: .25rem; }
+.schedule-boundary span { font-size: .625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.schedule-boundary strong { color: var(--tg-ink); font-family: IBM Plex Mono, monospace; font-size: .875rem; }
+.schedule-boundary small { max-width: 46ch; color: var(--tg-muted); font-size: .6875rem; line-height: 1.45; }
 .policy-sandbox { padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
 .policy-sandbox__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .policy-sandbox__head > div { display: grid; gap: .3rem; }
@@ -398,6 +403,8 @@ body {
 .operations-table__row { min-height: 68px; border-top: 1px solid #e4e9e7; font-size: .75rem; }
 .operations-table__row > div { display: grid; gap: .2rem; min-width: 0; }
 .operations-table__row code { overflow: hidden; color: var(--tg-muted); font-size: .6875rem; text-overflow: ellipsis; }
+.schedule-date { display: grid; gap: .2rem; }
+.schedule-date small { color: var(--tg-accent-dark); font-size: .625rem; font-weight: 600; }
 .operations-table__row .cds--tag { margin: 0; }
 .batch-select { display: grid; place-items: center; width: 32px; height: 32px; }
 .batch-select input { width: 16px; height: 16px; accent-color: var(--tg-accent); cursor: pointer; }

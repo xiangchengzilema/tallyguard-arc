@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from hashlib import sha256
@@ -252,8 +252,19 @@ def _json_scalar(value: Any) -> Any:
     return format(value, "f") if isinstance(value, Decimal) else value
 
 
+def _scheduled_for(record: DecisionRecord) -> date | None:
+    inputs = record.replay_inputs
+    if record.final_action.value != "SCHEDULE" or inputs is None:
+        return None
+    lead_days = inputs.policy.schedule_payments_before_due_days
+    if lead_days is None:
+        return None
+    return inputs.evidence.invoice.due_date - timedelta(days=lead_days)
+
+
 def _decision_json(record: DecisionRecord) -> dict[str, Any]:
     recommendation = record.agent_recommendation
+    scheduled_for = _scheduled_for(record)
     return {
         "id": record.id,
         "organization_id": record.organization_id,
@@ -276,6 +287,7 @@ def _decision_json(record: DecisionRecord) -> dict[str, Any]:
         ),
         "agent_disagreed": record.agent_disagreed,
         "final_action": record.final_action.value,
+        "scheduled_for": scheduled_for.isoformat() if scheduled_for is not None else None,
         "reason_codes": list(record.policy_decision.reason_codes),
         "remediation": list(record.policy_decision.remediation),
         "rules": [
@@ -387,6 +399,7 @@ def create_app(
     settlement_config: ArcNetworkConfig | None = None,
     rate_limit_per_minute: int | None = None,
     evidence_analyst: EvidenceAnalyst | None = None,
+    date_provider: Callable[[], date] | None = None,
 ) -> Flask:
     default_frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
     frontend_dist = Path(
@@ -444,6 +457,7 @@ def create_app(
     rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
     request_metrics = RequestMetrics()
     evidence_analyst = evidence_analyst or _evidence_analyst_from_env()
+    current_date = date_provider or date.today
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
@@ -950,6 +964,36 @@ def create_app(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
         )
+        try:
+            repository.get_vendor(
+                organization_id=g.principal.organization_id,
+                vendor_id=scenario.vendor.id,
+            )
+        except VendorDirectoryError:
+            try:
+                repository.onboard_vendor(
+                    scenario.vendor,
+                    verification_method=WalletVerificationMethod.SIGNED_CHALLENGE,
+                    verification_reference="demo-fixture-wallet-proof",
+                    verified_by_user_id=g.principal.user_id,
+                )
+            except PersistenceError:
+                # Concurrent demo requests can race on the shared fixture vendor.
+                # The losing request must verify that the winner persisted the same record.
+                if repository.get_vendor(
+                    organization_id=g.principal.organization_id,
+                    vendor_id=scenario.vendor.id,
+                ) != scenario.vendor:
+                    raise
+        repository.activate_policy(
+            scenario.policy,
+            activated_by_user_id=g.principal.user_id,
+        )
+        repository.record_treasury_snapshot(
+            scenario.treasury,
+            source_reference="demo-fixture-treasury",
+            recorded_by_user_id=g.principal.user_id,
+        )
         stored = repository.create_invoice(scenario.evidence.invoice)
         stored = repository.transition_invoice(
             organization_id=g.principal.organization_id,
@@ -1403,6 +1447,7 @@ def create_app(
             ),
             asset=stored.invoice.currency,
             network=network_config.name.value,
+            evaluation_date=current_date(),
         )
         target_status = status_for_decision(decision.final_action)
         stored = repository.transition_invoice(
@@ -1482,7 +1527,7 @@ def create_app(
     @require(Permission.INVOICE_READ)
     def get_operations_overview():
         raw_as_of = request.args.get("as_of")
-        as_of = date.fromisoformat(raw_as_of) if raw_as_of else None
+        as_of = date.fromisoformat(raw_as_of) if raw_as_of else current_date()
         overview = repository.operations_overview(
             organization_id=g.principal.organization_id,
             as_of=as_of,
@@ -1500,14 +1545,20 @@ def create_app(
                     organization_id=g.principal.organization_id,
                     invoice_id=item.invoice.id,
                 )
+                scheduled_for = _scheduled_for(decision)
                 item_json.update(
                     {
                         "decision_id": decision.id,
                         "decision_action": decision.final_action.value,
+                        "scheduled_for": (
+                            scheduled_for.isoformat() if scheduled_for is not None else None
+                        ),
                     }
                 )
             except PersistenceError:
-                item_json.update({"decision_id": None, "decision_action": None})
+                item_json.update(
+                    {"decision_id": None, "decision_action": None, "scheduled_for": None}
+                )
             work_queue.append(item_json)
 
         return jsonify(
@@ -1718,6 +1769,199 @@ def create_app(
             created_at=outcome.receipt.confirmed_at,
         )
         return outcome
+
+    def release_scheduled_invoice(
+        *,
+        stored: StoredInvoice,
+        evaluated_on: date,
+        actor_user_id: str,
+        correlation_id: str,
+    ) -> dict[str, Any]:
+        organization_id = g.principal.organization_id
+        source = repository.latest_decision_for_invoice(
+            organization_id=organization_id,
+            invoice_id=stored.invoice.id,
+        )
+        scheduled_for = _scheduled_for(source)
+        if source.final_action.value != "SCHEDULE" or source.replay_inputs is None:
+            raise WorkflowError("Latest invoice decision is not a replayable schedule.")
+        if scheduled_for is None:
+            raise WorkflowError("Scheduled decision is missing a deterministic release date.")
+        if evaluated_on < scheduled_for:
+            return {
+                "invoice_id": stored.invoice.id,
+                "status": "WAITING",
+                "scheduled_for": scheduled_for.isoformat(),
+                "evaluated_on": evaluated_on.isoformat(),
+                "source_decision_id": source.id,
+            }
+
+        inputs = source.replay_inputs
+        vendor = repository.get_vendor(
+            organization_id=organization_id,
+            vendor_id=stored.invoice.vendor_id,
+        )
+        policy = repository.active_policy(organization_id=organization_id).policy
+        treasury = repository.latest_treasury_snapshot(
+            organization_id=organization_id
+        ).snapshot
+        release = decision_service.evaluate(
+            evidence=inputs.evidence,
+            vendor=vendor,
+            treasury=treasury,
+            policy=policy,
+            agent_recommendation=source.agent_recommendation,
+            known_invoice_fingerprints=repository.known_invoice_fingerprints(
+                organization_id=organization_id,
+                exclude_invoice_id=stored.invoice.id,
+            ),
+            asset=stored.invoice.currency,
+            network=network_config.name.value,
+            evaluation_date=evaluated_on,
+        )
+        target_status = status_for_decision(release.final_action)
+        current = repository.get_invoice(
+            organization_id=organization_id,
+            invoice_id=stored.invoice.id,
+        )
+        if current.status == InvoiceStatus.SCHEDULED and target_status != InvoiceStatus.SCHEDULED:
+            try:
+                current = repository.transition_invoice(
+                    organization_id=organization_id,
+                    invoice_id=stored.invoice.id,
+                    target_status=target_status,
+                    expected_version=current.version,
+                    actor_user_id="tallyguard-schedule-runner",
+                    correlation_id=correlation_id,
+                )
+            except WorkflowError as exc:
+                if "another operation" not in str(exc):
+                    raise
+                current = repository.get_invoice(
+                    organization_id=organization_id,
+                    invoice_id=stored.invoice.id,
+                )
+        elif current.status != InvoiceStatus.SCHEDULED:
+            if not (
+                release.final_action.value == "PAY"
+                and current.status
+                in {
+                    InvoiceStatus.READY,
+                    InvoiceStatus.SUBMITTING,
+                    InvoiceStatus.SUBMITTED,
+                    InvoiceStatus.CONFIRMED,
+                    InvoiceStatus.RECONCILED,
+                    InvoiceStatus.SUBMISSION_FAILED,
+                }
+            ):
+                raise WorkflowError(
+                    f"Scheduled invoice advanced unexpectedly to {current.status.value}."
+                )
+
+        repository.append(
+            aggregate_type="schedule",
+            aggregate_id=f"{stored.invoice.id}:{release.id}",
+            event_type="SCHEDULE_RELEASE_EVALUATED",
+            payload={
+                "organization_id": organization_id,
+                "invoice_id": stored.invoice.id,
+                "source_decision_id": source.id,
+                "release_decision_id": release.id,
+                "scheduled_for": scheduled_for.isoformat(),
+                "evaluated_on": evaluated_on.isoformat(),
+                "release_action": release.final_action.value,
+            },
+        )
+        if release.final_action.value != "PAY":
+            return {
+                "invoice_id": stored.invoice.id,
+                "status": "REVALIDATED",
+                "scheduled_for": scheduled_for.isoformat(),
+                "evaluated_on": evaluated_on.isoformat(),
+                "source_decision_id": source.id,
+                "release_decision": _decision_json(release),
+                "invoice": _invoice_json(current),
+            }
+
+        payment = execute_settlement(
+            invoice_id=stored.invoice.id,
+            payload={"decision_id": release.id},
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
+        )
+        return {
+            "invoice_id": stored.invoice.id,
+            "status": "SETTLED",
+            "scheduled_for": scheduled_for.isoformat(),
+            "evaluated_on": evaluated_on.isoformat(),
+            "source_decision_id": source.id,
+            "release_decision": _decision_json(release),
+            "payment": _payment_json(payment, network_config),
+        }
+
+    @app.post("/api/schedules/run")
+    @require(Permission.SETTLEMENT_EXECUTE)
+    def run_due_schedules():
+        evaluated_on = current_date()
+        scheduled = repository.list_invoices(
+            organization_id=g.principal.organization_id,
+            status=InvoiceStatus.SCHEDULED,
+            limit=100,
+        ).items
+        results: list[dict[str, Any]] = []
+        waiting = 0
+        settled = 0
+        revalidated = 0
+        failed = 0
+        for index, stored in enumerate(scheduled):
+            try:
+                result = release_scheduled_invoice(
+                    stored=stored,
+                    evaluated_on=evaluated_on,
+                    actor_user_id=g.principal.user_id,
+                    correlation_id=f"{_correlation_id()}:{index + 1}",
+                )
+                results.append(result)
+                if result["status"] == "WAITING":
+                    waiting += 1
+                elif result["status"] == "SETTLED":
+                    settled += 1
+                else:
+                    revalidated += 1
+            except (
+                ApprovalError,
+                KeyError,
+                PersistenceError,
+                PolicyRepositoryError,
+                SettlementDenied,
+                ValueError,
+                VendorDirectoryError,
+                WorkflowError,
+            ) as exc:
+                failed += 1
+                results.append(
+                    {
+                        "invoice_id": stored.invoice.id,
+                        "status": "FAILED",
+                        "error": {
+                            "code": type(exc).__name__.upper(),
+                            "message": str(exc).strip("'"),
+                        },
+                    }
+                )
+        payload = {
+            "schedule_run": {
+                "evaluated_on": evaluated_on.isoformat(),
+                "scanned": len(scheduled),
+                "waiting": waiting,
+                "settled": settled,
+                "revalidated": revalidated,
+                "failed": failed,
+                "results": results,
+            },
+            "correlation_id": _correlation_id(),
+        }
+        return jsonify(payload), (207 if failed else 200)
 
     @app.post("/api/invoices/<invoice_id>/settle")
     @require(Permission.SETTLEMENT_EXECUTE)

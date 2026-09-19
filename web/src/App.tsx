@@ -23,6 +23,7 @@ import {
   PlayFilled,
   Renew,
   Rule,
+  Time,
   UserMultiple,
   Wallet,
   WarningAltFilled,
@@ -39,6 +40,7 @@ import {
   runLiveEvidenceWorkflow,
   runUploadedEvidenceWorkflow,
   runScenario,
+  runDueSchedules,
   settleInvoice,
   settlePaymentBatch,
   simulateDecisionPolicy,
@@ -59,6 +61,7 @@ import type {
   ReplayVerification,
   RuleDisposition,
   RunResult,
+  ScheduleRun,
   Scenario,
 } from './types';
 
@@ -166,15 +169,20 @@ function OperationsQueue({
   overview,
   busy,
   batch,
+  scheduleRun,
   onSettleBatch,
+  onRunSchedules,
 }: {
   overview: OperationsOverview;
   busy: boolean;
   batch: PaymentBatch | null;
+  scheduleRun: ScheduleRun | null;
   onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
+  onRunSchedules: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const payable = overview.work_queue.filter((invoice) => invoice.status === 'READY' && invoice.decision_id);
+  const scheduled = overview.work_queue.filter((invoice) => invoice.status === 'SCHEDULED');
   useEffect(() => {
     const available = new Set(payable.map((invoice) => invoice.id));
     setSelected((current) => new Set([...current].filter((invoiceId) => available.has(invoiceId))));
@@ -195,6 +203,11 @@ function OperationsQueue({
         <div><span className="eyebrow">Persistent operations</span><h2>Invoice work queue</h2></div>
         <div className="operations-queue__actions">
           <Tag type={overview.overdue_count > 0 ? 'red' : 'cool-gray'}>{overview.overdue_count} overdue</Tag>
+          {scheduled.length > 0 ? (
+            <Button size="sm" kind="tertiary" renderIcon={Time} disabled={busy} onClick={onRunSchedules}>
+              Check {scheduled.length} schedule{scheduled.length === 1 ? '' : 's'}
+            </Button>
+          ) : null}
           {payable.length > 0 ? (
             <Button
               size="sm"
@@ -213,6 +226,16 @@ function OperationsQueue({
           kind={batch.failed > 0 ? 'warning' : 'success'}
           title={`${batch.succeeded}/${batch.requested} batch payments reconciled`}
           subtitle={batch.failed > 0 ? `${batch.failed} item failed independently; successful receipts remain final and retry-safe.` : 'Every selected invoice produced or reused one durable receipt.'}
+          lowContrast
+          hideCloseButton
+        />
+      ) : null}
+      {scheduleRun ? (
+        <InlineNotification
+          className="batch-result"
+          kind={scheduleRun.failed > 0 ? 'warning' : scheduleRun.settled > 0 ? 'success' : 'info'}
+          title={`${scheduleRun.settled} settled · ${scheduleRun.waiting} waiting · ${scheduleRun.revalidated} revalidated`}
+          subtitle={`Schedule runner checked ${scheduleRun.scanned} tenant-scoped invoice${scheduleRun.scanned === 1 ? '' : 's'} on ${scheduleRun.evaluated_on}; every due item was re-evaluated against current controls before settlement.`}
           lowContrast
           hideCloseButton
         />
@@ -237,7 +260,7 @@ function OperationsQueue({
               </label>
               <div role="cell"><strong>{invoice.invoice_number}</strong><code>{shorten(invoice.id, 12, 6)}</code></div>
               <code role="cell">{shorten(invoice.vendor_id, 13, 6)}</code>
-              <span role="cell">{invoice.due_date}</span>
+              <span className="schedule-date" role="cell">{invoice.due_date}{invoice.scheduled_for ? <small>release {invoice.scheduled_for}</small> : null}</span>
               <strong role="cell">{formatMoney(invoice.amount)} {invoice.currency}</strong>
               <Tag type={invoice.status === 'READY' ? 'green' : invoice.status === 'HOLD' ? 'magenta' : invoice.status === 'ESCALATED' ? 'purple' : 'blue'}>{invoice.status}</Tag>
             </div>
@@ -614,6 +637,13 @@ function DecisionPanel({
         <p>{decision.reason_codes.length > 0 ? decision.reason_codes.join(' · ') : 'ALL_MANDATORY_CONTROLS_PASSED'}</p>
       </div>
 
+      {decision.scheduled_for ? (
+        <div className="schedule-boundary">
+          <Time size={18} />
+          <div><span>Earliest release</span><strong>{decision.scheduled_for}</strong><small>The schedule runner refuses early execution and rechecks current policy, vendor, treasury, and evidence before paying.</small></div>
+        </div>
+      ) : null}
+
       <div className="policy-binding">
         <div><span>Policy version</span><code>{decision.policy_version}</code></div>
         <div><span>Policy hash</span><code>{shorten(decision.policy_content_hash, 10, 8)}</code></div>
@@ -814,6 +844,7 @@ function App() {
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
   const [batch, setBatch] = useState<PaymentBatch | null>(null);
+  const [scheduleRun, setScheduleRun] = useState<ScheduleRun | null>(null);
   const [packetHash, setPacketHash] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<PolicySimulation | null>(null);
 
@@ -949,6 +980,14 @@ function App() {
     });
   }, [act, data]);
 
+  const handleRunSchedules = useCallback(() => {
+    if (!data) return;
+    void act('Revalidating due schedules against current controls', async () => {
+      setScheduleRun(await runDueSchedules(data.sessions.approver));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+    });
+  }, [act, data]);
+
   const handleDownloadPacket = useCallback(() => {
     if (!data || !run) return;
     void act('Assembling a content-addressed payment evidence packet', async () => {
@@ -1069,7 +1108,9 @@ function App() {
             overview={operations}
             busy={busy !== null}
             batch={batch}
+            scheduleRun={scheduleRun}
             onSettleBatch={handleSettleBatch}
+            onRunSchedules={handleRunSchedules}
           />
         ) : null}
 

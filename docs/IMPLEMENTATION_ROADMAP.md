@@ -142,6 +142,7 @@ Implemented foundation:
 - Durable settlement receipts prevent provider resubmission after a completed payment
 - Invoice settlement advances through submitting, submitted, confirmed, and reconciled states
 - Batch settlement keeps authorization, submission, reconciliation, and retry state isolated per invoice; partial failures return item-level remediation while completed items remain exactly-once
+- Scheduled invoices expose their sealed release date and a tenant-scoped runner refuses early execution; at release it produces a fresh decision from current vendor, active policy, latest treasury, immutable evidence, and the current Arc route before creating any intent
 - Public demo remains credential-free through the deterministic simulator
 
 - Circle wallet adapter behind the settlement protocol
@@ -183,6 +184,7 @@ Implemented foundation:
 - Auditor-readable receipt endpoint includes the corresponding Arc Explorer URL
 - Repeated settlement requests return the persisted receipt without another provider submission
 - Authenticated batch settlement accepts at most 25 distinct invoices, isolates item failures, and reuses every completed item's durable receipt on retry
+- Authenticated schedule execution scans only the caller's tenant, reports early items as waiting, and isolates revalidation or settlement failures per invoice
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
@@ -224,6 +226,7 @@ Implemented foundation:
 - The decision view includes a visibly non-persistent policy sandbox that can demonstrate an autonomy-cap or kill-switch change against the exact sealed inputs and compare the resulting action and reason codes
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
 - The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
+- Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)

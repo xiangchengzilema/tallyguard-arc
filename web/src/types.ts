@@ -52,6 +52,7 @@ export interface Decision {
   agent_recommendation: AgentRecommendation | null;
   agent_disagreed: boolean;
   final_action: DecisionAction;
+  scheduled_for: string | null;
   reason_codes: string[];
   remediation: string[];
   rules: RuleResult[];
@@ -189,6 +190,7 @@ export interface OperationsOverview {
 export interface OperationsInvoice extends Invoice {
   decision_id: string | null;
   decision_action: DecisionAction | null;
+  scheduled_for: string | null;
 }
 
 export interface PaymentBatchResult {
@@ -203,6 +205,28 @@ export interface PaymentBatch {
   succeeded: number;
   failed: number;
   results: PaymentBatchResult[];
+}
+
+export interface ScheduleRunResult {
+  invoice_id: string;
+  status: 'WAITING' | 'SETTLED' | 'REVALIDATED' | 'FAILED';
+  scheduled_for?: string;
+  evaluated_on?: string;
+  source_decision_id?: string;
+  release_decision?: Decision;
+  invoice?: Invoice;
+  payment?: Payment;
+  error?: { code: string; message: string };
+}
+
+export interface ScheduleRun {
+  evaluated_on: string;
+  scanned: number;
+  waiting: number;
+  settled: number;
+  revalidated: number;
+  failed: number;
+  results: ScheduleRunResult[];
 }
 
 export interface ReliabilityReport {
