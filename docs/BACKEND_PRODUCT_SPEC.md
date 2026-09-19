@@ -217,6 +217,11 @@ content-addressed JSON envelope. The packet includes the durable plan and result
 approvals, related invoice/run audit events, a recomputed plan-hash verdict, and tenant audit-chain
 verification. Tenant-scoped lookup returns 404 for a foreign run identifier.
 
+`POST /api/demo/autonomy-showcase` requires decision-run permission and creates four isolated,
+public-safe demo invoices through the normal scenario, persistence, policy, and audit paths. The
+returned queue covers immediate settlement, segregated approval, wallet remediation, and an early
+schedule. It never executes a payment; the caller must create and explicitly execute an agent run.
+
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response
 explicitly distinguishes reliability evidence from customer traction and states that no funds moved.

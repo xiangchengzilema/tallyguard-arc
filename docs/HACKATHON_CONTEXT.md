@@ -74,6 +74,7 @@ Strongly encouraged:
 - Runtime safety boundary is visible in the judge console and sourced from the readiness API
 - A durable bounded-autonomy runner plans a mixed tenant AP queue, hashes both observed state and proposed actions, routes policy escalations, releases due schedules through current-policy revalidation, and settles only a current `PAY`, an exactly bound independent approval, or an explicitly retryable attempt under the approver role
 - The judge can export a content-addressed Agent Run Proof Packet with plan-hash verification, execution outcomes, approval bindings, related audit events, and tenant-chain verification
+- A one-click autonomy showcase creates and plans a mixed four-invoice queue so judges and the demo video can show payment, approval routing, wallet-risk remediation, and due-date waiting without repetitive setup
 - Desktop and 390px mobile browser acceptance completed the autonomous plan-to-settlement path with no console errors or warnings
 
 Milestone 2 is complete. Milestones 3, 4, and 5 are in progress. SQLite persistence now retains

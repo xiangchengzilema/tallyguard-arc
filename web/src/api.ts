@@ -190,6 +190,14 @@ export async function createAgentRun(operatorToken: string): Promise<AgentRun> {
   return payload.agent_run;
 }
 
+export async function seedAutonomyShowcase(operatorToken: string): Promise<void> {
+  await request<{ showcase: { id: string } }>(
+    '/api/demo/autonomy-showcase',
+    { method: 'POST', body: JSON.stringify({}) },
+    operatorToken,
+  );
+}
+
 export async function executeAgentRun(runId: string, approverToken: string): Promise<AgentRun> {
   const payload = await request<{ agent_run: AgentRun }>(
     `/api/agent-runs/${encodeURIComponent(runId)}/execute`,

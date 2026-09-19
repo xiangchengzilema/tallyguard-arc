@@ -63,6 +63,7 @@ Every payment answers four questions:
 - A durable autonomous AP runner scans up to 25 tenant invoices, explains the next action for every item, freezes the queue state and plan under separate SHA-256 hashes, and can safely route approval work, release due schedules, settle an independently approved exception, or retry an explicitly recoverable payment
 - Agent-run execution requires the approver settlement permission; it revalidates invoice version, workflow status, latest policy decision, approval binding, schedule eligibility, and retry authorization immediately before each action, while recording routed, revalidated, stale, failed, skipped, and settled results independently
 - Auditors can export a content-addressed Agent Run Proof Packet containing the frozen plan, execution outcomes, approval records, related audit events, plan-hash verification, and tenant-chain verification
+- A one-click public-safe autonomy showcase seeds a mixed queue containing a policy-cleared payment, role-separated escalation, wallet mismatch hold, and not-yet-due schedule, then plans all four through the same production-shaped APIs
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
 - Approver-only governance overview combines the active policy authority with an enriched global exception inbox; approving advances an escalated invoice to `READY`, while rejection closes it as `REJECTED` without creating a payment intent
 - Restart-safe opaque sessions stored only as SHA-256 token digests

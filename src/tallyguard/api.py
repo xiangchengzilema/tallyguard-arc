@@ -1030,9 +1030,12 @@ def create_app(
             }
         )
 
-    @app.post("/api/demo/scenarios/<scenario_key>/run")
-    @require(Permission.DECISION_RUN)
-    def run_demo_scenario(scenario_key: str):
+    def execute_demo_scenario(
+        scenario_key: str,
+        *,
+        actor_user_id: str,
+        correlation_id: str,
+    ) -> dict[str, Any]:
         if scenario_key == "provider-recovery" and not isinstance(
             settlement_adapter, SimulatedArcAdapter
         ):
@@ -1054,7 +1057,7 @@ def create_app(
                     scenario.vendor,
                     verification_method=WalletVerificationMethod.SIGNED_CHALLENGE,
                     verification_reference="demo-fixture-wallet-proof",
-                    verified_by_user_id=g.principal.user_id,
+                    verified_by_user_id=actor_user_id,
                 )
             except PersistenceError:
                 # Concurrent demo requests can race on the shared fixture vendor.
@@ -1066,12 +1069,12 @@ def create_app(
                     raise
         repository.activate_policy(
             scenario.policy,
-            activated_by_user_id=g.principal.user_id,
+            activated_by_user_id=actor_user_id,
         )
         repository.record_treasury_snapshot(
             scenario.treasury,
             source_reference="demo-fixture-treasury",
-            recorded_by_user_id=g.principal.user_id,
+            recorded_by_user_id=actor_user_id,
         )
         stored = repository.create_invoice(scenario.evidence.invoice)
         stored = repository.transition_invoice(
@@ -1079,8 +1082,8 @@ def create_app(
             invoice_id=invoice_id,
             target_status=InvoiceStatus.EVALUATING,
             expected_version=stored.version,
-            actor_user_id=g.principal.user_id,
-            correlation_id=_correlation_id(),
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
         )
         decision = decision_service.evaluate(
             evidence=scenario.evidence,
@@ -1099,24 +1102,79 @@ def create_app(
             target_status=status_for_decision(decision.final_action),
             expected_version=stored.version,
             actor_user_id="tallyguard-policy-engine",
-            correlation_id=_correlation_id(),
+            correlation_id=correlation_id,
         )
         if scenario_key == "provider-recovery":
             settlement_adapter.arm_transient_failure(
                 organization_id=g.principal.organization_id,
                 invoice_id=invoice_id,
             )
+        return {
+            "scenario": {
+                "key": scenario.definition.key,
+                "title": scenario.definition.title,
+            },
+            "invoice": _invoice_json(stored),
+            "decision": _decision_json(decision),
+            "correlation_id": correlation_id,
+        }
+
+    @app.post("/api/demo/scenarios/<scenario_key>/run")
+    @require(Permission.DECISION_RUN)
+    def run_demo_scenario(scenario_key: str):
+        return jsonify(
+            execute_demo_scenario(
+                scenario_key,
+                actor_user_id=g.principal.user_id,
+                correlation_id=_correlation_id(),
+            )
+        )
+
+    @app.post("/api/demo/autonomy-showcase")
+    @require(Permission.DECISION_RUN)
+    def seed_autonomy_showcase():
+        showcase_id = f"showcase_{uuid4().hex}"
+        scenario_keys = (
+            "clean-payment",
+            "large-invoice",
+            "wallet-change",
+            "scheduled-payment",
+        )
+        items = [
+            execute_demo_scenario(
+                scenario_key,
+                actor_user_id=g.principal.user_id,
+                correlation_id=f"{_correlation_id()}:{index + 1}",
+            )
+            for index, scenario_key in enumerate(scenario_keys)
+        ]
+        repository.append(
+            aggregate_type="demo_showcase",
+            aggregate_id=showcase_id,
+            event_type="AUTONOMY_SHOWCASE_SEEDED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "showcase_id": showcase_id,
+                "scenario_keys": list(scenario_keys),
+                "invoice_ids": [item["invoice"]["id"] for item in items],
+                "actor_user_id": g.principal.user_id,
+            },
+        )
         return jsonify(
             {
-                "scenario": {
-                    "key": scenario.definition.key,
-                    "title": scenario.definition.title,
+                "showcase": {
+                    "id": showcase_id,
+                    "items": items,
+                    "expected_actions": [
+                        "SETTLE",
+                        "REQUIRE_APPROVAL",
+                        "REMEDIATE",
+                        "WAIT_SCHEDULE",
+                    ],
                 },
-                "invoice": _invoice_json(stored),
-                "decision": _decision_json(decision),
                 "correlation_id": _correlation_id(),
             }
-        )
+        ), 201
 
     @app.post("/api/decisions/<decision_id>/request-approval")
     @require(Permission.DECISION_RUN)

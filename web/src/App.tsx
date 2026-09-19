@@ -48,6 +48,7 @@ import {
   runUploadedEvidenceWorkflow,
   runScenario,
   runDueSchedules,
+  seedAutonomyShowcase,
   settleInvoice,
   settlePaymentBatch,
   simulateDecisionPolicy,
@@ -207,6 +208,7 @@ function AutonomousRunPanel({
   onPlan,
   onExecute,
   onDownloadProof,
+  onSeedShowcase,
   proofHash,
 }: {
   run: AgentRun | null;
@@ -215,6 +217,7 @@ function AutonomousRunPanel({
   onPlan: () => void;
   onExecute: () => void;
   onDownloadProof: () => void;
+  onSeedShowcase: () => void;
   proofHash: string | null;
 }) {
   const resultByInvoice = new Map(run?.results.map((result) => [result.invoice_id, result]) ?? []);
@@ -230,6 +233,9 @@ function AutonomousRunPanel({
           {run ? <Tag type={run.status === 'EXECUTED' ? 'green' : run.status === 'PARTIAL' ? 'warm-gray' : 'cyan'}>{run.status}</Tag> : <Tag type="cool-gray">No plan yet</Tag>}
           <Button size="sm" kind="tertiary" renderIcon={Rule} disabled={busy} onClick={onPlan}>
             {run ? 'Plan current queue' : 'Plan first run'}
+          </Button>
+          <Button size="sm" kind="tertiary" renderIcon={Renew} disabled={busy} onClick={onSeedShowcase}>
+            Load mixed queue
           </Button>
           {run?.status === 'PLANNED' && run.summary.executable > 0 ? (
             <Button size="sm" renderIcon={PlayFilled} disabled={busy || settlementStopped} onClick={onExecute}>
@@ -1458,6 +1464,18 @@ function App() {
     });
   }, [act, data]);
 
+  const handleSeedAgentShowcase = useCallback(() => {
+    if (!data) return;
+    void act('Building a mixed autonomous accounts-payable queue', async () => {
+      await seedAutonomyShowcase(data.sessions.operator);
+      setAgentRun(await createAgentRun(data.sessions.operator));
+      setAgentProofHash(null);
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+    });
+  }, [act, data]);
+
   const handleExecuteAgentRun = useCallback(() => {
     if (!data || !agentRun) return;
     void act('Revalidating and executing policy-cleared agent actions', async () => {
@@ -1609,6 +1627,7 @@ function App() {
             onPlan={handlePlanAgentRun}
             onExecute={handleExecuteAgentRun}
             onDownloadProof={handleDownloadAgentProof}
+            onSeedShowcase={handleSeedAgentShowcase}
             proofHash={agentProofHash}
           />
         ) : null}
