@@ -196,3 +196,16 @@ def test_cross_tenant_evidence_is_rejected(case):
     decision = evaluate(case, delivery=foreign_delivery)
     assert decision.action == DecisionAction.REJECT
     assert "TENANT_BOUNDARY_VIOLATION" in decision.reason_codes
+
+
+def test_missing_purchase_order_is_held(case):
+    decision = evaluate(case, purchase_order=None)
+    assert decision.action == DecisionAction.HOLD
+    assert "MISSING_PURCHASE_ORDER" in decision.reason_codes
+    assert "DELIVERY_WITHOUT_PURCHASE_ORDER" in decision.reason_codes
+
+
+def test_missing_delivery_evidence_is_held(case):
+    decision = evaluate(case, delivery=None)
+    assert decision.action == DecisionAction.HOLD
+    assert "MISSING_DELIVERY_EVIDENCE" in decision.reason_codes

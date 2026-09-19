@@ -47,7 +47,13 @@ Strongly encouraged:
 - Product, backend, frontend-reference, and competitor blueprints written
 - Multi-tenant policy and settlement safety kernel implemented
 - Arc Mainnet and Testnet configuration implemented
+- Immutable PDF/image/JSON evidence intake and field-level provenance implemented
+- Tenant-scoped exact and near-duplicate invoice detection implemented
+- Missing PO and delivery evidence now fail closed with explicit remediation
 - Automated test suite passing
+
+Milestone 2 remains active. Authentication, vendor wallet history, and evidence-to-domain
+normalization are the next implementation slice.
 
 ## Submission discipline
 

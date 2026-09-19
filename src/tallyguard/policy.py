@@ -92,8 +92,8 @@ class PolicyEngine:
         *,
         invoice: Invoice,
         vendor: Vendor,
-        purchase_order: PurchaseOrder,
-        delivery: DeliveryEvidence,
+        purchase_order: PurchaseOrder | None,
+        delivery: DeliveryEvidence | None,
         treasury: TreasurySnapshot,
         policy: Policy,
         known_invoice_fingerprints: Iterable[str] = (),
@@ -129,19 +129,21 @@ class PolicyEngine:
     def _tenant_boundary(
         invoice: Invoice,
         vendor: Vendor,
-        po: PurchaseOrder,
-        delivery: DeliveryEvidence,
+        po: PurchaseOrder | None,
+        delivery: DeliveryEvidence | None,
         treasury: TreasurySnapshot,
         policy: Policy,
     ) -> RuleResult:
         organization_ids = {
             invoice.organization_id,
             vendor.organization_id,
-            po.organization_id,
-            delivery.organization_id,
             treasury.organization_id,
             policy.organization_id,
         }
+        if po is not None:
+            organization_ids.add(po.organization_id)
+        if delivery is not None:
+            organization_ids.add(delivery.organization_id)
         if len(organization_ids) != 1:
             return RuleResult(
                 code="TENANT_BOUNDARY_VIOLATION",
@@ -217,9 +219,16 @@ class PolicyEngine:
     def _purchase_order(
         invoice: Invoice,
         vendor: Vendor,
-        po: PurchaseOrder,
+        po: PurchaseOrder | None,
         policy: Policy,
     ) -> RuleResult:
+        if po is None:
+            return RuleResult(
+                code="MISSING_PURCHASE_ORDER",
+                disposition=RuleDisposition.HOLD,
+                message="No purchase order is attached to the invoice.",
+                remediation="Attach an authorized purchase order before settlement.",
+            )
         if po.vendor_id != vendor.id or po.currency != invoice.currency:
             return RuleResult(
                 code="PO_IDENTITY_MISMATCH",
@@ -239,10 +248,24 @@ class PolicyEngine:
     @staticmethod
     def _delivery(
         invoice: Invoice,
-        po: PurchaseOrder,
-        delivery: DeliveryEvidence,
+        po: PurchaseOrder | None,
+        delivery: DeliveryEvidence | None,
         policy: Policy,
     ) -> RuleResult:
+        if delivery is None:
+            return RuleResult(
+                code="MISSING_DELIVERY_EVIDENCE",
+                disposition=RuleDisposition.HOLD,
+                message="No delivery or acceptance evidence is attached to the invoice.",
+                remediation="Attach delivery or acceptance evidence before settlement.",
+            )
+        if po is None:
+            return RuleResult(
+                code="DELIVERY_WITHOUT_PURCHASE_ORDER",
+                disposition=RuleDisposition.HOLD,
+                message="Delivery evidence cannot be matched without a purchase order.",
+                remediation="Attach the purchase order referenced by the delivery evidence.",
+            )
         if delivery.purchase_order_id != po.id:
             return RuleResult(
                 code="DELIVERY_PO_MISMATCH",

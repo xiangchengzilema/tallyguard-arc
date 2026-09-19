@@ -34,7 +34,7 @@ Official references:
 
 ### Milestone 1 — Control and settlement kernel
 
-Status: in progress.
+Status: complete (2026-09-20).
 
 - Tenant isolation for every financial record
 - Invoice/PO/delivery/vendor/treasury policy evaluation
@@ -52,6 +52,16 @@ Exit criteria:
 - Mainnet cannot run without both a runtime flag and approval reference.
 
 ### Milestone 2 — Evidence intake and three-way match
+
+Status: in progress.
+
+Implemented foundation:
+
+- Immutable PDF/image/JSON intake with MIME signature validation and SHA-256 content addressing
+- Field-level extraction confidence and page/bounding-box/JSON-pointer provenance
+- Tenant-safe, deterministic evidence-package manifest hashes
+- Atomic duplicate detection using content hash, vendor/invoice number, business keys, and near-duplicate text
+- Explicit fail-closed outcomes for missing PO and delivery evidence
 
 - Organization and user authentication
 - Vendor onboarding and verified wallet history
