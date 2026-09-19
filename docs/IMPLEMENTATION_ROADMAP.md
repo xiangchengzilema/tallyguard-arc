@@ -282,6 +282,8 @@ Implemented foundation:
 - Wrong-network, wrong-recipient, wrong-amount, malformed-hash, and invalid-block responses now enter terminal `RECONCILIATION_MISMATCH` instead of the retry queue
 - A worker-restart drill closes and reopens the application repository after the provider accepts a transfer but before local confirmation; recovery reuses the same durable key and observes exactly one provider-side transfer
 - The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, atomic treasury contention, throughput, and P95 figures
+- A second real-HTTP suite ran 50 tenant-isolated mixed Agent Runs: 50/50 completed, 200 item outcomes matched their authority boundaries, 50/50 foreign proof reads were denied, and every content-addressed proof verified
+- A 100-request duplicate Agent Run execution storm produced one durable claim winner, one provider submission, and exactly one planned plus one executed audit event
 
 Two distinct test classes will be reported honestly:
 

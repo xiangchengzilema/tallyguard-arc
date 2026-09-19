@@ -368,7 +368,7 @@ export interface AgentRunResult {
 export interface AgentRun {
   id: string;
   organization_id: string;
-  status: 'PLANNED' | 'EXECUTED' | 'PARTIAL';
+  status: 'PLANNED' | 'EXECUTING' | 'EXECUTED' | 'PARTIAL';
   as_of: string;
   state_hash: string;
   plan_hash: string;
@@ -469,6 +469,50 @@ export interface ReliabilityReport {
 export interface ReliabilityEvidence {
   report: ReliabilityReport;
   artifact: {
+    filename: string;
+    sha256: string;
+    immutable: boolean;
+  };
+  agent_report: {
+    schema_version: string;
+    run_id: string;
+    generated_at: string;
+    configuration: {
+      organizations: number;
+      concurrency: number;
+      duplicate_execution_storm: number;
+      timeout_seconds: number;
+    };
+    methodology: {
+      classification: string;
+      identity: string;
+      note: string;
+      settlement: string;
+      transport: string;
+      queue: string;
+      duplicate_execution: string;
+    };
+    summary: {
+      approval_routes: number;
+      cross_tenant_attempts: number;
+      cross_tenant_attempts_denied: number;
+      duplicate_execution_claim_winners: number;
+      duplicate_execution_provider_submissions: number;
+      duplicate_execution_requests: number;
+      failed_agent_workflows: number;
+      mixed_queue_items: number;
+      orchestration_single_execution_preserved: boolean;
+      policy_authorized_settlements: number;
+      protected_non_settlements: number;
+      successful_agent_workflows: number;
+      verified_proof_packets: number;
+    };
+    latency_ms: {
+      overall: { p50: number; p95: number; p99: number };
+      by_request: Record<string, { p50: number; p95: number; p99: number }>;
+    };
+  };
+  agent_artifact: {
     filename: string;
     sha256: string;
     immutable: boolean;

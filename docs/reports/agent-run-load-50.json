@@ -1,0 +1,133 @@
+{
+  "configuration": {
+    "concurrency": 24,
+    "duplicate_execution_storm": 100,
+    "organizations": 50,
+    "timeout_seconds": 30.0
+  },
+  "errors": [],
+  "generated_at": "2026-09-19T23:18:34.135451+00:00",
+  "latency_ms": {
+    "by_request": {
+      "agent.execute": {
+        "max": 1442.682,
+        "mean": 1363.829,
+        "p50": 1417.862,
+        "p95": 1438.378,
+        "p99": 1442.682
+      },
+      "agent.plan": {
+        "max": 781.207,
+        "mean": 395.256,
+        "p50": 396.944,
+        "p95": 480.935,
+        "p99": 781.207
+      },
+      "agent.proof": {
+        "max": 395.235,
+        "mean": 260.162,
+        "p50": 267.47,
+        "p95": 355.482,
+        "p99": 395.235
+      },
+      "agent.showcase.seed": {
+        "max": 6282.417,
+        "mean": 3675.238,
+        "p50": 3145.769,
+        "p95": 6248.86,
+        "p99": 6282.417
+      },
+      "security.cross_tenant_agent_proof": {
+        "max": 29.148,
+        "mean": 8.072,
+        "p50": 5.752,
+        "p95": 22.895,
+        "p99": 29.148
+      },
+      "storm.agent.final": {
+        "max": 6.735,
+        "mean": 6.735,
+        "p50": 6.735,
+        "p95": 6.735,
+        "p99": 6.735
+      },
+      "storm.agent.plan": {
+        "max": 20.648,
+        "mean": 20.648,
+        "p50": 20.648,
+        "p95": 20.648,
+        "p99": 20.648
+      },
+      "storm.agent.proof": {
+        "max": 9.354,
+        "mean": 9.354,
+        "p50": 9.354,
+        "p95": 9.354,
+        "p99": 9.354
+      },
+      "storm.duplicate_agent_execution": {
+        "max": 986.897,
+        "mean": 202.828,
+        "p50": 203.812,
+        "p95": 216.458,
+        "p99": 219.778
+      },
+      "storm.showcase.seed": {
+        "max": 139.861,
+        "mean": 139.861,
+        "p50": 139.861,
+        "p95": 139.861,
+        "p99": 139.861
+      }
+    },
+    "overall": {
+      "max": 6282.417,
+      "mean": 863.241,
+      "p50": 258.668,
+      "p95": 3519.424,
+      "p99": 6108.378
+    }
+  },
+  "methodology": {
+    "classification": "synthetic multi-tenant autonomous-agent reliability test",
+    "duplicate_execution": "concurrent callers contend for one durable database execution claim",
+    "identity": "separate operator, approver, and auditor sessions per tenant",
+    "note": "This report measures engineering reliability and is not customer traction.",
+    "queue": "one PAY, one approval escalation, one policy hold, and one future schedule per tenant",
+    "settlement": "deterministic Arc simulator; no funds moved",
+    "transport": "real loopback HTTP against the Flask API"
+  },
+  "run_id": "agent_load_226ead368195498790c25dcc97755b1c",
+  "schema_version": "1.0",
+  "summary": {
+    "approval_routes": 50,
+    "cross_tenant_attempts": 50,
+    "cross_tenant_attempts_denied": 50,
+    "duplicate_execution_audit_events": [
+      "AGENT_RUN_PLANNED",
+      "AGENT_RUN_EXECUTED"
+    ],
+    "duplicate_execution_claim_winners": 1,
+    "duplicate_execution_in_progress": 99,
+    "duplicate_execution_provider_submissions": 1,
+    "duplicate_execution_requests": 100,
+    "duplicate_execution_result_statuses": [
+      "ROUTED",
+      "SETTLED",
+      "SKIPPED",
+      "SKIPPED"
+    ],
+    "duplicate_execution_reused": 0,
+    "duplicate_execution_terminal_status": "EXECUTED",
+    "duration_seconds": 16.35,
+    "failed_agent_workflows": 0,
+    "http_requests": 354,
+    "mixed_queue_items": 200,
+    "orchestration_single_execution_preserved": true,
+    "organizations": 50,
+    "policy_authorized_settlements": 50,
+    "protected_non_settlements": 100,
+    "successful_agent_workflows": 50,
+    "verified_proof_packets": 50
+  }
+}

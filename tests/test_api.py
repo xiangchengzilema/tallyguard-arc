@@ -553,6 +553,11 @@ def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):
     )
     assert len(payload["artifact"]["sha256"]) == 64
     assert payload["artifact"]["immutable"] is True
+    assert payload["agent_report"]["summary"]["successful_agent_workflows"] == 50
+    assert payload["agent_report"]["summary"]["orchestration_single_execution_preserved"] is True
+    assert payload["agent_report"]["summary"]["cross_tenant_attempts_denied"] == 50
+    assert len(payload["agent_artifact"]["sha256"]) == 64
+    assert payload["agent_artifact"]["immutable"] is True
 
 
 def test_payment_evidence_packet_binds_replay_settlement_and_audit(tmp_path):

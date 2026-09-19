@@ -223,8 +223,9 @@ returned queue covers immediate settlement, segregated approval, wallet remediat
 schedule. It never executes a payment; the caller must create and explicitly execute an agent run.
 
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
-multi-tenant load artifact with its SHA-256 content address. The methodology in the response
-explicitly distinguishes reliability evidence from customer traction and states that no funds moved.
+multi-tenant workflow and Agent Run artifacts with separate SHA-256 content addresses. The
+methodology in both responses explicitly distinguishes reliability evidence from customer traction
+and states that no funds moved.
 
 `GET /api/invoices/{id}/evidence-packet` requires audit-read permission and returns a downloadable
 JSON envelope. Its packet hash covers canonical UTF-8 JSON containing the immutable invoice,

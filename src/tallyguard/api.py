@@ -475,6 +475,18 @@ def create_app(
     reliability_report_path = Path(
         os.getenv("TALLYGUARD_RELIABILITY_REPORT", str(default_reliability_report))
     ).resolve()
+    default_agent_reliability_report = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "reports"
+        / "agent-run-load-50.json"
+    )
+    agent_reliability_report_path = Path(
+        os.getenv(
+            "TALLYGUARD_AGENT_RELIABILITY_REPORT",
+            str(default_agent_reliability_report),
+        )
+    ).resolve()
     app = Flask(__name__, static_folder=None)
     max_evidence_bytes = int(
         os.getenv("TALLYGUARD_MAX_EVIDENCE_BYTES", str(10 * 1024 * 1024))
@@ -694,27 +706,41 @@ def create_app(
     @app.get("/api/reliability/report")
     @require(Permission.AUDIT_READ)
     def reliability_report():
-        try:
-            raw_report = reliability_report_path.read_bytes()
-        except OSError as exc:
-            raise PersistenceError("Reliability report is not available.") from exc
-        if len(raw_report) > 64 * 1024:
-            raise PersistenceError("Reliability report exceeds the 64 KiB safety limit.")
-        try:
-            report = json.loads(raw_report)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise PersistenceError("Reliability report is not valid JSON.") from exc
-        if not isinstance(report, dict) or not all(
-            isinstance(report.get(key), dict)
-            for key in ("configuration", "latency_ms", "methodology", "summary")
-        ):
-            raise PersistenceError("Reliability report schema is incomplete.")
+        def read_checked_report(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
+            try:
+                raw = path.read_bytes()
+            except OSError as exc:
+                raise PersistenceError(f"{label} reliability report is not available.") from exc
+            if len(raw) > 64 * 1024:
+                raise PersistenceError(f"{label} reliability report exceeds the 64 KiB safety limit.")
+            try:
+                parsed = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise PersistenceError(f"{label} reliability report is not valid JSON.") from exc
+            if not isinstance(parsed, dict) or not all(
+                isinstance(parsed.get(key), dict)
+                for key in ("configuration", "latency_ms", "methodology", "summary")
+            ):
+                raise PersistenceError(f"{label} reliability report schema is incomplete.")
+            return parsed, raw
+
+        report, raw_report = read_checked_report(reliability_report_path, "Workflow")
+        agent_report, raw_agent_report = read_checked_report(
+            agent_reliability_report_path,
+            "Agent-run",
+        )
         return jsonify(
             {
                 "report": report,
                 "artifact": {
                     "filename": reliability_report_path.name,
                     "sha256": sha256(raw_report).hexdigest(),
+                    "immutable": True,
+                },
+                "agent_report": agent_report,
+                "agent_artifact": {
+                    "filename": agent_reliability_report_path.name,
+                    "sha256": sha256(raw_agent_report).hexdigest(),
                     "immutable": True,
                 },
             }
@@ -2360,8 +2386,23 @@ def create_app(
     @require(Permission.SETTLEMENT_EXECUTE)
     def execute_agent_run(run_id: str):
         organization_id = g.principal.organization_id
-        run = repository.get_agent_run(organization_id=organization_id, run_id=run_id)
-        if run.status != AgentRunStatus.PLANNED:
+        run, claimed = repository.claim_agent_run_execution(
+            organization_id=organization_id,
+            run_id=run_id,
+            executed_by_user_id=g.principal.user_id,
+        )
+        if not claimed and run.status == AgentRunStatus.EXECUTING:
+            response = jsonify(
+                {
+                    "agent_run": _agent_run_json(run),
+                    "execution_in_progress": True,
+                    "reused_result": False,
+                    "correlation_id": _correlation_id(),
+                }
+            )
+            response.headers["Retry-After"] = "1"
+            return response, 202
+        if not claimed:
             return jsonify(
                 {
                     "agent_run": _agent_run_json(run),

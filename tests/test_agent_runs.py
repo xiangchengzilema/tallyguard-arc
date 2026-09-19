@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 
@@ -288,4 +288,59 @@ def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp
     assert result["status"] == "SETTLED"
     assert result["schedule_result"]["release_decision"]["final_action"] == "PAY"
     assert result["schedule_result"]["payment"]["invoice"]["id"] == scheduled["invoice"]["id"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+
+def test_agent_run_execution_lease_fails_fast_and_recovers_after_timeout(tmp_path):
+    app = create_app(database_path=tmp_path / "agent-lease.sqlite3", testing=True)
+    client = app.test_client()
+    operator = session(client, "operator")
+    approver = session(client, "approver")
+    principal = app.extensions["tallyguard_authenticator"].authenticate(approver)
+
+    client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=headers(operator, "lease-seed-current"),
+    )
+    current_plan = client.post(
+        "/api/agent-runs",
+        json={},
+        headers=headers(operator, "lease-plan-current"),
+    ).get_json()["agent_run"]
+    claimed, won = app.extensions["tallyguard_repository"].claim_agent_run_execution(
+        organization_id=principal.organization_id,
+        run_id=current_plan["id"],
+        executed_by_user_id=principal.user_id,
+    )
+    assert won is True
+    assert claimed.status.value == "EXECUTING"
+
+    in_progress = client.post(
+        f"/api/agent-runs/{current_plan['id']}/execute",
+        headers=headers(approver, "lease-current-contender"),
+    )
+    assert in_progress.status_code == 202
+    assert in_progress.headers["Retry-After"] == "1"
+    assert in_progress.get_json()["execution_in_progress"] is True
+
+    recovery_plan = client.post(
+        "/api/agent-runs",
+        json={},
+        headers=headers(operator, "lease-plan-recovery"),
+    ).get_json()["agent_run"]
+    stale_claim, won = app.extensions["tallyguard_repository"].claim_agent_run_execution(
+        organization_id=principal.organization_id,
+        run_id=recovery_plan["id"],
+        executed_by_user_id=principal.user_id,
+        claimed_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+    )
+    assert won is True
+    assert stale_claim.status.value == "EXECUTING"
+
+    recovered = client.post(
+        f"/api/agent-runs/{recovery_plan['id']}/execute",
+        headers=headers(approver, "lease-recovered"),
+    )
+    assert recovered.status_code == 200
+    assert recovered.get_json()["agent_run"]["status"] == "EXECUTED"
     assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1

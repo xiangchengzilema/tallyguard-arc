@@ -1465,6 +1465,66 @@ class SqliteRepository:
             ).fetchone()
         return self._agent_run(row) if row is not None else None
 
+    def claim_agent_run_execution(
+        self,
+        *,
+        organization_id: str,
+        run_id: str,
+        executed_by_user_id: str,
+        claimed_at: datetime | None = None,
+        lease_timeout: timedelta = timedelta(minutes=5),
+    ) -> tuple[AgentRun, bool]:
+        """Atomically grant one worker authority to execute a planned run.
+
+        A durable EXECUTING state prevents concurrent API workers from repeating
+        approval routing or settlement work. The payment layer remains
+        independently idempotent; this claim protects the orchestration layer.
+        """
+
+        if lease_timeout <= timedelta(0):
+            raise PersistenceError("Agent run execution lease timeout must be positive.")
+        timestamp = claimed_at or datetime.now(timezone.utc)
+        stale_before = timestamp - lease_timeout
+        with self._guard:
+            cursor = self._connection.execute(
+                """
+                UPDATE agent_runs
+                SET status = ?, executed_by_user_id = ?, executed_at = ?
+                WHERE organization_id = ? AND id = ? AND status = ?
+                """,
+                (
+                    AgentRunStatus.EXECUTING.value,
+                    executed_by_user_id,
+                    timestamp.isoformat(),
+                    organization_id,
+                    run_id,
+                    AgentRunStatus.PLANNED.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                cursor = self._connection.execute(
+                    """
+                    UPDATE agent_runs
+                    SET executed_by_user_id = ?, executed_at = ?
+                    WHERE organization_id = ? AND id = ? AND status = ?
+                      AND executed_at IS NOT NULL AND executed_at <= ?
+                    """,
+                    (
+                        executed_by_user_id,
+                        timestamp.isoformat(),
+                        organization_id,
+                        run_id,
+                        AgentRunStatus.EXECUTING.value,
+                        stale_before.isoformat(),
+                    ),
+                )
+        if cursor.rowcount == 1:
+            return (
+                self.get_agent_run(organization_id=organization_id, run_id=run_id),
+                True,
+            )
+        return self.get_agent_run(organization_id=organization_id, run_id=run_id), False
+
     def complete_agent_run(
         self,
         *,
@@ -1476,8 +1536,8 @@ class SqliteRepository:
         executed_at: datetime | None = None,
     ) -> AgentRun:
         timestamp = executed_at or datetime.now(timezone.utc)
-        if status == AgentRunStatus.PLANNED:
-            raise PersistenceError("A completed agent run cannot remain PLANNED.")
+        if status in {AgentRunStatus.PLANNED, AgentRunStatus.EXECUTING}:
+            raise PersistenceError("A completed agent run requires a terminal status.")
         with self._guard:
             cursor = self._connection.execute(
                 """
@@ -1492,12 +1552,12 @@ class SqliteRepository:
                     canonical_json(results),
                     organization_id,
                     run_id,
-                    AgentRunStatus.PLANNED.value,
+                    AgentRunStatus.EXECUTING.value,
                 ),
             )
         if cursor.rowcount != 1:
             existing = self.get_agent_run(organization_id=organization_id, run_id=run_id)
-            if existing.status != AgentRunStatus.PLANNED:
+            if existing.status in {AgentRunStatus.EXECUTED, AgentRunStatus.PARTIAL}:
                 return existing
             raise PersistenceError("Agent run could not be completed.")
         return self.get_agent_run(organization_id=organization_id, run_id=run_id)

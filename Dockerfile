@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     TALLYGUARD_FRONTEND_DIST=/app/web/dist \
     TALLYGUARD_RELIABILITY_REPORT=/app/docs/reports/load-test-10000.json \
+    TALLYGUARD_AGENT_RELIABILITY_REPORT=/app/docs/reports/agent-run-load-50.json \
     TALLYGUARD_DATABASE_PATH=/tmp/tallyguard.sqlite3 \
     TALLYGUARD_MODE=simulation \
     TALLYGUARD_ARC_NETWORK=ARC-TESTNET \
@@ -31,6 +32,7 @@ RUN pip install .
 
 COPY --from=web-build /build/web/dist ./web/dist
 COPY docs/reports/load-test-10000.json ./docs/reports/load-test-10000.json
+COPY docs/reports/agent-run-load-50.json ./docs/reports/agent-run-load-50.json
 RUN chown -R tallyguard:tallyguard /app
 
 USER tallyguard

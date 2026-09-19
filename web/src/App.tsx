@@ -148,7 +148,7 @@ function OperationsBand({ overview, sessionEvaluations }: { overview: Operations
 }
 
 function ReliabilityPanel({ evidence }: { evidence: ReliabilityEvidence }) {
-  const { report, artifact } = evidence;
+  const { report, artifact, agent_report: agentReport, agent_artifact: agentArtifact } = evidence;
   const settlementLatency = report.latency_ms.by_request['payment.settle'];
   const isolationLatency = report.latency_ms.by_request['security.cross_tenant_read'];
   return (
@@ -173,8 +173,19 @@ function ReliabilityPanel({ evidence }: { evidence: ReliabilityEvidence }) {
         <div><span>Failed workflows</span><strong>{report.summary.failed_workflows}</strong></div>
         <div><span>Artifact proof</span><code>{shorten(artifact.sha256, 12, 10)}</code></div>
       </div>
+      <div className="reliability-agent">
+        <div className="reliability-agent__title">
+          <span className="eyebrow">Agent orchestration stress</span>
+          <strong>50 tenants planned and executed mixed AP queues in parallel.</strong>
+          <small>Every run exported a verified proof packet. One hundred duplicate execute calls competed for one durable lease.</small>
+        </div>
+        <div><strong>{agentReport.summary.successful_agent_workflows}/{agentReport.configuration.organizations}</strong><span>agent runs passed</span><small>{agentReport.summary.mixed_queue_items} governed queue items</small></div>
+        <div><strong>{agentReport.summary.cross_tenant_attempts_denied}/{agentReport.summary.cross_tenant_attempts}</strong><span>foreign proofs denied</span><small>{agentReport.summary.verified_proof_packets} packets verified</small></div>
+        <div><strong>{agentReport.summary.duplicate_execution_requests} → {agentReport.summary.duplicate_execution_claim_winners}</strong><span>execution lease winners</span><small>{agentReport.summary.duplicate_execution_provider_submissions} provider submission</small></div>
+        <div><strong>{agentReport.summary.protected_non_settlements}</strong><span>unsafe actions blocked</span><small>{agentReport.summary.approval_routes} routed for human approval</small></div>
+      </div>
       <div className="reliability-panel__foot">
-        <div><CheckmarkFilled size={16} /><span>Immutable report · {new Date(report.generated_at).toLocaleDateString()} · {shorten(report.run_id, 12, 8)}</span></div>
+        <div><CheckmarkFilled size={16} /><span>Two immutable reports · workflow {shorten(artifact.sha256, 8, 6)} · agent {shorten(agentArtifact.sha256, 8, 6)}</span></div>
         <p>{report.methodology.note} {report.methodology.settlement}.</p>
       </div>
     </section>

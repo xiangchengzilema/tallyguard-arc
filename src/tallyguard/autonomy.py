@@ -30,6 +30,7 @@ class AgentAction(StrEnum):
 
 class AgentRunStatus(StrEnum):
     PLANNED = "PLANNED"
+    EXECUTING = "EXECUTING"
     EXECUTED = "EXECUTED"
     PARTIAL = "PARTIAL"
 

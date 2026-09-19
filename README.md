@@ -64,6 +64,7 @@ Every payment answers four questions:
 - Agent-run execution requires the approver settlement permission; it revalidates invoice version, workflow status, latest policy decision, approval binding, schedule eligibility, and retry authorization immediately before each action, while recording routed, revalidated, stale, failed, skipped, and settled results independently
 - Auditors can export a content-addressed Agent Run Proof Packet containing the frozen plan, execution outcomes, approval records, related audit events, plan-hash verification, and tenant-chain verification
 - A one-click public-safe autonomy showcase seeds a mixed queue containing a policy-cleared payment, role-separated escalation, wallet mismatch hold, and not-yet-due schedule, then plans all four through the same production-shaped APIs
+- Agent Run execution uses a durable five-minute database lease so concurrent workers cannot repeat approval routing, settlement orchestration, or run-level audit events; an abandoned lease can be safely reclaimed because downstream approval and payment operations remain independently idempotent
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
 - Approver-only governance overview combines the active policy authority with an enriched global exception inbox; approving advances an escalated invoice to `READY`, while rejection closes it as `REJECTED` without creating a payment intent
 - Restart-safe opaque sessions stored only as SHA-256 token digests
@@ -87,6 +88,7 @@ Every payment answers four questions:
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
 - Real-HTTP synthetic multi-tenant load harness with latency, isolation, duplicate-payment, and shared-treasury contention metrics
 - Auditor-visible reliability panel loads the checked-in 10,000-workflow result through a content-addressed API and labels it explicitly as synthetic engineering evidence rather than customer traction
+- A separate 50-tenant Agent Run test executes 200 mixed queue items, verifies 50 proof packets, denies 50/50 cross-tenant proof reads, and converges 100 simultaneous execution calls onto one durable claim and one provider submission
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics
 
 ## Run the judge console
@@ -116,6 +118,20 @@ reads, and 96/100 over-limit payments blocked while exactly four safe
 reservations reached the provider. The smaller
 [development baseline](docs/reports/LOAD_TEST_BASELINE.md) remains available for
 fast regression checks.
+
+Run the autonomous orchestration reliability suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m tallyguard.agentload `
+  --organizations 50 --concurrency 24 `
+  --duplicate-execution-storm 100 `
+  --output docs\reports\agent-run-load-50.json
+```
+
+The checked-in [50-tenant Agent Run report](docs/reports/AGENT_RUN_LOAD_50.md)
+records 50/50 successful mixed-queue runs, 50 verified proof packets, 50/50
+denied cross-tenant proof reads, and one execution/provider winner under a
+100-request duplicate storm.
 
 ## Deploy the public judge playground
 
