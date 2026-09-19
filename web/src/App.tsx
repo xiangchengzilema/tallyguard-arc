@@ -181,7 +181,9 @@ function ReliabilityPanel({ evidence }: { evidence: ReliabilityEvidence }) {
 
 const AGENT_ACTION_LABEL: Record<AgentAction, string> = {
   SETTLE: 'Settle now',
+  SETTLE_APPROVED: 'Settle approved',
   RETRY_SETTLEMENT: 'Recover payment',
+  RELEASE_SCHEDULE: 'Release schedule',
   WAIT_SCHEDULE: 'Wait for schedule',
   REQUIRE_APPROVAL: 'Route to approver',
   REMEDIATE: 'Remediate evidence',
@@ -190,7 +192,7 @@ const AGENT_ACTION_LABEL: Record<AgentAction, string> = {
 };
 
 function agentActionTag(action: AgentAction) {
-  if (action === 'SETTLE' || action === 'RETRY_SETTLEMENT') return 'green' as const;
+  if (action === 'SETTLE' || action === 'SETTLE_APPROVED' || action === 'RETRY_SETTLEMENT' || action === 'RELEASE_SCHEDULE') return 'green' as const;
   if (action === 'INVESTIGATE') return 'red' as const;
   if (action === 'REQUIRE_APPROVAL') return 'purple' as const;
   if (action === 'REMEDIATE') return 'magenta' as const;
@@ -217,7 +219,7 @@ function AutonomousRunPanel({
         <div>
           <span className="eyebrow">Bounded autonomy / durable plan</span>
           <h2>One agent run. Every control rechecked.</h2>
-          <p>The agent scans the tenant queue, explains each next action, and can execute only policy-cleared or explicitly retryable payments. Amounts, recipients, and authority always come from sealed records.</p>
+          <p>The agent scans the tenant queue, explains each next action, and can route approvals, release due schedules, or settle only after the relevant controls pass. Amounts, recipients, and authority always come from sealed records.</p>
         </div>
         <div className="agent-run__actions">
           {run ? <Tag type={run.status === 'EXECUTED' ? 'green' : run.status === 'PARTIAL' ? 'warm-gray' : 'cyan'}>{run.status}</Tag> : <Tag type="cool-gray">No plan yet</Tag>}

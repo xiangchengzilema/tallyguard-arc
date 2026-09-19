@@ -153,17 +153,21 @@ treasury, changed wallet, or other failed control therefore stops payment before
 
 The autonomous runner is a two-phase durable workflow, not a model-controlled wallet. A finance
 operator first asks it to scan the tenant queue. The deterministic planner maps every current
-invoice to one action: settle, retry, wait, request approval, remediate, investigate, or collect
-evidence. The exact invoice versions, workflow states, decision IDs, retry flags, evaluation date,
-and resulting action list are sealed under separate state and plan hashes.
+invoice to one action: settle, settle an independently approved exception, retry, release a due
+schedule, wait, request approval, remediate, investigate, or collect evidence. The exact invoice
+versions, workflow states, decision IDs, approval bindings, retry flags, evaluation date, and
+resulting action list are sealed under separate state and plan hashes.
 
-Only `SETTLE` and `RETRY_SETTLEMENT` are executable. A principal with settlement permission must
-authorize the run, and the API then reloads each invoice and rechecks its version, state, latest
-`PAY` decision, and (for recovery) latest durable retry classification. A changed assumption marks
-that item `STALE`; it cannot move funds. All other actions are non-financial handoffs. Executable
-items enter the same atomic treasury reservation, provider idempotency, independent Arc
-reconciliation, and receipt persistence path as a single approved payment. Runs, item results, and
-their hashes survive restarts and remain tenant scoped.
+`REQUIRE_APPROVAL` is an executable workflow handoff but never a funds-moving action. `SETTLE`,
+`SETTLE_APPROVED`, `RETRY_SETTLEMENT`, and `RELEASE_SCHEDULE` can reach settlement only after a
+principal with settlement permission starts the run and the API reloads every binding. Normal
+settlement requires the latest `PAY` decision; approved settlement requires the exact current
+role-separated approval; schedule release requires the sealed date to be due and then re-runs the
+current policy; recovery requires the latest durable retry classification. A changed assumption
+marks that item `STALE` or `REVALIDATED`; it cannot bypass a control. Funds-moving items enter the
+same atomic treasury reservation, provider idempotency, independent Arc reconciliation, and receipt
+persistence path as a single approved payment. Runs, item results, and their hashes survive
+restarts and remain tenant scoped.
 
 ## Approval governance boundary
 

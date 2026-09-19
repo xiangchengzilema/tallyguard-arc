@@ -204,10 +204,13 @@ plan for at most 25 tenant invoices. Planning cannot create an intent or call a 
 endpoints expose the latest or a named run only inside the authenticated tenant.
 
 `POST /api/agent-runs/{id}/execute` requires settlement-execute permission. It reloads every
-executable item and compares invoice version, workflow state, latest `PAY` decision, and retry
-eligibility with the frozen plan. Changed items become `STALE`; non-executable actions remain
-human handoffs. Valid items use the normal atomic, idempotent settlement orchestrator and retain
-independent results when another item fails.
+executable item and compares invoice version, workflow state, decision, approval binding, schedule
+eligibility, and retry classification with the frozen plan. `REQUIRE_APPROVAL` creates a durable
+role-separated handoff without moving funds. `SETTLE_APPROVED` accepts only the exact approved
+exception, while `RELEASE_SCHEDULE` requires the sealed release date to be due and produces a fresh
+current-policy decision before settlement. Changed or newly blocked items become `STALE` or
+`REVALIDATED`. Valid funds-moving items use the normal atomic, idempotent settlement orchestrator
+and retain independent results when another item fails.
 
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response

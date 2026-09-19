@@ -329,7 +329,9 @@ export interface SettlementIncidentOverview {
 
 export type AgentAction =
   | 'SETTLE'
+  | 'SETTLE_APPROVED'
   | 'RETRY_SETTLEMENT'
+  | 'RELEASE_SCHEDULE'
   | 'WAIT_SCHEDULE'
   | 'REQUIRE_APPROVAL'
   | 'REMEDIATE'
@@ -349,12 +351,14 @@ export interface AgentRunItem {
   reason_code: string;
   explanation: string;
   executable: boolean;
+  approval_reference: string | null;
+  approval_status: string | null;
 }
 
 export interface AgentRunResult {
   invoice_id: string;
   action: AgentAction;
-  status: 'SETTLED' | 'SKIPPED' | 'STALE' | 'FAILED';
+  status: 'SETTLED' | 'SKIPPED' | 'STALE' | 'FAILED' | 'ROUTED' | 'REVALIDATED';
   reason_code?: string;
   reason_codes?: string[];
   payment?: Payment;

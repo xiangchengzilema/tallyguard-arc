@@ -25,7 +25,13 @@ from .agent import (
     OpenAICompatibleEvidenceAnalyst,
 )
 from .audit import canonical_json
-from .approvals import ApprovalError, ApprovalInbox, ApprovalRequest, apply_approved_escalation
+from .approvals import (
+    ApprovalError,
+    ApprovalInbox,
+    ApprovalRequest,
+    ApprovalStatus,
+    apply_approved_escalation,
+)
 from .autonomy import (
     AgentCandidate,
     AgentRun,
@@ -2088,6 +2094,8 @@ def create_app(
             decision_action: str | None = None
             scheduled_for: date | None = None
             retryable = False
+            approval_reference: str | None = None
+            approval_status: str | None = None
             try:
                 decision = repository.latest_decision_for_invoice(
                     organization_id=organization_id,
@@ -2096,6 +2104,13 @@ def create_app(
                 decision_id = decision.id
                 decision_action = decision.final_action.value
                 scheduled_for = _scheduled_for(decision)
+                approval = repository.find_approval_for_decision(
+                    organization_id=organization_id,
+                    decision_id=decision.id,
+                )
+                if approval is not None:
+                    approval_reference = approval.id
+                    approval_status = approval.status.value
                 try:
                     intent = repository.get_payment_intent_for_decision(
                         organization_id=organization_id,
@@ -2122,6 +2137,8 @@ def create_app(
                     decision_action=decision_action,
                     scheduled_for=scheduled_for,
                     settlement_retryable=retryable,
+                    approval_reference=approval_reference,
+                    approval_status=approval_status,
                 )
             )
             if len(candidates) == max_items:
@@ -2143,7 +2160,7 @@ def create_app(
             organization_id=organization_id,
             max_items=max_items,
         )
-        items = tuple(plan_candidate(candidate) for candidate in candidates)
+        items = tuple(plan_candidate(candidate, as_of=as_of) for candidate in candidates)
         state_hash = sha256(
             canonical_payload(state_payload(candidates, as_of=as_of)).encode("utf-8")
         ).hexdigest()
@@ -2242,8 +2259,33 @@ def create_app(
                     stale_reasons.append("INVOICE_VERSION_CHANGED")
                 if current.status != item.invoice_status:
                     stale_reasons.append("WORKFLOW_STATUS_CHANGED")
-                if decision.id != item.decision_id or decision.final_action.value != "PAY":
+                if decision.id != item.decision_id:
                     stale_reasons.append("POLICY_DECISION_CHANGED")
+                if item.action.value in {"SETTLE", "RETRY_SETTLEMENT"}:
+                    if decision.final_action.value != "PAY":
+                        stale_reasons.append("POLICY_DECISION_CHANGED")
+                elif item.action.value == "SETTLE_APPROVED":
+                    approval = repository.find_approval_for_decision(
+                        organization_id=organization_id,
+                        decision_id=decision.id,
+                    )
+                    if (
+                        decision.final_action.value != "ESCALATE"
+                        or approval is None
+                        or approval.id != item.approval_reference
+                        or approval.status != ApprovalStatus.APPROVED
+                    ):
+                        stale_reasons.append("APPROVAL_AUTHORITY_CHANGED")
+                elif item.action.value == "RELEASE_SCHEDULE":
+                    if (
+                        decision.final_action.value != "SCHEDULE"
+                        or _scheduled_for(decision) is None
+                        or _scheduled_for(decision) > current_date()
+                    ):
+                        stale_reasons.append("SCHEDULE_RELEASE_CHANGED")
+                elif item.action.value == "REQUIRE_APPROVAL":
+                    if decision.final_action.value != "ESCALATE":
+                        stale_reasons.append("POLICY_DECISION_CHANGED")
                 if item.action.value == "RETRY_SETTLEMENT":
                     try:
                         intent = repository.get_payment_intent_for_decision(
@@ -2270,9 +2312,76 @@ def create_app(
                     )
                     continue
 
+                if item.action.value == "REQUIRE_APPROVAL":
+                    timestamp = datetime.now(timezone.utc)
+                    identity = (
+                        f"{organization_id}:{decision.id}:"
+                        f"{run.created_by_user_id}:{run.id}"
+                    )
+                    approval = repository.create_or_get_approval(
+                        ApprovalRequest(
+                            id="approval_" + sha256(identity.encode("utf-8")).hexdigest()[:24],
+                            organization_id=organization_id,
+                            invoice_id=item.invoice_id,
+                            decision_id=decision.id,
+                            requested_by_user_id=run.created_by_user_id,
+                            requested_at=timestamp,
+                        )
+                    )
+                    repository.append(
+                        aggregate_type="approval",
+                        aggregate_id=approval.id,
+                        event_type="APPROVAL_REQUESTED",
+                        payload={
+                            "organization_id": organization_id,
+                            "invoice_id": approval.invoice_id,
+                            "decision_id": approval.decision_id,
+                            "requested_by_user_id": approval.requested_by_user_id,
+                            "agent_run_id": run.id,
+                        },
+                        created_at=approval.requested_at,
+                    )
+                    results.append(
+                        {
+                            "invoice_id": item.invoice_id,
+                            "action": item.action.value,
+                            "status": "ROUTED",
+                            "approval": _approval_json(approval),
+                        }
+                    )
+                    continue
+
+                if item.action.value == "RELEASE_SCHEDULE":
+                    schedule_result = release_scheduled_invoice(
+                        stored=current,
+                        evaluated_on=current_date(),
+                        actor_user_id=g.principal.user_id,
+                        correlation_id=f"{_correlation_id()}:{index + 1}",
+                    )
+                    results.append(
+                        {
+                            "invoice_id": item.invoice_id,
+                            "action": item.action.value,
+                            "status": (
+                                "SETTLED"
+                                if schedule_result["status"] == "SETTLED"
+                                else "REVALIDATED"
+                            ),
+                            "schedule_result": schedule_result,
+                        }
+                    )
+                    continue
+
                 outcome = execute_settlement(
                     invoice_id=item.invoice_id,
-                    payload={"decision_id": item.decision_id},
+                    payload={
+                        "decision_id": item.decision_id,
+                        **(
+                            {"approval_reference": item.approval_reference}
+                            if item.action.value == "SETTLE_APPROVED"
+                            else {}
+                        ),
+                    },
                     actor_user_id=g.principal.user_id,
                     correlation_id=f"{_correlation_id()}:{index + 1}",
                 )
@@ -2325,6 +2434,8 @@ def create_app(
                 "plan_hash": run.plan_hash,
                 "status": completed.status.value,
                 "settled": sum(result["status"] == "SETTLED" for result in results),
+                "routed": sum(result["status"] == "ROUTED" for result in results),
+                "revalidated": sum(result["status"] == "REVALIDATED" for result in results),
                 "stale": sum(result["status"] == "STALE" for result in results),
                 "failed": sum(result["status"] == "FAILED" for result in results),
                 "actor_user_id": g.principal.user_id,

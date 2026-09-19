@@ -18,7 +18,9 @@ from .workflow import InvoiceStatus
 
 class AgentAction(StrEnum):
     SETTLE = "SETTLE"
+    SETTLE_APPROVED = "SETTLE_APPROVED"
     RETRY_SETTLEMENT = "RETRY_SETTLEMENT"
+    RELEASE_SCHEDULE = "RELEASE_SCHEDULE"
     WAIT_SCHEDULE = "WAIT_SCHEDULE"
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
     REMEDIATE = "REMEDIATE"
@@ -32,7 +34,15 @@ class AgentRunStatus(StrEnum):
     PARTIAL = "PARTIAL"
 
 
-EXECUTABLE_ACTIONS = frozenset({AgentAction.SETTLE, AgentAction.RETRY_SETTLEMENT})
+EXECUTABLE_ACTIONS = frozenset(
+    {
+        AgentAction.SETTLE,
+        AgentAction.SETTLE_APPROVED,
+        AgentAction.RETRY_SETTLEMENT,
+        AgentAction.RELEASE_SCHEDULE,
+        AgentAction.REQUIRE_APPROVAL,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +57,8 @@ class AgentCandidate:
     decision_action: str | None
     scheduled_for: date | None
     settlement_retryable: bool
+    approval_reference: str | None
+    approval_status: str | None
 
     def state_payload(self) -> dict[str, Any]:
         return {
@@ -57,6 +69,8 @@ class AgentCandidate:
             "decision_action": self.decision_action,
             "scheduled_for": self.scheduled_for.isoformat() if self.scheduled_for else None,
             "settlement_retryable": self.settlement_retryable,
+            "approval_reference": self.approval_reference,
+            "approval_status": self.approval_status,
         }
 
 
@@ -74,6 +88,8 @@ class AgentPlanItem:
     reason_code: str
     explanation: str
     executable: bool
+    approval_reference: str | None = None
+    approval_status: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -89,6 +105,8 @@ class AgentPlanItem:
             "reason_code": self.reason_code,
             "explanation": self.explanation,
             "executable": self.executable,
+            "approval_reference": self.approval_reference,
+            "approval_status": self.approval_status,
         }
 
     @classmethod
@@ -108,6 +126,14 @@ class AgentPlanItem:
             reason_code=str(payload["reason_code"]),
             explanation=str(payload["explanation"]),
             executable=bool(payload["executable"]),
+            approval_reference=(
+                str(payload["approval_reference"])
+                if payload.get("approval_reference")
+                else None
+            ),
+            approval_status=(
+                str(payload["approval_status"]) if payload.get("approval_status") else None
+            ),
         )
 
 
@@ -127,7 +153,7 @@ class AgentRun:
     results: tuple[dict[str, Any], ...] = ()
 
 
-def plan_candidate(candidate: AgentCandidate) -> AgentPlanItem:
+def plan_candidate(candidate: AgentCandidate, *, as_of: date) -> AgentPlanItem:
     action: AgentAction
     reason: str
     explanation: str
@@ -141,6 +167,16 @@ def plan_candidate(candidate: AgentCandidate) -> AgentPlanItem:
         reason = "POLICY_CLEARED_FOR_SETTLEMENT"
         explanation = "Evidence and policy evaluation cleared this invoice for idempotent settlement."
     elif (
+        candidate.status == InvoiceStatus.READY
+        and candidate.decision_action == "ESCALATE"
+        and candidate.decision_id
+        and candidate.approval_reference
+        and candidate.approval_status == "APPROVED"
+    ):
+        action = AgentAction.SETTLE_APPROVED
+        reason = "SEGREGATED_APPROVAL_SATISFIED"
+        explanation = "A separate approver authorized the policy escalation; settlement controls still re-run."
+    elif (
         candidate.status in {InvoiceStatus.SUBMISSION_FAILED, InvoiceStatus.CONFIRMATION_TIMEOUT}
         and candidate.decision_action == "PAY"
         and candidate.decision_id
@@ -149,6 +185,14 @@ def plan_candidate(candidate: AgentCandidate) -> AgentPlanItem:
         action = AgentAction.RETRY_SETTLEMENT
         reason = "LATEST_ATTEMPT_EXPLICITLY_RETRYABLE"
         explanation = "The durable provider ledger permits a retry with the original payment intent."
+    elif (
+        candidate.status == InvoiceStatus.SCHEDULED
+        and candidate.scheduled_for is not None
+        and candidate.scheduled_for <= as_of
+    ):
+        action = AgentAction.RELEASE_SCHEDULE
+        reason = "SCHEDULE_RELEASE_DUE"
+        explanation = "The release date is due; immutable evidence will be re-evaluated under current controls."
     elif candidate.status == InvoiceStatus.SCHEDULED:
         action = AgentAction.WAIT_SCHEDULE
         reason = "SCHEDULE_BOUNDARY_NOT_RELEASED"
@@ -191,6 +235,8 @@ def plan_candidate(candidate: AgentCandidate) -> AgentPlanItem:
         reason_code=reason,
         explanation=explanation,
         executable=action in EXECUTABLE_ACTIONS,
+        approval_reference=candidate.approval_reference,
+        approval_status=candidate.approval_status,
     )
 
 

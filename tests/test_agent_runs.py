@@ -1,3 +1,5 @@
+from datetime import date
+
 from tallyguard.api import create_app
 from tallyguard.auth import Principal, Role
 
@@ -170,3 +172,93 @@ def test_agent_runs_are_durable_and_tenant_scoped(tmp_path):
         headers=headers(other_token, "tenant-hidden"),
     )
     assert hidden.status_code == 404
+
+
+def test_agent_run_routes_escalation_then_settles_only_after_separate_approval(tmp_path):
+    app = create_app(database_path=tmp_path / "agent-approval.sqlite3", testing=True)
+    client = app.test_client()
+    operator = session(client, "operator")
+    approver = session(client, "approver")
+
+    invoice = client.post(
+        "/api/demo/scenarios/large-invoice/run",
+        headers=headers(operator, "agent-escalation-seed"),
+    ).get_json()
+    first_plan = client.post(
+        "/api/agent-runs",
+        json={},
+        headers=headers(operator, "agent-escalation-plan"),
+    ).get_json()["agent_run"]
+    assert first_plan["items"][0]["action"] == "REQUIRE_APPROVAL"
+    routed = client.post(
+        f"/api/agent-runs/{first_plan['id']}/execute",
+        headers=headers(approver, "agent-route-approval"),
+    )
+    assert routed.status_code == 200
+    assert routed.get_json()["agent_run"]["results"][0]["status"] == "ROUTED"
+
+    governance = client.get(
+        "/api/governance/overview",
+        headers=headers(approver, "agent-approval-inbox"),
+    ).get_json()
+    approval = governance["pending_approvals"][0]["approval"]
+    resolved = client.post(
+        f"/api/approvals/{approval['id']}/resolve",
+        json={
+            "approve": True,
+            "note": "Independent reviewer approved the bounded policy exception.",
+            "expected_version": approval["version"],
+        },
+        headers=headers(approver, "agent-approval-resolve"),
+    )
+    assert resolved.status_code == 200
+
+    second_plan = client.post(
+        "/api/agent-runs",
+        json={},
+        headers=headers(operator, "agent-approved-plan"),
+    ).get_json()["agent_run"]
+    assert second_plan["items"][0]["action"] == "SETTLE_APPROVED"
+    assert second_plan["items"][0]["approval_reference"] == approval["id"]
+    settled = client.post(
+        f"/api/agent-runs/{second_plan['id']}/execute",
+        headers=headers(approver, "agent-approved-execute"),
+    )
+    assert settled.status_code == 200
+    result = settled.get_json()["agent_run"]["results"][0]
+    assert result["status"] == "SETTLED"
+    assert result["payment"]["intent"]["approval_reference"] == approval["id"]
+    assert result["payment"]["invoice"]["id"] == invoice["invoice"]["id"]
+
+
+def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp_path):
+    app = create_app(
+        database_path=tmp_path / "agent-schedule.sqlite3",
+        testing=True,
+        date_provider=lambda: date(2026, 10, 7),
+    )
+    client = app.test_client()
+    operator = session(client, "operator")
+    approver = session(client, "approver")
+    scheduled = client.post(
+        "/api/demo/scenarios/scheduled-payment/run",
+        headers=headers(operator, "agent-schedule-seed"),
+    ).get_json()
+    planned = client.post(
+        "/api/agent-runs",
+        json={},
+        headers=headers(operator, "agent-schedule-plan"),
+    ).get_json()["agent_run"]
+    assert planned["items"][0]["action"] == "RELEASE_SCHEDULE"
+    assert planned["items"][0]["executable"] is True
+
+    executed = client.post(
+        f"/api/agent-runs/{planned['id']}/execute",
+        headers=headers(approver, "agent-schedule-execute"),
+    )
+    assert executed.status_code == 200
+    result = executed.get_json()["agent_run"]["results"][0]
+    assert result["status"] == "SETTLED"
+    assert result["schedule_result"]["release_decision"]["final_action"] == "PAY"
+    assert result["schedule_result"]["payment"]["invoice"]["id"] == scheduled["invoice"]["id"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1

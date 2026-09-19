@@ -413,6 +413,7 @@ body {
 .agent-plan-list__state .cds--tag { margin: 0; }
 .agent-result { font-family: IBM Plex Mono, monospace; font-weight: 600; letter-spacing: .05em; }
 .agent-result--settled { color: #8ee9a7 !important; }
+.agent-result--routed, .agent-result--revalidated { color: #a6c8ff !important; }
 .agent-result--stale, .agent-result--failed { color: #ffb3b8 !important; }
 .agent-run__boundary, .agent-run__empty { display: flex; align-items: flex-start; gap: .6rem; padding: 1rem 2rem; color: #98aaa5; font-size: .6875rem; line-height: 1.45; }
 .agent-run__boundary svg, .agent-run__empty svg { flex: none; color: #75dac7; }
