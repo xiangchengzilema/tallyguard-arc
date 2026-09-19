@@ -1069,6 +1069,70 @@ def create_app(
             }
         ), 201
 
+    @app.get("/api/approvals/pending")
+    @require(Permission.PAYMENT_APPROVE)
+    def list_pending_approvals():
+        items = []
+        for approval in approval_inbox.pending(
+            organization_id=g.principal.organization_id
+        ):
+            invoice = repository.get_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=approval.invoice_id,
+            )
+            decision = decision_service.repository.get_decision(
+                organization_id=g.principal.organization_id,
+                decision_id=approval.decision_id,
+            )
+            items.append(
+                {
+                    "approval": _approval_json(approval),
+                    "invoice": _invoice_json(invoice),
+                    "decision": _decision_json(decision),
+                }
+            )
+        return jsonify({"items": items, "correlation_id": _correlation_id()})
+
+    @app.get("/api/governance/overview")
+    @require(Permission.PAYMENT_APPROVE)
+    def get_governance_overview():
+        history = repository.policy_history(
+            organization_id=g.principal.organization_id
+        )
+        active_policy = (
+            repository.active_policy(organization_id=g.principal.organization_id)
+            if history
+            else None
+        )
+        pending_approvals = []
+        for approval in approval_inbox.pending(
+            organization_id=g.principal.organization_id
+        ):
+            invoice = repository.get_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=approval.invoice_id,
+            )
+            decision = decision_service.repository.get_decision(
+                organization_id=g.principal.organization_id,
+                decision_id=approval.decision_id,
+            )
+            pending_approvals.append(
+                {
+                    "approval": _approval_json(approval),
+                    "invoice": _invoice_json(invoice),
+                    "decision": _decision_json(decision),
+                }
+            )
+        return jsonify(
+            {
+                "active_policy": (
+                    _policy_json(active_policy) if active_policy is not None else None
+                ),
+                "pending_approvals": pending_approvals,
+                "correlation_id": _correlation_id(),
+            }
+        )
+
     @app.get("/api/decisions/<decision_id>")
     @require(Permission.INVOICE_READ)
     def get_decision(decision_id: str):
@@ -1232,6 +1296,10 @@ def create_app(
             expected_version=int(payload.get("expected_version", 1)),
         )
         final_action = None
+        invoice = repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=resolved.invoice_id,
+        )
         if resolved.status.value == "APPROVED":
             decision = decision_service.repository.get_decision(
                 organization_id=g.principal.organization_id,
@@ -1239,14 +1307,19 @@ def create_app(
             )
             authorized = apply_approved_escalation(decision, resolved)
             final_action = authorized.action.value
-            invoice = repository.get_invoice(
-                organization_id=g.principal.organization_id,
-                invoice_id=resolved.invoice_id,
-            )
             repository.transition_invoice(
                 organization_id=g.principal.organization_id,
                 invoice_id=resolved.invoice_id,
                 target_status=InvoiceStatus.READY,
+                expected_version=invoice.version,
+                actor_user_id=g.principal.user_id,
+                correlation_id=_correlation_id(),
+            )
+        else:
+            repository.transition_invoice(
+                organization_id=g.principal.organization_id,
+                invoice_id=resolved.invoice_id,
+                target_status=InvoiceStatus.REJECTED,
                 expected_version=invoice.version,
                 actor_user_id=g.principal.user_id,
                 correlation_id=_correlation_id(),
@@ -1267,11 +1340,7 @@ def create_app(
         return jsonify(
             {
                 "approval": {
-                    "id": resolved.id,
-                    "status": resolved.status.value,
-                    "version": resolved.version,
-                    "resolved_by_user_id": resolved.resolved_by_user_id,
-                    "resolution_note": resolved.resolution_note,
+                    **_approval_json(resolved),
                     "authorized_action": final_action,
                 },
                 "correlation_id": _correlation_id(),

@@ -142,6 +142,17 @@ set, and Arc route. Only a new `PAY` decision advances the invoice to `READY` an
 idempotent settlement orchestrator used by immediate payments. A newly active kill switch, depleted
 treasury, changed wallet, or other failed control therefore stops payment before an intent exists.
 
+## Approval governance boundary
+
+The exception inbox is a tenant-scoped work queue, not a shortcut around policy. Only principals
+with `PAYMENT_APPROVE` permission can list or resolve pending records, and the requesting user cannot
+approve their own escalation. The governance overview joins each pending approval to its immutable
+decision and current invoice while exposing the active policy content hash and operative limits.
+Approval moves the invoice from `ESCALATED` to `READY`; rejection moves it to terminal `REJECTED`.
+Both paths are version-checked and audit recorded. Neither path calls Circle or creates an intent,
+so settlement still passes through the independent deterministic authorization and idempotency
+boundary.
+
 ## Tenant isolation
 
 Every durable financial record carries `organization_id`. Repository reads and mutations require

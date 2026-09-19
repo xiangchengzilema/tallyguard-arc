@@ -173,6 +173,8 @@ GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
 GET    /api/decisions/{id}/replay
 POST   /api/decisions/{id}/policy-simulation
+GET    /api/approvals/pending
+GET    /api/governance/overview
 GET    /api/audit/events
 GET    /api/reliability/report
 GET    /api/treasury/summary
@@ -211,6 +213,12 @@ allowlisted subset of deterministic policy fields. It applies the temporary patc
 sealed replay snapshot, not current vendor or treasury state. The response compares the original and
 simulated action, changed fields, reason codes, and full rule trace. It deliberately writes no policy,
 decision, approval, audit event, payment intent, or receipt.
+
+`GET /api/governance/overview` requires payment-approve permission. It returns the tenant's active
+policy or an explicit `null` empty state together with enriched pending approval records containing
+the bound invoice and decision. Resolving an approval uses optimistic version checks: approval moves
+the invoice from `ESCALATED` to `READY`; rejection moves it to terminal `REJECTED`. Neither operation
+creates a payment intent, and only the approved path can later satisfy settlement authorization.
 
 ## 7. Demo scenarios
 

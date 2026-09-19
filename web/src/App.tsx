@@ -32,6 +32,7 @@ import {
   ApiError,
   bootstrap,
   downloadEvidencePacket,
+  fetchGovernanceOverview,
   fetchInvoiceAudit,
   fetchOperationsOverview,
   requestApproval,
@@ -53,6 +54,7 @@ import type {
   DecisionAction,
   EvidenceFileBundle,
   EvidenceFileReview,
+  GovernanceOverview,
   OperationsOverview,
   Payment,
   PaymentBatch,
@@ -267,6 +269,62 @@ function OperationsQueue({
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function GovernancePanel({
+  governance,
+  busy,
+  onResolve,
+}: {
+  governance: GovernanceOverview;
+  busy: boolean;
+  onResolve: (item: GovernanceOverview['pendingApprovals'][number], approve: boolean) => void;
+}) {
+  const policy = governance.activePolicy;
+  return (
+    <section className="governance-panel" aria-label="Policy governance and approval inbox">
+      <div className="governance-policy">
+        <div className="governance-panel__head">
+          <div><span className="eyebrow">Control governance</span><h2>Current payment authority</h2></div>
+          <Tag type={policy?.kill_switch_enabled ? 'red' : policy ? 'green' : 'cool-gray'}>
+            {policy?.kill_switch_enabled ? 'KILL SWITCH ACTIVE' : policy ? 'CONTROLS ACTIVE' : 'NO ACTIVE POLICY'}
+          </Tag>
+        </div>
+        {policy ? (
+          <div className="governance-policy__grid">
+            <div><span>Policy</span><code>{policy.version}</code><small>{shorten(policy.content_hash, 10, 8)}</small></div>
+            <div><span>Autonomy cap</span><strong>{formatMoney(policy.maximum_autonomous_payment_usdc)} USDC</strong><small>Above this requires a separate approver</small></div>
+            <div><span>Daily limit</span><strong>{formatMoney(policy.daily_payment_limit_usdc)} USDC</strong><small>{formatMoney(policy.minimum_cash_reserve_usdc)} USDC reserve floor</small></div>
+            <div><span>Settlement route</span><strong>{policy.allowed_asset} · {policy.allowed_network}</strong><small>{policy.schedule_payments_before_due_days === null ? 'Immediate timing allowed' : `Release ${policy.schedule_payments_before_due_days} days before due`}</small></div>
+          </div>
+        ) : (
+          <p className="governance-empty">Run a control case or create a production policy to establish the tenant's payment authority.</p>
+        )}
+      </div>
+      <div className="approval-inbox">
+        <div className="governance-panel__head">
+          <div><span className="eyebrow">Segregated approval</span><h2>Exception inbox</h2></div>
+          <Tag type={governance.pendingApprovals.length > 0 ? 'purple' : 'cool-gray'}>{governance.pendingApprovals.length} pending</Tag>
+        </div>
+        {governance.pendingApprovals.length === 0 ? (
+          <div className="approval-inbox__empty"><CheckmarkFilled size={18} /><span>No policy exceptions await a second role.</span></div>
+        ) : (
+          <div className="approval-inbox__list">
+            {governance.pendingApprovals.map((item) => (
+              <article key={item.approval.id}>
+                <div><strong>{item.invoice.invoice_number}</strong><small>{item.invoice.vendor_id} · due {item.invoice.due_date}</small></div>
+                <div><strong>{formatMoney(item.invoice.amount)} {item.invoice.currency}</strong><code>{item.decision.reason_codes.join(' · ')}</code></div>
+                <div className="approval-inbox__actions">
+                  <Button size="sm" kind="danger--tertiary" disabled={busy} onClick={() => onResolve(item, false)}>Reject</Button>
+                  <Button size="sm" disabled={busy} onClick={() => onResolve(item, true)}>Approve exception</Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -843,6 +901,7 @@ function App() {
   const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
+  const [governance, setGovernance] = useState<GovernanceOverview | null>(null);
   const [batch, setBatch] = useState<PaymentBatch | null>(null);
   const [scheduleRun, setScheduleRun] = useState<ScheduleRun | null>(null);
   const [packetHash, setPacketHash] = useState<string | null>(null);
@@ -855,6 +914,7 @@ function App() {
         if (!cancelled) {
           setData(result);
           setOperations(result.operations);
+          setGovernance(result.governance);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
         }
       })
@@ -890,6 +950,7 @@ function App() {
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
 
@@ -898,6 +959,7 @@ function App() {
     void act('Creating a role-separated approval request', async () => {
       setApproval(await requestApproval(run.decision.id, data.sessions.operator));
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data, run]);
 
@@ -917,6 +979,7 @@ function App() {
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
 
@@ -937,6 +1000,7 @@ function App() {
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
 
@@ -946,6 +1010,27 @@ function App() {
       setApproval(await resolveApproval(approval, data.sessions.approver));
       if (run) setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+    });
+  }, [act, approval, data, run]);
+
+  const handleResolveInboxApproval = useCallback((item: GovernanceOverview['pendingApprovals'][number], approve: boolean) => {
+    if (!data) return;
+    void act(approve ? 'Approving the exception as a separate role' : 'Rejecting the policy exception', async () => {
+      const resolved = await resolveApproval(
+        item.approval,
+        data.sessions.approver,
+        approve,
+        approve
+          ? 'Evidence and control exception reviewed in the finance approval inbox.'
+          : 'Exception rejected in the finance approval inbox.',
+      );
+      if (approval?.id === resolved.id) setApproval(resolved);
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      if (run?.invoice.id === item.invoice.id) {
+        setAuditTrail(await fetchInvoiceAudit(item.invoice.id, data.sessions.auditor));
+      }
     });
   }, [act, approval, data, run]);
 
@@ -1111,6 +1196,14 @@ function App() {
             scheduleRun={scheduleRun}
             onSettleBatch={handleSettleBatch}
             onRunSchedules={handleRunSchedules}
+          />
+        ) : null}
+
+        {governance ? (
+          <GovernancePanel
+            governance={governance}
+            busy={busy !== null}
+            onResolve={handleResolveInboxApproval}
           />
         ) : null}
 

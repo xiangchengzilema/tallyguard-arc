@@ -409,6 +409,27 @@ body {
 .batch-select { display: grid; place-items: center; width: 32px; height: 32px; }
 .batch-select input { width: 16px; height: 16px; accent-color: var(--tg-accent); cursor: pointer; }
 .batch-select input:disabled { cursor: not-allowed; }
+.governance-panel { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(360px, .88fr); max-width: 1680px; margin: 1rem auto 0; border: 1px solid var(--tg-line); background: #fff; }
+.governance-policy, .approval-inbox { min-width: 0; padding: 1.5rem; }
+.governance-policy { border-right: 1px solid var(--tg-line); }
+.governance-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.governance-panel__head h2 { margin: .35rem 0 0; font-size: 1.5rem; font-weight: 500; letter-spacing: -.03em; }
+.governance-panel__head .cds--tag { flex: none; margin: 0; }
+.governance-policy__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1.5rem; border-top: 1px solid var(--tg-line); border-left: 1px solid var(--tg-line); }
+.governance-policy__grid > div { display: grid; min-height: 108px; align-content: center; gap: .35rem; padding: 1rem 1.25rem; border-right: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); }
+.governance-policy__grid span { color: var(--tg-muted); font-size: .625rem; letter-spacing: .06em; text-transform: uppercase; }
+.governance-policy__grid strong { font-size: .875rem; font-weight: 600; }
+.governance-policy__grid code { color: var(--tg-accent-dark); font-size: .75rem; overflow-wrap: anywhere; }
+.governance-policy__grid small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
+.governance-empty { margin: 1.5rem 0 0; padding: 1.25rem; background: #f4f7f6; color: var(--tg-muted); font-size: .75rem; line-height: 1.5; }
+.approval-inbox__empty { display: flex; align-items: center; gap: .65rem; margin-top: 1.5rem; padding: 1.25rem; background: #edf7f5; color: var(--tg-accent-dark); font-size: .75rem; }
+.approval-inbox__list { display: grid; gap: .75rem; margin-top: 1.5rem; }
+.approval-inbox__list article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: .9rem 1rem; padding: 1rem; border: 1px solid var(--tg-line); background: #f8faf9; }
+.approval-inbox__list article > div:not(.approval-inbox__actions) { display: grid; align-content: start; gap: .3rem; min-width: 0; }
+.approval-inbox__list strong { font-size: .8125rem; font-weight: 600; }
+.approval-inbox__list small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.approval-inbox__list code { color: var(--tg-accent-dark); font-size: .625rem; line-height: 1.4; overflow-wrap: anywhere; }
+.approval-inbox__actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--tg-line); }
 .reliability-panel { max-width: 1680px; margin: 1rem auto 0; border: 1px solid var(--tg-line); background: #101a22; color: #f4f7f6; }
 .reliability-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 2rem; border-bottom: 1px solid #31414b; }
 .reliability-panel__head h2 { max-width: 24ch; margin: .35rem 0 0; font-size: clamp(1.75rem, 3vw, 3rem); font-weight: 400; letter-spacing: -.045em; line-height: 1.02; text-wrap: balance; }
@@ -481,6 +502,8 @@ body {
   .reliability-grid > div:nth-child(-n+2), .reliability-latency > div:nth-child(-n+2) { border-bottom: 1px solid #31414b; }
   .reliability-panel__foot { grid-template-columns: 1fr; }
   .reliability-panel__foot p { text-align: left; }
+  .governance-panel { grid-template-columns: 1fr; }
+  .governance-policy { border-right: 0; border-bottom: 1px solid var(--tg-line); }
   .product-footer { flex-direction: column; }
 }
 
@@ -503,6 +526,11 @@ body {
   .policy-sandbox__head, .policy-sandbox__actions { flex-direction: column; }
   .policy-sandbox__actions .cds--btn { width: 100%; max-width: none; }
   .run-meta { align-items: flex-start; flex-direction: column; padding: .75rem 1rem; }
+  .governance-policy, .approval-inbox { padding: 1.25rem; }
+  .governance-panel__head { flex-direction: column; }
+  .governance-policy__grid, .approval-inbox__list article { grid-template-columns: 1fr; }
+  .approval-inbox__actions { grid-column: auto; align-items: stretch; flex-direction: column-reverse; }
+  .approval-inbox__actions .cds--btn { width: 100%; max-width: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

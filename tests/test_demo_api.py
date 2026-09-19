@@ -181,6 +181,62 @@ def test_large_invoice_requires_role_separated_approval(tmp_path):
     assert payment["receipt"]["status"] == "CONFIRMED"
 
 
+def test_global_approval_inbox_is_role_scoped_and_rejection_closes_invoice(tmp_path):
+    app = create_app(database_path=tmp_path / "approval-inbox.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    run = client.post(
+        "/api/demo/scenarios/large-invoice/run",
+        headers=operator_headers,
+    ).get_json()
+    approval = client.post(
+        f"/api/decisions/{run['decision']['id']}/request-approval",
+        headers=operator_headers,
+    ).get_json()["approval"]
+
+    assert client.get("/api/approvals/pending", headers=operator_headers).status_code == 403
+    pending = client.get("/api/approvals/pending", headers=approver_headers)
+    assert pending.status_code == 200
+    item = pending.get_json()["items"][0]
+    assert item["approval"]["id"] == approval["id"]
+    assert item["invoice"]["amount"] == "2200"
+    assert item["decision"]["final_action"] == "ESCALATE"
+    assert "AUTONOMY_LIMIT_EXCEEDED" in item["decision"]["reason_codes"]
+
+    rejected = client.post(
+        f"/api/approvals/{approval['id']}/resolve",
+        headers=approver_headers,
+        json={
+            "approve": False,
+            "note": "Contract owner rejected this exception.",
+            "expected_version": approval["version"],
+        },
+    )
+    assert rejected.status_code == 200
+    assert rejected.get_json()["approval"]["status"] == "REJECTED"
+    invoice = client.get(
+        f"/api/invoices/{run['invoice']['id']}",
+        headers=approver_headers,
+    ).get_json()["invoice"]
+    assert invoice["status"] == "REJECTED"
+    assert client.get(
+        "/api/approvals/pending", headers=approver_headers
+    ).get_json()["items"] == []
+
+
+def test_governance_overview_treats_missing_policy_as_empty_state(tmp_path):
+    app = create_app(database_path=tmp_path / "governance-empty.sqlite3", testing=True)
+    client = app.test_client()
+    approver_headers = auth(client, "approver")
+
+    response = client.get("/api/governance/overview", headers=approver_headers)
+
+    assert response.status_code == 200
+    assert response.get_json()["active_policy"] is None
+    assert response.get_json()["pending_approvals"] == []
+
+
 def test_approved_escalation_can_settle_after_service_restart(tmp_path):
     database = tmp_path / "demo.sqlite3"
     first_app = create_app(database_path=database, testing=True)

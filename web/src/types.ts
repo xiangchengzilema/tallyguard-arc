@@ -142,6 +142,33 @@ export interface Approval {
   authorized_action?: DecisionAction;
 }
 
+export interface ActivePolicy {
+  version: string;
+  organization_id: string;
+  daily_payment_limit_usdc: string;
+  minimum_cash_reserve_usdc: string;
+  maximum_autonomous_payment_usdc: string;
+  po_amount_tolerance_usdc: string;
+  allowed_asset: string;
+  allowed_network: string;
+  kill_switch_enabled: boolean;
+  schedule_payments_before_due_days: number | null;
+  content_hash: string;
+  activated_by_user_id: string;
+  activated_at: string;
+}
+
+export interface ApprovalInboxItem {
+  approval: Approval;
+  invoice: Invoice;
+  decision: Decision;
+}
+
+export interface GovernanceOverview {
+  activePolicy: ActivePolicy | null;
+  pendingApprovals: ApprovalInboxItem[];
+}
+
 export interface Payment {
   intent: {
     id: string;
@@ -279,6 +306,7 @@ export interface BootstrapData {
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   operations: OperationsOverview;
   reliability: ReliabilityEvidence;
+  governance: GovernanceOverview;
   readiness: {
     status: string;
     database: string;

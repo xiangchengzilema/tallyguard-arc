@@ -5,6 +5,7 @@ import type {
   BootstrapData,
   EvidenceFileBundle,
   EvidenceFileReview,
+  GovernanceOverview,
   OperationsOverview,
   PaymentBatch,
   Payment,
@@ -63,9 +64,10 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  const [operations, reliability] = await Promise.all([
+  const [operations, reliability, governance] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
+    fetchGovernanceOverview(sessions.approver),
   ]);
   return {
     scenarios: catalog.items,
@@ -73,6 +75,18 @@ export async function bootstrap(): Promise<BootstrapData> {
     sessions,
     operations,
     reliability,
+    governance,
+  };
+}
+
+export async function fetchGovernanceOverview(approverToken: string): Promise<GovernanceOverview> {
+  const payload = await request<{
+    active_policy: GovernanceOverview['activePolicy'];
+    pending_approvals: GovernanceOverview['pendingApprovals'];
+  }>('/api/governance/overview', { method: 'GET' }, approverToken);
+  return {
+    activePolicy: payload.active_policy,
+    pendingApprovals: payload.pending_approvals,
   };
 }
 
@@ -390,14 +404,19 @@ export async function requestApproval(decisionId: string, operatorToken: string)
   return payload.approval;
 }
 
-export async function resolveApproval(approval: Approval, approverToken: string): Promise<Approval> {
+export async function resolveApproval(
+  approval: Approval,
+  approverToken: string,
+  approve = true,
+  note = 'Contract, delivery evidence, and treasury controls verified.',
+): Promise<Approval> {
   const payload = await request<{ approval: Approval }>(
     `/api/approvals/${encodeURIComponent(approval.id)}/resolve`,
     {
       method: 'POST',
       body: JSON.stringify({
-        approve: true,
-        note: 'Contract, delivery evidence, and treasury controls verified.',
+        approve,
+        note,
         expected_version: approval.version,
       }),
     },

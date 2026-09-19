@@ -99,6 +99,7 @@ Implemented foundation:
 - Policy history and active selection now persist in SQLite and are exposed through admin-write/auditor-read APIs
 - Source-referenced treasury snapshots persist as append-only tenant records and feed an authenticated summary API
 - Segregated exception inbox: requester cannot self-approve and only pure escalations are overridable
+- Approver-only governance overview returns the active immutable policy plus enriched pending exceptions, and a rejected exception durably closes its invoice without entering settlement
 - Approved decisions and payment intents must carry the exact same approval reference
 - Durable invoice state machine with optimistic concurrency and immutable transition history
 - Durable policy decisions and optimistic approval records survive service restarts
@@ -227,12 +228,13 @@ Implemented foundation:
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
 - The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
+- A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)
 - Evidence match view modeled after mature AP review tools
 - Decision timeline showing evidence, rules, and agent explanation separately
-- Approval inbox for exceptions
+- Approval inbox for exceptions (complete)
 - Settlement drawer with Arc transaction proof
 - Vendor risk and wallet-change history
 - Audit explorer with chain verification (active-invoice timeline complete; global search remains optional)
