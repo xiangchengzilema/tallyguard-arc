@@ -19,7 +19,12 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from .network import ArcNetwork, ArcNetworkConfig
-from .settlement import PaymentIntent, ProviderSubmission, SettlementDenied
+from .settlement import (
+    PaymentIntent,
+    ProviderSubmission,
+    SettlementDenied,
+    SettlementUnavailable,
+)
 
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -388,7 +393,9 @@ class CircleArcAdapter:
             if attempt + 1 < self.max_poll_attempts:
                 self.sleeper(self.poll_interval_seconds)
         if final is None:
-            raise SettlementDenied("Circle transaction did not reach COMPLETE before the polling limit.")
+            raise SettlementUnavailable(
+                "Circle transaction did not reach COMPLETE before the polling limit; retry with the same idempotency key."
+            )
 
         self._validate_circle_result(intent, final)
         proof = self.arc_rpc.confirm_usdc_transfer(

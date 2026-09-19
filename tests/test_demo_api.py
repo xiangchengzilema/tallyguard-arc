@@ -17,7 +17,7 @@ def test_all_judge_scenarios_run_through_real_policy_and_workflow(tmp_path):
     operator_headers = auth(client, "operator")
     catalog = client.get("/api/demo/scenarios").get_json()["items"]
     expected = {item["key"]: item["expected_action"] for item in catalog}
-    assert len(expected) == 7
+    assert len(expected) == 8
 
     for key, expected_action in expected.items():
         response = client.post(f"/api/demo/scenarios/{key}/run", headers=operator_headers)
@@ -32,6 +32,113 @@ def test_all_judge_scenarios_run_through_real_policy_and_workflow(tmp_path):
             "ESCALATED",
         }
         assert payload["decision"]["rules"]
+
+
+def test_provider_timeout_retries_same_durable_intent_without_double_payment(tmp_path):
+    app = create_app(database_path=tmp_path / "provider-recovery.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    auditor_headers = auth(client, "auditor")
+    run = client.post(
+        "/api/demo/scenarios/provider-recovery/run",
+        headers=operator_headers,
+    ).get_json()
+    invoice_id = run["invoice"]["id"]
+    decision_id = run["decision"]["id"]
+
+    first = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert first.status_code == 503
+    assert first.get_json()["error"]["code"] == "SETTLEMENT_UNAVAILABLE"
+    assert first.headers["Retry-After"] == "2"
+    repository = app.extensions["tallyguard_repository"]
+    failed = repository.get_invoice(
+        organization_id="demo-org", invoice_id=invoice_id
+    )
+    assert failed.status.value == "SUBMISSION_FAILED"
+    original_intent = repository.get_payment_intent_for_decision(
+        organization_id="demo-org", decision_id=decision_id
+    )
+
+    second = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert second.status_code == 200
+    payment = second.get_json()["payment"]
+    assert payment["invoice"]["status"] == "RECONCILED"
+    assert payment["intent"]["id"] == original_intent.id
+    retried_intent = repository.get_payment_intent_for_decision(
+        organization_id="demo-org", decision_id=decision_id
+    )
+    assert retried_intent.idempotency_key == original_intent.idempotency_key
+    adapter = app.extensions["tallyguard_settlement_adapter"]
+    assert adapter.failed_attempt_count == 1
+    assert adapter.submission_count == 1
+
+    audit = client.get("/api/audit/events", headers=auditor_headers).get_json()
+    event_types = [item["event_type"] for item in audit["items"]]
+    assert "SETTLEMENT_PROVIDER_UNAVAILABLE" in event_types
+    assert event_types.count("SETTLEMENT_RECONCILED") == 1
+    assert audit["chain_valid"] is True
+
+
+def test_provider_retry_rechecks_new_kill_switch_before_resubmission(tmp_path):
+    app = create_app(database_path=tmp_path / "provider-retry-kill.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    admin_headers = auth(client, "admin")
+    run = client.post(
+        "/api/demo/scenarios/provider-recovery/run",
+        headers=operator_headers,
+    ).get_json()
+    invoice_id = run["invoice"]["id"]
+    decision_id = run["decision"]["id"]
+
+    assert client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    ).status_code == 503
+    active = client.get(
+        "/api/policies/active", headers=approver_headers
+    ).get_json()["policy"]
+    kill_payload = {
+        key: active[key]
+        for key in (
+            "daily_payment_limit_usdc",
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+            "allowed_asset",
+            "allowed_network",
+            "schedule_payments_before_due_days",
+        )
+    }
+    kill_payload.update(
+        {"version": "provider-retry-emergency-stop", "kill_switch_enabled": True}
+    )
+    assert client.post(
+        "/api/policies", headers=admin_headers, json=kill_payload
+    ).status_code == 201
+
+    retry = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert retry.status_code == 409
+    assert retry.get_json()["error"]["code"] == "SETTLEMENT_DENIED"
+    assert "kill switch" in retry.get_json()["error"]["message"].lower()
+    adapter = app.extensions["tallyguard_settlement_adapter"]
+    assert adapter.failed_attempt_count == 1
+    assert adapter.submission_count == 0
 
 
 def test_missing_delivery_scenario_explains_remediation(tmp_path):

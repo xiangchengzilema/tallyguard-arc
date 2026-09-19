@@ -80,6 +80,12 @@ DEMO_SCENARIOS: tuple[DemoScenarioDefinition, ...] = (
         description="Valid invoice is queued for its configured due-date payment window.",
         expected_action=DecisionAction.SCHEDULE,
     ),
+    DemoScenarioDefinition(
+        key="provider-recovery",
+        title="Provider timeout recovery",
+        description="The first settlement attempt fails safely; retry reuses the durable payment intent and idempotency key.",
+        expected_action=DecisionAction.PAY,
+    ),
 )
 
 

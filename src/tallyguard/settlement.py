@@ -26,6 +26,10 @@ class SettlementDenied(RuntimeError):
     """Raised when a decision or settlement result violates a hard control."""
 
 
+class SettlementUnavailable(SettlementDenied):
+    """Raised when a transient provider failure can be retried idempotently."""
+
+
 @dataclass(frozen=True, slots=True)
 class PaymentIntent:
     id: str
@@ -197,9 +201,24 @@ class SimulatedArcAdapter:
     def __init__(self) -> None:
         self._guard = Lock()
         self.submission_count = 0
+        self.failed_attempt_count = 0
+        self._transient_failures: set[tuple[str, str]] = set()
+
+    def arm_transient_failure(self, *, organization_id: str, invoice_id: str) -> None:
+        """Fail the next matching attempt before a provider submission is accepted."""
+
+        with self._guard:
+            self._transient_failures.add((organization_id, invoice_id))
 
     def submit(self, intent: PaymentIntent) -> ProviderSubmission:
         with self._guard:
+            scope = (intent.organization_id, intent.invoice_id)
+            if scope in self._transient_failures:
+                self._transient_failures.remove(scope)
+                self.failed_attempt_count += 1
+                raise SettlementUnavailable(
+                    "Simulated provider timeout; the durable intent is safe to retry with the same idempotency key."
+                )
             self.submission_count += 1
             block_number = 1_000_000 + self.submission_count
         digest = hashlib.sha256(

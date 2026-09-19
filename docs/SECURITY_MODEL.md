@@ -21,6 +21,7 @@
 | Human tries to override fraud evidence | Only pure `ESCALATE` can be approved; HOLD and REJECT remain non-overridable |
 | Cross-tenant identifier guessing | Authentication, authorization, and every repository query enforce organization scope |
 | Retry causes double payment | Durable intent UUID v4, process lock, database uniqueness, provider idempotency, stored-receipt replay |
+| Provider times out mid-workflow | Invoice moves to `SUBMISSION_FAILED`; the same durable intent/key is retried only after current policy and treasury controls pass again; failure and recovery are audited |
 | Provider reports the wrong payment | Exact network, recipient, amount, hash, block, contract, and Transfer-log reconciliation |
 | Mainnet enabled accidentally | Off by default, explicit flag, recorded approval reference, adapter cap, read-only preflight |
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; no secrets are committed |
@@ -57,4 +58,3 @@ output.
   production data plane.
 - Hosted-model recommendations are optional and fall back deterministically; availability or
   model quality cannot weaken a hard control.
-

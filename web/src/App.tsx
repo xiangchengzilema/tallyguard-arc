@@ -191,7 +191,7 @@ function OperationsQueue({
   onRunSchedules: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const payable = overview.work_queue.filter((invoice) => invoice.status === 'READY' && invoice.decision_id);
+  const payable = overview.work_queue.filter((invoice) => ['READY', 'SUBMISSION_FAILED'].includes(invoice.status) && invoice.decision_id);
   const scheduled = overview.work_queue.filter((invoice) => invoice.status === 'SCHEDULED');
   useEffect(() => {
     const available = new Set(payable.map((invoice) => invoice.id));
@@ -259,12 +259,12 @@ function OperationsQueue({
           </div>
           {overview.work_queue.map((invoice) => (
             <div className="operations-table__row" role="row" key={invoice.id}>
-              <label className="batch-select" title={invoice.status === 'READY' ? 'Select for batch settlement' : 'Only READY invoices can be settled'}>
+              <label className="batch-select" title={['READY', 'SUBMISSION_FAILED'].includes(invoice.status) ? 'Select for idempotent settlement or retry' : 'Only ready or retryable invoices can be settled'}>
                 <input
                   aria-label={`Select ${invoice.invoice_number} for batch settlement`}
                   type="checkbox"
                   checked={selected.has(invoice.id)}
-                  disabled={busy || invoice.status !== 'READY' || !invoice.decision_id}
+                  disabled={busy || !['READY', 'SUBMISSION_FAILED'].includes(invoice.status) || !invoice.decision_id}
                   onChange={() => toggle(invoice.id)}
                 />
               </label>
@@ -272,7 +272,7 @@ function OperationsQueue({
               <code role="cell">{shorten(invoice.vendor_id, 13, 6)}</code>
               <span className="schedule-date" role="cell">{invoice.due_date}{invoice.scheduled_for ? <small>release {invoice.scheduled_for}</small> : null}</span>
               <strong role="cell">{formatMoney(invoice.amount)} {invoice.currency}</strong>
-              <Tag type={invoice.status === 'READY' ? 'green' : invoice.status === 'HOLD' ? 'magenta' : invoice.status === 'ESCALATED' ? 'purple' : 'blue'}>{invoice.status}</Tag>
+              <Tag type={invoice.status === 'READY' ? 'green' : invoice.status === 'SUBMISSION_FAILED' ? 'red' : invoice.status === 'HOLD' ? 'magenta' : invoice.status === 'ESCALATED' ? 'purple' : 'blue'}>{invoice.status}</Tag>
             </div>
           ))}
         </div>
@@ -836,6 +836,7 @@ function DecisionPanel({
   replay,
   simulation,
   settlementStopped,
+  settlementRetryNeeded,
   onRequestApproval,
   onApprove,
   onSettle,
@@ -849,6 +850,7 @@ function DecisionPanel({
   replay: ReplayVerification | null;
   simulation: PolicySimulation | null;
   settlementStopped: boolean;
+  settlementRetryNeeded: boolean;
   onRequestApproval: () => void;
   onApprove: () => void;
   onSettle: () => void;
@@ -948,6 +950,15 @@ function DecisionPanel({
       ) : null}
 
       <div className="action-stack">
+        {settlementRetryNeeded ? (
+          <InlineNotification
+            kind="warning"
+            title="Provider attempt failed safely"
+            subtitle="The payment intent and idempotency key remain durable. Retry rechecks current policy and treasury controls before reusing the same intent."
+            lowContrast
+            hideCloseButton
+          />
+        ) : null}
         {isEscalated && !approval ? (
           <Button renderIcon={UserMultiple} onClick={onRequestApproval} disabled={busy !== null}>
             Route to independent approver
@@ -963,7 +974,7 @@ function DecisionPanel({
             <div className="blocked-action"><Locked size={18} /><span>The current policy kill switch blocks every new settlement, including decisions approved under an older version.</span></div>
           ) : (
             <Button renderIcon={Money} onClick={onSettle} disabled={busy !== null}>
-              Settle USDC on Arc
+              {settlementRetryNeeded ? 'Retry same payment intent' : 'Settle USDC on Arc'}
             </Button>
           )
         ) : null}
@@ -1086,6 +1097,7 @@ function App() {
   const [simulation, setSimulation] = useState<PolicySimulation | null>(null);
   const [policyActivation, setPolicyActivation] = useState<PolicyActivation | null>(null);
   const [vendorDirectory, setVendorDirectory] = useState<VendorTrustRecord[]>([]);
+  const [settlementRetryNeeded, setSettlementRetryNeeded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1126,6 +1138,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setSettlementRetryNeeded(false);
       setReplay(null);
       setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
@@ -1157,6 +1170,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setSettlementRetryNeeded(false);
       setReplay(null);
       setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
@@ -1179,6 +1193,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setSettlementRetryNeeded(false);
       setReplay(null);
       setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
@@ -1235,10 +1250,17 @@ function App() {
   const handleSettle = useCallback(() => {
     if (!data || !run) return;
     void act('Persisting intent, settling USDC, and reconciling Arc proof', async () => {
-      setPayment(await settleInvoice(run, data.sessions.approver, approval?.status === 'APPROVED' ? approval.id : undefined));
-      setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
-      setOperations(await fetchOperationsOverview(data.sessions.auditor));
-      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      try {
+        setPayment(await settleInvoice(run, data.sessions.approver, approval?.status === 'APPROVED' ? approval.id : undefined));
+        setSettlementRetryNeeded(false);
+      } catch (reason) {
+        setSettlementRetryNeeded(true);
+        throw reason;
+      } finally {
+        setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
+        setOperations(await fetchOperationsOverview(data.sessions.auditor));
+        setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      }
     });
   }, [act, approval, data, run]);
 
@@ -1343,10 +1365,10 @@ function App() {
               scenarios={data.scenarios}
               activeKey={selectedKey}
               busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
+              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRun={handleRun}
               mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRunLive={handleRunLive}
             />
             <main className="workbench">
@@ -1366,6 +1388,7 @@ function App() {
                       replay={replay}
                       simulation={simulation}
                       settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+                      settlementRetryNeeded={settlementRetryNeeded}
                       onRequestApproval={handleRequestApproval}
                       onApprove={handleApprove}
                       onSettle={handleSettle}

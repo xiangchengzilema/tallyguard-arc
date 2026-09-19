@@ -56,6 +56,7 @@ Every payment answers four questions:
 - Explicit testnet-only acceptance runner proves real settlement, Arc reconciliation, durable receipt replay, and audit-chain integrity with a maximum 0.10 USDC transfer
 - Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior
+- Transient provider failures return a retryable 503, move the invoice to `SUBMISSION_FAILED`, retain the original intent and idempotency key, recheck current execution controls on retry, and record both failure and recovery in the audit chain
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
 - Approver-only governance overview combines the active policy authority with an enriched global exception inbox; approving advances an escalated invoice to `READY`, while rejection closes it as `REJECTED` without creating a payment intent
 - Restart-safe opaque sessions stored only as SHA-256 token digests
@@ -65,7 +66,7 @@ Every payment answers four questions:
 - Auditors can download a content-addressed Payment Evidence Packet containing source metadata and hashes, sealed replay inputs, all 11 replay checks, approval state, reconciled Arc receipt, and invoice-scoped audit events
 - Persistent per-tenant tamper-evident audit chains with an authenticated verification endpoint
 - Credential-free automated unit and fault-injection suite
-- Responsive React judge console built on Carbon, with seven deterministic risk scenarios and a fresh-evidence workflow
+- Responsive React judge console built on Carbon, with eight deterministic risk and recovery scenarios and a fresh-evidence workflow
 - The fresh-evidence path creates tenant-scoped vendor, policy, treasury, invoice, PO, and delivery records; uploads three hashed source files; evaluates them; and can produce a reconciled simulation receipt from one screen
 - A bring-your-own-evidence path validates three JSON files locally, previews the extracted financial fields for human confirmation, then persists the original bytes and runs the same policy pipeline
 - An auditor-only timeline filters the tenant hash chain to the active invoice and refreshes after evaluation, approval, and settlement so the judge can verify each state mutation on screen

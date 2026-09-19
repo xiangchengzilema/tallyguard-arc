@@ -23,7 +23,7 @@ completed transaction against the mapped value. `ARC-TESTNET` is identical in bo
 3. The live adapter requires a stored UUID v4 idempotency key.
 4. Circle creates the transfer using the official SDK. The SDK generates a fresh entity-secret ciphertext for the request.
 5. TallyGuard polls Circle through `INITIATED`, `CLEARED`, `QUEUED`, `SENT`, and `CONFIRMED` until `COMPLETE`.
-6. `STUCK`, `FAILED`, `DENIED`, and `CANCELLED` fail closed. Polling exhaustion also fails closed.
+6. `STUCK`, `FAILED`, `DENIED`, and `CANCELLED` fail closed. Polling exhaustion returns a retryable service-unavailable result, leaves the invoice in `SUBMISSION_FAILED`, and retains the original intent and provider idempotency key.
 7. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
 8. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
 9. The transaction target must be Arc's canonical USDC ERC-20 interface.
@@ -36,6 +36,11 @@ The payment intent and receipt are stored in SQLite. One tenant/decision pair ca
 intent, and its provider idempotency key is immutable. If the service restarts after Circle has
 accepted or completed a transfer, the retry reuses that same key. If a confirmed receipt was
 already stored, the provider is not called again.
+
+Before retrying a failed submission, the server rechecks the currently active asset, network,
+autonomy, kill-switch, treasury-freshness, daily-limit, and reserve controls in the same atomic
+reservation transaction. A historical `PAY` decision therefore cannot bypass a newly engaged
+emergency stop or tighter treasury limit.
 
 ## Local configuration
 

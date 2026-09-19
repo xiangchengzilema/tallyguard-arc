@@ -64,6 +64,7 @@ from .settlement import (
     SettlementAdapter,
     SettlementDenied,
     SettlementService,
+    SettlementUnavailable,
     SimulatedArcAdapter,
 )
 from .vendors import VendorDirectoryError, WalletVerificationMethod
@@ -557,6 +558,12 @@ def create_app(
     def settlement_error(exc: SettlementDenied):
         return _error("SETTLEMENT_DENIED", str(exc), 409)
 
+    @app.errorhandler(SettlementUnavailable)
+    def settlement_unavailable(exc: SettlementUnavailable):
+        response, status = _error("SETTLEMENT_UNAVAILABLE", str(exc), 503)
+        response.headers["Retry-After"] = "2"
+        return response, status
+
     @app.errorhandler(KeyError)
     def missing_domain_record(exc: KeyError):
         return _error("NOT_FOUND", str(exc).strip("'"), 404)
@@ -705,6 +712,9 @@ def create_app(
 
     @app.get("/api/demo/scenarios")
     def demo_scenarios():
+        available = scenario_catalog()
+        if not isinstance(settlement_adapter, SimulatedArcAdapter):
+            available = tuple(item for item in available if item.key != "provider-recovery")
         return jsonify(
             {
                 "items": [
@@ -714,7 +724,7 @@ def create_app(
                         "description": item.description,
                         "expected_action": item.expected_action.value,
                     }
-                    for item in scenario_catalog()
+                    for item in available
                 ]
             }
         )
@@ -964,6 +974,10 @@ def create_app(
     @app.post("/api/demo/scenarios/<scenario_key>/run")
     @require(Permission.DECISION_RUN)
     def run_demo_scenario(scenario_key: str):
+        if scenario_key == "provider-recovery" and not isinstance(
+            settlement_adapter, SimulatedArcAdapter
+        ):
+            raise ValueError("The provider recovery drill is available only in safe simulation mode.")
         invoice_id = f"invoice_{scenario_key.replace('-', '_')}_{uuid4().hex[:12]}"
         scenario = build_demo_scenario(
             scenario_key,
@@ -1028,6 +1042,11 @@ def create_app(
             actor_user_id="tallyguard-policy-engine",
             correlation_id=_correlation_id(),
         )
+        if scenario_key == "provider-recovery":
+            settlement_adapter.arm_transient_failure(
+                organization_id=g.principal.organization_id,
+                invoice_id=invoice_id,
+            )
         return jsonify(
             {
                 "scenario": {
@@ -1855,6 +1874,22 @@ def create_app(
                 actor_user_id=actor_user_id,
                 correlation_id=correlation_id,
             )
+        except SettlementUnavailable as exc:
+            repository.append(
+                aggregate_type="payment",
+                aggregate_id=f"{decision_id}:{correlation_id}:{uuid4().hex}",
+                event_type="SETTLEMENT_PROVIDER_UNAVAILABLE",
+                payload={
+                    "organization_id": g.principal.organization_id,
+                    "invoice_id": invoice_id,
+                    "decision_id": decision_id,
+                    "actor_user_id": actor_user_id,
+                    "correlation_id": correlation_id,
+                    "retryable": True,
+                    "message": str(exc),
+                },
+            )
+            raise
         except SettlementExecutionBlocked as exc:
             event_type = (
                 "SETTLEMENT_BLOCKED_BY_ACTIVE_KILL_SWITCH"
