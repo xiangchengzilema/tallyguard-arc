@@ -170,6 +170,33 @@ export interface GovernanceOverview {
   pendingApprovals: ApprovalInboxItem[];
 }
 
+export interface VendorRecord {
+  id: string;
+  organization_id: string;
+  legal_name: string;
+  approved_wallet_address: string;
+  autopay_limit: string;
+  risk_tier: string;
+  active: boolean;
+}
+
+export interface VendorWalletEvent {
+  organization_id: string;
+  vendor_id: string;
+  event_type: 'VERIFIED' | 'REPLACED';
+  wallet_address: string;
+  previous_wallet_address: string | null;
+  verification_method: string;
+  verification_reference: string;
+  verified_by_user_id: string;
+  verified_at: string;
+}
+
+export interface VendorTrustRecord {
+  vendor: VendorRecord;
+  walletHistory: VendorWalletEvent[];
+}
+
 export interface SettlementCapacity {
   organization_id: string;
   active_policy_version: string;
@@ -350,6 +377,7 @@ export interface BootstrapData {
   operations: OperationsOverview;
   reliability: ReliabilityEvidence;
   governance: GovernanceOverview;
+  vendorDirectory: VendorTrustRecord[];
   readiness: {
     status: string;
     database: string;

@@ -36,6 +36,7 @@ import {
   fetchGovernanceOverview,
   fetchInvoiceAudit,
   fetchOperationsOverview,
+  fetchVendorDirectory,
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
@@ -68,6 +69,7 @@ import type {
   RunResult,
   ScheduleRun,
   Scenario,
+  VendorTrustRecord,
 } from './types';
 
 const ACTION_TAG: Record<DecisionAction, 'green' | 'red' | 'magenta' | 'purple' | 'blue'> = {
@@ -415,6 +417,85 @@ function GovernancePanel({
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+function VendorTrustPanel({
+  records,
+  activeInvoice,
+}: {
+  records: VendorTrustRecord[];
+  activeInvoice: RunResult['invoice'] | null;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(records[0]?.vendor.id ?? null);
+  useEffect(() => {
+    if (!selectedId || !records.some((item) => item.vendor.id === selectedId)) {
+      setSelectedId(records[0]?.vendor.id ?? null);
+    }
+  }, [records, selectedId]);
+  const selected = records.find((item) => item.vendor.id === selectedId) ?? records[0] ?? null;
+  const invoiceApplies = selected && activeInvoice?.vendor_id === selected.vendor.id;
+  const walletMatches = invoiceApplies
+    ? activeInvoice.payment_wallet_address.toLowerCase() === selected.vendor.approved_wallet_address.toLowerCase()
+    : null;
+
+  return (
+    <section className="vendor-trust" aria-label="Vendor payout identity control center">
+      <div className="vendor-trust__head">
+        <div><span className="eyebrow">Payout identity controls</span><h2>Vendor trust directory</h2></div>
+        <Tag type={records.length > 0 ? 'teal' : 'cool-gray'}>{records.length} verified vendor{records.length === 1 ? '' : 's'}</Tag>
+      </div>
+      {selected ? (
+        <div className="vendor-trust__body">
+          <div className="vendor-trust__list" role="list" aria-label="Tenant vendors">
+            {records.map((item) => (
+              <button
+                type="button"
+                role="listitem"
+                className={item.vendor.id === selected.vendor.id ? 'is-active' : ''}
+                key={item.vendor.id}
+                onClick={() => setSelectedId(item.vendor.id)}
+              >
+                <span>{item.vendor.legal_name}</span>
+                <small>{item.vendor.risk_tier} risk · {formatMoney(item.vendor.autopay_limit)} USDC cap</small>
+              </button>
+            ))}
+          </div>
+          <div className="vendor-trust__detail">
+            <div className="vendor-identity">
+              <div><span>Legal entity</span><strong>{selected.vendor.legal_name}</strong><small>{selected.vendor.id}</small></div>
+              <Tag type={selected.vendor.active ? 'green' : 'red'}>{selected.vendor.active ? 'ACTIVE' : 'SUSPENDED'}</Tag>
+            </div>
+            <div className="vendor-wallet-proof">
+              <div><span>Approved Arc payout wallet</span><code>{selected.vendor.approved_wallet_address}</code></div>
+              {walletMatches === null ? (
+                <Tag type="cool-gray">NO ACTIVE INVOICE</Tag>
+              ) : (
+                <Tag type={walletMatches ? 'green' : 'red'}>{walletMatches ? 'INVOICE MATCH' : 'MISMATCH — HOLD'}</Tag>
+              )}
+            </div>
+            <div className="vendor-trust__facts">
+              <div><span>Risk tier</span><strong>{selected.vendor.risk_tier}</strong></div>
+              <div><span>Autopay ceiling</span><strong>{formatMoney(selected.vendor.autopay_limit)} USDC</strong></div>
+              <div><span>Wallet proofs</span><strong>{selected.walletHistory.length}</strong></div>
+            </div>
+            <div className="wallet-history">
+              <div className="wallet-history__title"><Wallet size={17} /><span>Append-only wallet verification history</span></div>
+              {selected.walletHistory.map((event, index) => (
+                <article key={`${event.event_type}-${event.verified_at}-${index}`}>
+                  <span className="wallet-history__rail" aria-hidden="true" />
+                  <div><strong>{event.event_type === 'VERIFIED' ? 'Payout wallet verified' : 'Payout wallet replaced'}</strong><small>{new Date(event.verified_at).toLocaleString()} · {event.verification_method}</small></div>
+                  <code>{shorten(event.wallet_address, 12, 10)}</code>
+                  <small>{event.verification_reference}</small>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="vendor-trust__empty"><Wallet size={20} /><span>Run a scenario or review uploaded evidence to create a verified payout identity.</span></div>
+      )}
     </section>
   );
 }
@@ -1003,6 +1084,7 @@ function App() {
   const [packetHash, setPacketHash] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<PolicySimulation | null>(null);
   const [policyActivation, setPolicyActivation] = useState<PolicyActivation | null>(null);
+  const [vendorDirectory, setVendorDirectory] = useState<VendorTrustRecord[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1012,6 +1094,7 @@ function App() {
           setData(result);
           setOperations(result.operations);
           setGovernance(result.governance);
+          setVendorDirectory(result.vendorDirectory);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
         }
       })
@@ -1048,6 +1131,7 @@ function App() {
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -1057,6 +1141,7 @@ function App() {
       setApproval(await requestApproval(run.decision.id, data.sessions.operator));
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
     });
   }, [act, data, run]);
 
@@ -1077,6 +1162,7 @@ function App() {
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -1098,6 +1184,7 @@ function App() {
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -1323,6 +1410,8 @@ function App() {
             onResolve={handleResolveInboxApproval}
           />
         ) : null}
+
+        <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} />
 
         {data ? <ReliabilityPanel evidence={data.reliability} /> : null}
 

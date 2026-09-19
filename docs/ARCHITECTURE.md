@@ -173,6 +173,15 @@ observation, effective available balance, remaining daily limit, reserve floor, 
 and the smaller of daily or reserve headroom as the maximum currently admissible payment. This is an
 operational preview only; the authoritative check still runs atomically during intent reservation.
 
+## Vendor payout identity boundary
+
+A vendor's approved Arc payout wallet is independent master data. Onboarding and replacement require
+an explicit verification method, reference, verifier, and timestamp, and every change is appended to
+tenant-scoped history. Invoice evidence may propose a recipient but cannot alter that directory. The
+policy engine compares the two exact addresses and emits a hold on mismatch. The judge console makes
+this boundary visible by showing the active invoice result beside the approved wallet and its proof
+history; it never treats a document-provided address as verified identity.
+
 ## Tenant isolation
 
 Every durable financial record carries `organization_id`. Repository reads and mutations require

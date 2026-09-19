@@ -234,6 +234,7 @@ Implemented foundation:
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
 - The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
 - A settlement-capacity module shows observed balance, durably committed amount, daily headroom, reserve floor, snapshot freshness, and the maximum currently admissible payment
+- A vendor trust directory exposes legal identity, risk tier, autopay ceiling, exact invoice-wallet match state, and append-only wallet verification history; the wallet-change scenario visibly resolves to `MISMATCH — HOLD`
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
 - Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)
@@ -241,7 +242,7 @@ Implemented foundation:
 - Decision timeline showing evidence, rules, and agent explanation separately
 - Approval inbox for exceptions (complete)
 - Settlement drawer with Arc transaction proof
-- Vendor risk and wallet-change history
+- Vendor risk and wallet-change history (complete)
 - Audit explorer with chain verification (active-invoice timeline complete; global search remains optional)
 - Seeded scenario switcher for fast judging
 - User-supplied document picker and extraction review before evaluation (structured JSON complete; PDF/image OCR adapter remains optional)

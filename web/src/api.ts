@@ -16,6 +16,9 @@ import type {
   ReplayVerification,
   RunResult,
   ScheduleRun,
+  VendorRecord,
+  VendorTrustRecord,
+  VendorWalletEvent,
 } from './types';
 
 type Role = keyof BootstrapData['sessions'];
@@ -66,10 +69,11 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  const [operations, reliability, governance] = await Promise.all([
+  const [operations, reliability, governance, vendorDirectory] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
     fetchGovernanceOverview(sessions.approver),
+    fetchVendorDirectory(sessions.auditor),
   ]);
   return {
     scenarios: catalog.items,
@@ -78,7 +82,24 @@ export async function bootstrap(): Promise<BootstrapData> {
     operations,
     reliability,
     governance,
+    vendorDirectory,
   };
+}
+
+export async function fetchVendorDirectory(auditorToken: string): Promise<VendorTrustRecord[]> {
+  const vendorPayload = await request<{ items: VendorRecord[] }>(
+    '/api/vendors',
+    { method: 'GET' },
+    auditorToken,
+  );
+  return Promise.all(vendorPayload.items.map(async (vendor) => {
+    const history = await request<{ items: VendorWalletEvent[] }>(
+      `/api/vendors/${encodeURIComponent(vendor.id)}/wallet-history`,
+      { method: 'GET' },
+      auditorToken,
+    );
+    return { vendor, walletHistory: history.items };
+  }));
 }
 
 export async function fetchGovernanceOverview(approverToken: string): Promise<GovernanceOverview> {
