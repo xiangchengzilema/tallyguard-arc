@@ -253,6 +253,7 @@ Implemented foundation:
 - Full 10,000-workflow run: 10,000/10,000 succeeded across 19,301 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission
 - Current full-run throughput reached 17.985 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.483 seconds under SQLite contention
 - The baseline discovered and verified a fix for a stale-version settlement race
+- The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, throughput, and P95 figures
 
 Two distinct test classes will be reported honestly:
 
@@ -270,7 +271,7 @@ Synthetic load suite:
 - Database contention and worker restart recovery
 - Measured throughput, p50/p95/p99 latency, error rate, and duplicate-payment count
 
-The public report will call this a multi-tenant load test. It will not be represented as genuine customer traction. For traction, the goal is at least one real business or self-operated business workflow, which the event rules explicitly allow.
+The public report and console call this a multi-tenant engineering load test. It is not represented as genuine customer traction. For traction, the goal is at least one real business or self-operated business workflow, which the event rules explicitly allow.
 
 ### Milestone 8 — Submission package
 

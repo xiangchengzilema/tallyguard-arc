@@ -171,6 +171,7 @@ GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
 GET    /api/decisions/{id}/replay
 GET    /api/audit/events
+GET    /api/reliability/report
 GET    /api/treasury/summary
 GET    /api/health
 ```
@@ -184,6 +185,10 @@ activating a newer policy cannot silently rewrite that historical authorization.
 shared authorization or transaction: every item traverses the same single-invoice decision,
 approval, intent, provider, reconciliation, and receipt boundary. A rejected item is reported
 independently, while successful items remain committed and become receipt-reusing no-ops on retry.
+
+`GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
+multi-tenant load artifact with its SHA-256 content address. The methodology in the response
+explicitly distinguishes reliability evidence from customer traction and states that no funds moved.
 
 ## 7. Demo scenarios
 

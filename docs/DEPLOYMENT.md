@@ -3,6 +3,8 @@
 TallyGuard ships as one container that builds the React judge console and serves
 the static bundle from the Flask API. The checked-in Render Blueprint starts in
 safe simulation mode and never requires wallet credentials.
+The image also includes the immutable 10,000-workflow reliability JSON consumed
+by the auditor-only `/api/reliability/report` endpoint and judge console.
 
 ## Public judge deployment
 

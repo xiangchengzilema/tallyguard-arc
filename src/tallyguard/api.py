@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from functools import wraps
+from hashlib import sha256
 from io import BytesIO
 import json
 import os
@@ -360,6 +361,15 @@ def create_app(
     frontend_dist = Path(
         os.getenv("TALLYGUARD_FRONTEND_DIST", str(default_frontend_dist))
     ).resolve()
+    default_reliability_report = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "reports"
+        / "load-test-10000.json"
+    )
+    reliability_report_path = Path(
+        os.getenv("TALLYGUARD_RELIABILITY_REPORT", str(default_reliability_report))
+    ).resolve()
     app = Flask(__name__, static_folder=None)
     max_evidence_bytes = int(
         os.getenv("TALLYGUARD_MAX_EVIDENCE_BYTES", str(10 * 1024 * 1024))
@@ -561,6 +571,35 @@ def create_app(
                 "latency_ms": snapshot.latency_ms,
                 "uptime_seconds": snapshot.uptime_seconds,
                 "labels": "No tenant, user, invoice, vendor, or wallet labels are recorded.",
+            }
+        )
+
+    @app.get("/api/reliability/report")
+    @require(Permission.AUDIT_READ)
+    def reliability_report():
+        try:
+            raw_report = reliability_report_path.read_bytes()
+        except OSError as exc:
+            raise PersistenceError("Reliability report is not available.") from exc
+        if len(raw_report) > 64 * 1024:
+            raise PersistenceError("Reliability report exceeds the 64 KiB safety limit.")
+        try:
+            report = json.loads(raw_report)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PersistenceError("Reliability report is not valid JSON.") from exc
+        if not isinstance(report, dict) or not all(
+            isinstance(report.get(key), dict)
+            for key in ("configuration", "latency_ms", "methodology", "summary")
+        ):
+            raise PersistenceError("Reliability report schema is incomplete.")
+        return jsonify(
+            {
+                "report": report,
+                "artifact": {
+                    "filename": reliability_report_path.name,
+                    "sha256": sha256(raw_report).hexdigest(),
+                    "immutable": True,
+                },
             }
         )
 

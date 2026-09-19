@@ -8,6 +8,7 @@ import type {
   OperationsOverview,
   PaymentBatch,
   Payment,
+  ReliabilityEvidence,
   ReplayVerification,
   RunResult,
 } from './types';
@@ -60,12 +61,25 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
+  const [operations, reliability] = await Promise.all([
+    fetchOperationsOverview(sessions.auditor),
+    fetchReliabilityReport(sessions.auditor),
+  ]);
   return {
     scenarios: catalog.items,
     readiness,
     sessions,
-    operations: await fetchOperationsOverview(sessions.auditor),
+    operations,
+    reliability,
   };
+}
+
+export async function fetchReliabilityReport(auditorToken: string): Promise<ReliabilityEvidence> {
+  return request<ReliabilityEvidence>(
+    '/api/reliability/report',
+    { method: 'GET' },
+    auditorToken,
+  );
 }
 
 export async function fetchOperationsOverview(auditorToken: string): Promise<OperationsOverview> {

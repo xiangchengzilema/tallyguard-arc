@@ -526,6 +526,33 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert overview["treasury_available_usdc"] is None
 
 
+def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):
+    app = create_app(database_path=tmp_path / "reliability.sqlite3", testing=True)
+    client = app.test_client()
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    denied = client.get(
+        "/api/reliability/report",
+        headers={"X-Correlation-ID": "reliability-denied"},
+    )
+    assert denied.status_code == 401
+
+    response = client.get(
+        "/api/reliability/report",
+        headers=headers(auditor, "reliability-read"),
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["report"]["summary"]["successful_workflows"] == 10_000
+    assert payload["report"]["summary"]["duplicate_payment_count"] == 0
+    assert payload["report"]["methodology"]["classification"] == (
+        "synthetic multi-tenant engineering load test"
+    )
+    assert len(payload["artifact"]["sha256"]) == 64
+    assert payload["artifact"]["immutable"] is True
+
+
 def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
     app = create_app(database_path=tmp_path / "batch.sqlite3", testing=True)
     client = app.test_client()

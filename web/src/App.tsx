@@ -51,6 +51,7 @@ import type {
   OperationsOverview,
   Payment,
   PaymentBatch,
+  ReliabilityEvidence,
   ReplayVerification,
   RuleDisposition,
   RunResult,
@@ -121,6 +122,39 @@ function OperationsBand({ overview, sessionEvaluations }: { overview: Operations
       <Metric label="Due within 7 days" value={`${formatMoney(overview.due_next_7_days_usdc)} USDC`} detail={`${overview.due_next_7_days_count} invoices · ${overview.overdue_count} overdue`} />
       <Metric label="Projected liquidity" value={projected === null ? 'Awaiting treasury' : `${formatMoney(projected)} USDC`} detail={overview.minimum_reserve_usdc === null ? 'Record a treasury snapshot' : `${formatMoney(overview.minimum_reserve_usdc)} USDC minimum reserve`} />
     </div>
+  );
+}
+
+function ReliabilityPanel({ evidence }: { evidence: ReliabilityEvidence }) {
+  const { report, artifact } = evidence;
+  const settlementLatency = report.latency_ms.by_request['payment.settle'];
+  const isolationLatency = report.latency_ms.by_request['security.cross_tenant_read'];
+  return (
+    <section className="reliability-panel" aria-label="Synthetic multi-tenant reliability evidence">
+      <div className="reliability-panel__head">
+        <div>
+          <span className="eyebrow">Checked-in reliability evidence</span>
+          <h2>10,000 workflows. Zero duplicate payments.</h2>
+        </div>
+        <Tag type="purple">Synthetic engineering test</Tag>
+      </div>
+      <div className="reliability-grid">
+        <div><strong>{report.summary.successful_workflows.toLocaleString()}</strong><span>successful workflows</span><small>{report.configuration.organizations} isolated organizations · {report.configuration.concurrency} workers</small></div>
+        <div><strong>{report.summary.http_requests.toLocaleString()}</strong><span>real HTTP requests</span><small>{report.summary.workflow_throughput_per_second.toFixed(3)} workflows / second</small></div>
+        <div><strong>{report.summary.cross_tenant_attempts_denied}/{report.summary.cross_tenant_attempts}</strong><span>cross-tenant reads denied</span><small>P95 {isolationLatency?.p95.toFixed(0) ?? '—'} ms</small></div>
+        <div><strong>{report.summary.duplicate_storm_requests} → {report.summary.duplicate_storm_provider_submissions}</strong><span>retry storm convergence</span><small>{report.summary.duplicate_payment_count} duplicate payments</small></div>
+      </div>
+      <div className="reliability-latency">
+        <div><span>Overall P95</span><strong>{report.latency_ms.overall.p95.toFixed(0)} ms</strong></div>
+        <div><span>Settlement P95</span><strong>{settlementLatency?.p95.toFixed(0) ?? '—'} ms</strong></div>
+        <div><span>Failed workflows</span><strong>{report.summary.failed_workflows}</strong></div>
+        <div><span>Artifact proof</span><code>{shorten(artifact.sha256, 12, 10)}</code></div>
+      </div>
+      <div className="reliability-panel__foot">
+        <div><CheckmarkFilled size={16} /><span>Immutable report · {new Date(report.generated_at).toLocaleDateString()} · {shorten(report.run_id, 12, 8)}</span></div>
+        <p>{report.methodology.note} {report.methodology.settlement}.</p>
+      </div>
+    </section>
   );
 }
 
@@ -966,6 +1000,8 @@ function App() {
             onSettleBatch={handleSettleBatch}
           />
         ) : null}
+
+        {data ? <ReliabilityPanel evidence={data.reliability} /> : null}
 
         <footer className="product-footer">
           <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>

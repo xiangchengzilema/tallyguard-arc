@@ -193,10 +193,56 @@ export interface PaymentBatch {
   results: PaymentBatchResult[];
 }
 
+export interface ReliabilityReport {
+  schema_version: string;
+  run_id: string;
+  generated_at: string;
+  configuration: {
+    concurrency: number;
+    duplicate_storm: number;
+    invoices: number;
+    organizations: number;
+    timeout_seconds: number;
+  };
+  methodology: {
+    classification: string;
+    identity: string;
+    note: string;
+    settlement: string;
+    transport: string;
+  };
+  summary: {
+    cross_tenant_attempts: number;
+    cross_tenant_attempts_denied: number;
+    duplicate_payment_count: number;
+    duplicate_storm_provider_submissions: number;
+    duplicate_storm_requests: number;
+    failed_workflows: number;
+    http_requests: number;
+    successful_workflows: number;
+    workflow_error_rate: number;
+    workflow_throughput_per_second: number;
+  };
+  latency_ms: {
+    overall: { p50: number; p95: number; p99: number };
+    by_request: Record<string, { p50: number; p95: number; p99: number }>;
+  };
+}
+
+export interface ReliabilityEvidence {
+  report: ReliabilityReport;
+  artifact: {
+    filename: string;
+    sha256: string;
+    immutable: boolean;
+  };
+}
+
 export interface BootstrapData {
   scenarios: Scenario[];
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   operations: OperationsOverview;
+  reliability: ReliabilityEvidence;
   readiness: {
     status: string;
     database: string;
