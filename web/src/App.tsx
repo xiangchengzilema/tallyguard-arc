@@ -706,7 +706,10 @@ function App() {
           </div>
           <div className="system-state">
             <span className="live-dot" aria-hidden="true" />
-            <div><strong>{data?.readiness.status === 'ready' ? 'Controls online' : 'Connecting'}</strong><small>{data?.readiness.network ?? 'ARC-TESTNET'} · {data?.readiness.settlement_adapter ?? 'checking adapter'}</small></div>
+            <div>
+              <strong>{data?.readiness.status === 'ready' ? 'Controls online' : 'Connecting'}</strong>
+              <small>{data?.readiness.network ?? 'ARC-TESTNET'} · {data?.readiness.settlement_adapter ?? 'checking adapter'} · {data?.readiness.evidence_analyst ?? 'checking analyst'}</small>
+            </div>
           </div>
         </div>
 

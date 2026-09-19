@@ -8,6 +8,13 @@ TallyGuard is split into three trust zones:
 2. **Control zone** — applies versioned deterministic rules and creates a signed payment intent. It must be reproducible.
 3. **Settlement zone** — executes an approved intent through Circle/Arc and reconciles the confirmed transaction. It never accepts free-form model output as transaction parameters.
 
+The interpretation zone defaults to a credential-free structured analyst. Setting
+`TALLYGUARD_AGENT_MODE=openai-compatible` enables an optional hosted chat-completions
+adapter. Its constrained output contains only an action recommendation, summary, reason
+codes, and confidence. The adapter rejects extra fields, assigns evidence citations locally,
+never transmits wallet addresses, and falls back to the local analyst if the provider fails.
+The deterministic control zone remains authoritative in both modes.
+
 ## 2. Core entities
 
 ### Organization

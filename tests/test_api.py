@@ -34,7 +34,9 @@ def test_health_and_readiness_are_public(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()
     assert client.get("/api/health").get_json()["status"] == "ok"
-    assert client.get("/api/readiness").get_json()["database"] == "ok"
+    readiness = client.get("/api/readiness").get_json()
+    assert readiness["database"] == "ok"
+    assert readiness["evidence_analyst"] == "deterministic-evidence-analyst"
 
 
 def test_metrics_report_aggregate_requests_without_financial_labels(tmp_path):

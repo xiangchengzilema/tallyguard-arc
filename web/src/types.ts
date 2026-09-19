@@ -145,5 +145,6 @@ export interface BootstrapData {
     database: string;
     network: string;
     settlement_adapter: string;
+    evidence_analyst: string;
   };
 }

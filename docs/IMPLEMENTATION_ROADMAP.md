@@ -106,8 +106,9 @@ Implemented foundation:
 - The authenticated evaluation API now normalizes real uploaded three-way-match evidence and binds it to the verified vendor, active policy, latest treasury snapshot, and Arc network
 - Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
 - A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
+- An optional OpenAI-compatible hosted adapter adds probabilistic document reasoning behind an environment-only credential boundary; its four-field schema forbids payment parameters, evidence citations are assigned locally, unsafe responses are rejected, and provider failure falls back deterministically
 
-- Agent-generated evidence summary (credential-free structured analyst complete; hosted model adapter optional)
+- Agent-generated evidence summary (credential-free and hosted structured adapters complete)
 - Recommended action with structured reason codes
 - Deterministic policy override boundary
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows

@@ -1,7 +1,14 @@
+import json
 from datetime import date
 from decimal import Decimal
 
-from tallyguard.agent import DeterministicEvidenceAnalyst
+import pytest
+
+from tallyguard.agent import (
+    AgentAnalysisError,
+    DeterministicEvidenceAnalyst,
+    OpenAICompatibleEvidenceAnalyst,
+)
 from tallyguard.models import (
     DeliveryEvidence,
     Invoice,
@@ -129,3 +136,111 @@ def test_analyst_escalates_above_autonomy_limit():
 
     assert recommendation.action == DecisionAction.ESCALATE
     assert recommendation.reason_codes == ("AGENT_AUTONOMY_LIMIT_EXCEEDED",)
+
+
+def test_hosted_analyst_accepts_only_structured_opinion_and_assigns_citations_locally():
+    evidence, vendor, treasury, policy = case()
+    captured = {}
+
+    def transport(payload):
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "action": "PAY",
+                                "summary": "Three-way evidence agrees; policy must authorize settlement.",
+                                "reason_codes": ["AGENT_MATCH_CONFIRMED"],
+                                "confidence": "0.88",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    recommendation = OpenAICompatibleEvidenceAnalyst(
+        endpoint="https://model.example/v1/chat/completions",
+        api_key="test-only-key",
+        model="finance-analyst",
+        transport=transport,
+    ).recommend(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+        evaluation_date=date(2026, 9, 20),
+    )
+
+    assert recommendation.action == DecisionAction.PAY
+    assert recommendation.confidence == Decimal("0.88")
+    assert recommendation.evidence_refs == ("package:invoice-1", "c" * 64)
+    assert captured["temperature"] == 0
+    prompt = captured["messages"][1]["content"]
+    assert "payment_wallet_address" not in prompt
+    assert WALLET not in prompt
+
+
+def test_hosted_analyst_rejects_payment_fields_and_falls_back_safely():
+    evidence, vendor, treasury, policy = case()
+
+    def transport(_payload):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "action": "PAY",
+                                "summary": "Attempted unsafe response.",
+                                "reason_codes": ["AGENT_MATCH_CONFIRMED"],
+                                "confidence": "0.99",
+                                "recipient": WALLET,
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    recommendation = OpenAICompatibleEvidenceAnalyst(
+        endpoint="https://model.example/v1/chat/completions",
+        api_key="test-only-key",
+        model="finance-analyst",
+        transport=transport,
+        fallback=DeterministicEvidenceAnalyst(),
+    ).recommend(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+    )
+
+    assert recommendation.reason_codes == ("AGENT_THREE_WAY_MATCH_COMPLETE",)
+    assert recommendation.confidence == Decimal("0.94")
+
+
+def test_hosted_analyst_rejects_insecure_remote_endpoint_and_invalid_output():
+    with pytest.raises(ValueError, match="HTTPS"):
+        OpenAICompatibleEvidenceAnalyst(
+            endpoint="http://model.example/v1/chat/completions",
+            api_key="test-only-key",
+            model="finance-analyst",
+        )
+
+    evidence, vendor, treasury, policy = case()
+    analyst = OpenAICompatibleEvidenceAnalyst(
+        endpoint="http://127.0.0.1:15721/v1/chat/completions",
+        api_key="test-only-key",
+        model="finance-analyst",
+        transport=lambda _payload: {"choices": []},
+    )
+    with pytest.raises(AgentAnalysisError, match="response envelope"):
+        analyst.recommend(
+            evidence=evidence,
+            vendor=vendor,
+            treasury=treasury,
+            policy=policy,
+        )

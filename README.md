@@ -42,6 +42,7 @@ Every payment answers four questions:
 - Immutable policy versions, active-policy selection, field-level diffs, and source-referenced treasury snapshots persist across restarts and are exposed through role-scoped APIs
 - Real uploaded invoice, purchase-order, and delivery evidence can be normalized against the verified vendor, active policy, and latest treasury snapshot to produce an idempotent auditable decision
 - Credential-free evidence analyst emits a structured recommendation, confidence, reason codes, and immutable package citations while the separate policy engine remains the only payment authority
+- Optional OpenAI-compatible hosted analyst uses a strict recommendation-only schema, omits raw wallet addresses from its prompt, rejects transaction-shaped output, and falls back safely without changing policy authority
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration

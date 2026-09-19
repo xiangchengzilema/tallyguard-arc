@@ -17,7 +17,11 @@ from flask import Flask, Response, g, jsonify, request, send_file, send_from_dir
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-from .agent import DeterministicEvidenceAnalyst, EvidenceAnalyst
+from .agent import (
+    DeterministicEvidenceAnalyst,
+    EvidenceAnalyst,
+    OpenAICompatibleEvidenceAnalyst,
+)
 from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
 from .auth import (
     AuthenticationDenied,
@@ -323,6 +327,24 @@ def _correlation_id() -> str:
     return g.correlation_id
 
 
+def _evidence_analyst_from_env() -> EvidenceAnalyst:
+    mode = os.getenv("TALLYGUARD_AGENT_MODE", "deterministic").strip().lower()
+    fallback = DeterministicEvidenceAnalyst()
+    if mode == "deterministic":
+        return fallback
+    if mode != "openai-compatible":
+        raise ValueError(
+            "TALLYGUARD_AGENT_MODE must be deterministic or openai-compatible."
+        )
+    return OpenAICompatibleEvidenceAnalyst(
+        endpoint=os.getenv("TALLYGUARD_AGENT_URL", ""),
+        api_key=os.getenv("TALLYGUARD_AGENT_API_KEY", ""),
+        model=os.getenv("TALLYGUARD_AGENT_MODEL", ""),
+        timeout_seconds=float(os.getenv("TALLYGUARD_AGENT_TIMEOUT_SECONDS", "10")),
+        fallback=fallback,
+    )
+
+
 def create_app(
     *,
     database_path: str | Path | None = None,
@@ -378,7 +400,7 @@ def create_app(
     )
     rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
     request_metrics = RequestMetrics()
-    evidence_analyst = evidence_analyst or DeterministicEvidenceAnalyst()
+    evidence_analyst = evidence_analyst or _evidence_analyst_from_env()
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
@@ -508,6 +530,9 @@ def create_app(
                 "database": "ok",
                 "network": network_config.name.value,
                 "settlement_adapter": settlement_adapter.name,
+                "evidence_analyst": getattr(
+                    evidence_analyst, "name", evidence_analyst.__class__.__name__
+                ),
             }
         )
 
