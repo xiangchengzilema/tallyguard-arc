@@ -23,9 +23,17 @@ from .auth import (
     authorize,
 )
 from .models import Invoice
+from .network import ArcNetworkConfig
+from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
 from .persistence import PersistenceError, SqliteRepository, StoredInvoice
+from .settlement import (
+    SettlementAdapter,
+    SettlementDenied,
+    SettlementService,
+    SimulatedArcAdapter,
+)
 from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 
@@ -87,6 +95,37 @@ def _decision_json(record: DecisionRecord) -> dict[str, Any]:
     }
 
 
+def _payment_json(outcome: PaymentOutcome, config: ArcNetworkConfig) -> dict[str, Any]:
+    intent = outcome.intent
+    receipt = outcome.receipt
+    return {
+        "intent": {
+            "id": intent.id,
+            "organization_id": intent.organization_id,
+            "invoice_id": intent.invoice_id,
+            "decision_id": intent.decision_id,
+            "recipient": intent.recipient,
+            "amount_usdc": format(intent.amount_usdc, "f"),
+            "network": intent.network.value,
+            "approval_reference": intent.approval_reference,
+        },
+        "receipt": {
+            "provider": receipt.provider,
+            "provider_reference": receipt.provider_reference,
+            "transaction_hash": receipt.transaction_hash,
+            "block_number": receipt.block_number,
+            "confirmed_recipient": receipt.confirmed_recipient,
+            "confirmed_amount_usdc": format(receipt.confirmed_amount_usdc, "f"),
+            "network": receipt.network.value,
+            "status": receipt.status.value,
+            "confirmed_at": receipt.confirmed_at.isoformat(),
+            "explorer_url": f"{config.explorer_url.rstrip('/')}/tx/{receipt.transaction_hash}",
+        },
+        "invoice": _invoice_json(outcome.invoice),
+        "reused_receipt": outcome.reused_receipt,
+    }
+
+
 def _error(code: str, message: str, status: int) -> tuple[Response, int]:
     return jsonify({"error": {"code": code, "message": message}, "correlation_id": _correlation_id()}), status
 
@@ -101,6 +140,8 @@ def create_app(
     *,
     database_path: str | Path | None = None,
     testing: bool = False,
+    settlement_adapter: SettlementAdapter | None = None,
+    settlement_config: ArcNetworkConfig | None = None,
 ) -> Flask:
     app = Flask(__name__)
     app.config.update(TESTING=testing)
@@ -109,12 +150,37 @@ def create_app(
     authenticator = Authenticator()
     decision_service = DecisionService()
     approval_inbox = ApprovalInbox()
-    authorized_decisions: dict[str, Any] = {}
+    authorized_decisions: dict[tuple[str, str], Any] = {}
+    network_config = settlement_config or ArcNetworkConfig.from_env()
+    if settlement_adapter is None:
+        mode = "simulation" if testing else os.getenv("TALLYGUARD_MODE", "simulation").strip().lower()
+        if mode == "simulation":
+            settlement_adapter = SimulatedArcAdapter()
+        elif mode == "circle":
+            from .circle_arc import CircleArcAdapter
+
+            settlement_adapter = CircleArcAdapter.from_env(network_config)
+        else:
+            raise ValueError("TALLYGUARD_MODE must be simulation or circle.")
+    allow_mainnet = os.getenv("TALLYGUARD_ALLOW_MAINNET", "false").strip().lower() == "true"
+    settlement_service = SettlementService(
+        config=network_config,
+        adapter=settlement_adapter,
+        allow_mainnet=allow_mainnet,
+    )
+    payment_orchestrator = PaymentOrchestrator(
+        repository=repository,
+        settlement_service=settlement_service,
+        network=network_config,
+    )
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
     app.extensions["tallyguard_approval_inbox"] = approval_inbox
     app.extensions["tallyguard_authorized_decisions"] = authorized_decisions
+    app.extensions["tallyguard_network"] = network_config
+    app.extensions["tallyguard_settlement_adapter"] = settlement_adapter
+    app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
 
     _seed_demo_identity(repository)
 
@@ -151,6 +217,10 @@ def create_app(
     def workflow_error(exc: WorkflowError):
         return _error("WORKFLOW_ERROR", str(exc), 409)
 
+    @app.errorhandler(SettlementDenied)
+    def settlement_error(exc: SettlementDenied):
+        return _error("SETTLEMENT_DENIED", str(exc), 409)
+
     @app.errorhandler(KeyError)
     def missing_domain_record(exc: KeyError):
         return _error("NOT_FOUND", str(exc).strip("'"), 404)
@@ -186,7 +256,14 @@ def create_app(
     @app.get("/api/readiness")
     def readiness():
         repository.list_invoices(organization_id=DEMO_ORGANIZATION_ID, limit=1)
-        return jsonify({"status": "ready", "database": "ok"})
+        return jsonify(
+            {
+                "status": "ready",
+                "database": "ok",
+                "network": network_config.name.value,
+                "settlement_adapter": settlement_adapter.name,
+            }
+        )
 
     @app.post("/api/demo/session")
     def demo_session():
@@ -335,7 +412,7 @@ def create_app(
                 decision_id=resolved.decision_id,
             )
             authorized = apply_approved_escalation(decision, resolved)
-            authorized_decisions[resolved.id] = authorized
+            authorized_decisions[(g.principal.organization_id, resolved.id)] = authorized
             final_action = authorized.action.value
             invoice = repository.get_invoice(
                 organization_id=g.principal.organization_id,
@@ -418,6 +495,82 @@ def create_app(
             invoice_id=invoice_id,
         )
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()})
+
+    @app.post("/api/invoices/<invoice_id>/settle")
+    @require(Permission.SETTLEMENT_EXECUTE)
+    def settle_invoice(invoice_id: str):
+        payload = request.get_json(silent=True) or {}
+        decision_id = str(payload.get("decision_id", "")).strip()
+        if not decision_id:
+            raise ValueError("Settlement requires a decision_id.")
+        record = decision_service.repository.get(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        if record.invoice_id != invoice_id:
+            raise WorkflowError("Decision is not bound to this invoice.")
+
+        decision = record.policy_decision
+        if decision.action.value != "PAY":
+            approval_reference = str(payload.get("approval_reference", "")).strip()
+            approved = authorized_decisions.get(
+                (g.principal.organization_id, approval_reference)
+            )
+            if approved is None or approved.approval_reference != approval_reference:
+                raise ApprovalError("An approved escalation reference is required for settlement.")
+            approval = approval_inbox.get(
+                organization_id=g.principal.organization_id,
+                approval_id=approval_reference,
+            )
+            if approval.decision_id != record.id or approval.invoice_id != invoice_id:
+                raise ApprovalError("Approval is not bound to this decision and invoice.")
+            decision = approved
+
+        stored = repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        outcome = payment_orchestrator.settle(
+            invoice=stored,
+            decision_id=decision_id,
+            decision=decision,
+            actor_user_id=g.principal.user_id,
+            correlation_id=_correlation_id(),
+        )
+        return jsonify(
+            {
+                "payment": _payment_json(outcome, network_config),
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/payments/<payment_intent_id>")
+    @require(Permission.INVOICE_READ)
+    def get_payment(payment_intent_id: str):
+        intent = repository.get_payment_intent(
+            organization_id=g.principal.organization_id,
+            payment_intent_id=payment_intent_id,
+        )
+        receipt = repository.get_settlement_receipt(
+            organization_id=g.principal.organization_id,
+            payment_intent_id=payment_intent_id,
+        )
+        invoice = repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=intent.invoice_id,
+        )
+        outcome = PaymentOutcome(
+            intent=intent,
+            receipt=receipt,
+            invoice=invoice,
+            reused_receipt=True,
+        )
+        return jsonify(
+            {
+                "payment": _payment_json(outcome, network_config),
+                "correlation_id": _correlation_id(),
+            }
+        )
 
     return app
 

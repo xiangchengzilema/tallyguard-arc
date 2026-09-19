@@ -21,6 +21,8 @@ from .evidence import (
     SourceLocation,
 )
 from .models import Invoice
+from .network import ArcNetwork
+from .settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from .workflow import InvoiceStatus, WorkflowError, require_transition
 
 
@@ -121,6 +123,42 @@ CREATE TABLE IF NOT EXISTS invoice_transitions (
     correlation_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices(organization_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS payment_intents (
+    organization_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    decision_id TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    amount_usdc TEXT NOT NULL,
+    network TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    approval_reference TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, id),
+    UNIQUE (organization_id, decision_id),
+    UNIQUE (organization_id, idempotency_key),
+    FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices(organization_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS settlement_receipts (
+    organization_id TEXT NOT NULL,
+    payment_intent_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_reference TEXT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    block_number INTEGER NOT NULL,
+    confirmed_recipient TEXT NOT NULL,
+    confirmed_amount_usdc TEXT NOT NULL,
+    network TEXT NOT NULL,
+    status TEXT NOT NULL,
+    confirmed_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, payment_intent_id),
+    UNIQUE (organization_id, provider, provider_reference),
+    UNIQUE (organization_id, transaction_hash),
+    FOREIGN KEY (organization_id, payment_intent_id)
+        REFERENCES payment_intents(organization_id, id)
 );
 """
 
@@ -438,6 +476,170 @@ class SqliteRepository:
             for row in rows
         )
 
+    def create_or_get_payment_intent(
+        self,
+        intent: PaymentIntent,
+        *,
+        created_at: datetime | None = None,
+    ) -> tuple[PaymentIntent, bool]:
+        """Persist one immutable intent per tenant/decision, safe under races."""
+
+        timestamp = created_at or datetime.now(timezone.utc)
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing_row = self._connection.execute(
+                    """
+                    SELECT * FROM payment_intents
+                    WHERE organization_id = ? AND decision_id = ?
+                    """,
+                    (intent.organization_id, intent.decision_id),
+                ).fetchone()
+                if existing_row is not None:
+                    existing = self._payment_intent(existing_row)
+                    self._ensure_same_payment(existing, intent)
+                    self._connection.execute("COMMIT")
+                    return existing, False
+                self._connection.execute(
+                    """
+                    INSERT INTO payment_intents
+                        (organization_id, id, invoice_id, decision_id, recipient,
+                         amount_usdc, network, idempotency_key, approval_reference, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        intent.organization_id,
+                        intent.id,
+                        intent.invoice_id,
+                        intent.decision_id,
+                        intent.recipient,
+                        format(intent.amount_usdc, "f"),
+                        intent.network.value,
+                        intent.idempotency_key,
+                        intent.approval_reference,
+                        timestamp.isoformat(),
+                    ),
+                )
+                self._connection.execute("COMMIT")
+                return intent, True
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                raise PersistenceError("Payment intent violates a tenant or idempotency constraint.") from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def get_payment_intent(
+        self,
+        *,
+        organization_id: str,
+        payment_intent_id: str,
+    ) -> PaymentIntent:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM payment_intents
+                WHERE organization_id = ? AND id = ?
+                """,
+                (organization_id, payment_intent_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("Payment intent was not found in this organization.")
+        return self._payment_intent(row)
+
+    def get_payment_intent_for_decision(
+        self,
+        *,
+        organization_id: str,
+        decision_id: str,
+    ) -> PaymentIntent:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM payment_intents
+                WHERE organization_id = ? AND decision_id = ?
+                """,
+                (organization_id, decision_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("Payment intent was not found in this organization.")
+        return self._payment_intent(row)
+
+    def save_settlement_receipt(self, receipt: SettlementReceipt) -> tuple[SettlementReceipt, bool]:
+        with self._guard:
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO settlement_receipts
+                        (organization_id, payment_intent_id, provider, provider_reference,
+                         transaction_hash, block_number, confirmed_recipient,
+                         confirmed_amount_usdc, network, status, confirmed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        receipt.organization_id,
+                        receipt.payment_intent_id,
+                        receipt.provider,
+                        receipt.provider_reference,
+                        receipt.transaction_hash,
+                        receipt.block_number,
+                        receipt.confirmed_recipient,
+                        format(receipt.confirmed_amount_usdc, "f"),
+                        receipt.network.value,
+                        receipt.status.value,
+                        receipt.confirmed_at.isoformat(),
+                    ),
+                )
+                return receipt, True
+            except sqlite3.IntegrityError as exc:
+                row = self._connection.execute(
+                    """
+                    SELECT * FROM settlement_receipts
+                    WHERE organization_id = ? AND payment_intent_id = ?
+                    """,
+                    (receipt.organization_id, receipt.payment_intent_id),
+                ).fetchone()
+                if row is None:
+                    raise PersistenceError("Settlement receipt violates a uniqueness constraint.") from exc
+                existing = self._settlement_receipt(row)
+                if existing != receipt:
+                    raise PersistenceError("Payment intent is already bound to another settlement receipt.") from exc
+                return existing, False
+
+    def get_settlement_receipt(
+        self,
+        *,
+        organization_id: str,
+        payment_intent_id: str,
+    ) -> SettlementReceipt:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM settlement_receipts
+                WHERE organization_id = ? AND payment_intent_id = ?
+                """,
+                (organization_id, payment_intent_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("Settlement receipt was not found in this organization.")
+        return self._settlement_receipt(row)
+
+    def find_settlement_receipt(
+        self,
+        *,
+        organization_id: str,
+        payment_intent_id: str,
+    ) -> SettlementReceipt | None:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM settlement_receipts
+                WHERE organization_id = ? AND payment_intent_id = ?
+                """,
+                (organization_id, payment_intent_id),
+            ).fetchone()
+        return self._settlement_receipt(row) if row is not None else None
+
     @staticmethod
     def _stored_invoice(row: sqlite3.Row) -> StoredInvoice:
         invoice = Invoice(
@@ -458,6 +660,50 @@ class SqliteRepository:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+    @staticmethod
+    def _payment_intent(row: sqlite3.Row) -> PaymentIntent:
+        return PaymentIntent(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            invoice_id=row["invoice_id"],
+            decision_id=row["decision_id"],
+            recipient=row["recipient"],
+            amount_usdc=Decimal(row["amount_usdc"]),
+            network=ArcNetwork(row["network"]),
+            idempotency_key=row["idempotency_key"],
+            approval_reference=row["approval_reference"],
+        )
+
+    @staticmethod
+    def _settlement_receipt(row: sqlite3.Row) -> SettlementReceipt:
+        return SettlementReceipt(
+            payment_intent_id=row["payment_intent_id"],
+            organization_id=row["organization_id"],
+            provider=row["provider"],
+            provider_reference=row["provider_reference"],
+            transaction_hash=row["transaction_hash"],
+            block_number=row["block_number"],
+            confirmed_recipient=row["confirmed_recipient"],
+            confirmed_amount_usdc=Decimal(row["confirmed_amount_usdc"]),
+            network=ArcNetwork(row["network"]),
+            status=SettlementStatus(row["status"]),
+            confirmed_at=datetime.fromisoformat(row["confirmed_at"]),
+        )
+
+    @staticmethod
+    def _ensure_same_payment(existing: PaymentIntent, proposed: PaymentIntent) -> None:
+        same = (
+            existing.organization_id == proposed.organization_id
+            and existing.invoice_id == proposed.invoice_id
+            and existing.decision_id == proposed.decision_id
+            and existing.recipient == proposed.recipient
+            and existing.amount_usdc == proposed.amount_usdc
+            and existing.network == proposed.network
+            and existing.approval_reference == proposed.approval_reference
+        )
+        if not same:
+            raise PersistenceError("Decision is already bound to a different payment intent.")
 
     @staticmethod
     def _encode_cursor(updated_at: str, invoice_id: str) -> str:

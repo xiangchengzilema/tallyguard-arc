@@ -121,6 +121,9 @@ Implemented foundation:
 - Exact Circle reconciliation of network, recipient, amount, transaction ID, hash, and block
 - Independent Arc RPC verification of chain ID, receipt success, canonical USDC contract, recipient, and six-decimal amount
 - Circle/Arc block-height agreement check and fault-injection coverage
+- Durable payment intents retain the original UUID v4 across process restarts and retries
+- Durable settlement receipts prevent provider resubmission after a completed payment
+- Invoice settlement advances through submitting, submitted, confirmed, and reconciled states
 - Public demo remains credential-free through the deterministic simulator
 
 - Circle wallet adapter behind the settlement protocol
@@ -158,6 +161,9 @@ Implemented foundation:
 - Correlation IDs and fail-closed JSON errors
 - Seven deterministic judge scenarios exercise the real policy engine and persisted workflow
 - Large-invoice scenario supports role-separated request and approval through the API
+- Approver-only settlement endpoint binds invoice, decision, approval, payment intent, and receipt
+- Auditor-readable receipt endpoint includes the corresponding Arc Explorer URL
+- Repeated settlement requests return the persisted receipt without another provider submission
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries

@@ -13,7 +13,9 @@ from tallyguard.evidence import (
     SourceLocation,
 )
 from tallyguard.models import Invoice
+from tallyguard.network import ArcNetwork
 from tallyguard.persistence import PersistenceError, SqliteRepository
+from tallyguard.settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from tallyguard.workflow import InvoiceStatus, WorkflowError
 
 
@@ -196,3 +198,111 @@ def test_concurrent_transitions_have_one_winner(tmp_path):
         results = list(pool.map(advance, range(20)))
     assert results.count("won") == 1
     assert results.count("lost") == 19
+
+
+def test_payment_intent_and_receipt_survive_repository_restart(tmp_path):
+    database = tmp_path / "tallyguard.sqlite3"
+    repo = repository(tmp_path)
+    repo.create_invoice(invoice())
+    intent = PaymentIntent(
+        id="payment-1",
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        decision_id="decision-1",
+        recipient=WALLET,
+        amount_usdc=Decimal("1200"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="123e4567-e89b-42d3-a456-426614174000",
+    )
+    persisted, created = repo.create_or_get_payment_intent(intent)
+    assert created is True
+    assert persisted == intent
+    receipt = SettlementReceipt(
+        payment_intent_id=intent.id,
+        organization_id="org-1",
+        provider="arc-simulator",
+        provider_reference="sim-1",
+        transaction_hash="0x" + "b" * 64,
+        block_number=123,
+        confirmed_recipient=WALLET,
+        confirmed_amount_usdc=Decimal("1200"),
+        network=ArcNetwork.TESTNET,
+        status=SettlementStatus.CONFIRMED,
+        confirmed_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
+    )
+    stored, receipt_created = repo.save_settlement_receipt(receipt)
+    assert receipt_created is True
+    assert stored == receipt
+    repo.close()
+
+    reopened = SqliteRepository(database)
+    assert reopened.get_payment_intent(
+        organization_id="org-1", payment_intent_id="payment-1"
+    ) == intent
+    assert reopened.get_settlement_receipt(
+        organization_id="org-1", payment_intent_id="payment-1"
+    ) == receipt
+
+
+def test_decision_retries_reuse_original_uuid4_and_reject_changed_payment(tmp_path):
+    repo = repository(tmp_path)
+    repo.create_invoice(invoice())
+    original = PaymentIntent(
+        id="payment-1",
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        decision_id="decision-1",
+        recipient=WALLET,
+        amount_usdc=Decimal("1200"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="123e4567-e89b-42d3-a456-426614174000",
+    )
+    repo.create_or_get_payment_intent(original)
+    retry = PaymentIntent(
+        id="payment-retry",
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        decision_id="decision-1",
+        recipient=WALLET,
+        amount_usdc=Decimal("1200"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="123e4567-e89b-42d3-a456-426614174001",
+    )
+    persisted, created = repo.create_or_get_payment_intent(retry)
+    assert created is False
+    assert persisted.idempotency_key == original.idempotency_key
+    assert persisted.id == original.id
+
+    changed = PaymentIntent(
+        id="payment-retry",
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        decision_id="decision-1",
+        recipient=WALLET,
+        amount_usdc=Decimal("1199"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="123e4567-e89b-42d3-a456-426614174002",
+    )
+    with pytest.raises(PersistenceError, match="different payment intent"):
+        repo.create_or_get_payment_intent(changed)
+
+
+def test_payment_and_receipt_queries_are_tenant_scoped(tmp_path):
+    repo = repository(tmp_path)
+    repo.create_invoice(invoice())
+    intent = PaymentIntent(
+        id="payment-1",
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        decision_id="decision-1",
+        recipient=WALLET,
+        amount_usdc=Decimal("1200"),
+        network=ArcNetwork.TESTNET,
+        idempotency_key="123e4567-e89b-42d3-a456-426614174000",
+    )
+    repo.create_or_get_payment_intent(intent)
+    with pytest.raises(PersistenceError, match="not found"):
+        repo.get_payment_intent(organization_id="org-2", payment_intent_id="payment-1")
+    assert repo.find_settlement_receipt(
+        organization_id="org-2", payment_intent_id="payment-1"
+    ) is None

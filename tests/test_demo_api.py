@@ -80,3 +80,116 @@ def test_large_invoice_requires_role_separated_approval(tmp_path):
         headers=approver_headers,
     ).get_json()["invoice"]
     assert invoice["status"] == "READY"
+
+    settled = client.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id, "approval_reference": approval["id"]},
+    )
+    assert settled.status_code == 200
+    payment = settled.get_json()["payment"]
+    assert payment["intent"]["approval_reference"] == approval["id"]
+    assert payment["invoice"]["status"] == "RECONCILED"
+    assert payment["receipt"]["status"] == "CONFIRMED"
+
+
+def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
+    app = create_app(database_path=tmp_path / "demo.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    auditor_headers = auth(client, "auditor")
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=operator_headers,
+    ).get_json()
+    invoice_id = run["invoice"]["id"]
+    decision_id = run["decision"]["id"]
+
+    forbidden = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=operator_headers,
+        json={"decision_id": decision_id},
+    )
+    assert forbidden.status_code == 403
+
+    first = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert first.status_code == 200
+    first_payment = first.get_json()["payment"]
+    assert first_payment["invoice"]["status"] == "RECONCILED"
+    assert first_payment["reused_receipt"] is False
+    assert first_payment["receipt"]["explorer_url"].startswith(
+        "https://explorer.testnet.arc.io/tx/0x"
+    )
+
+    second = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert second.status_code == 200
+    second_payment = second.get_json()["payment"]
+    assert second_payment["reused_receipt"] is True
+    assert second_payment["receipt"]["transaction_hash"] == first_payment["receipt"]["transaction_hash"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+    fetched = client.get(
+        f"/api/payments/{first_payment['intent']['id']}",
+        headers=auditor_headers,
+    )
+    assert fetched.status_code == 200
+    assert fetched.get_json()["payment"]["receipt"] == first_payment["receipt"]
+
+
+def test_non_pay_decision_cannot_enter_settlement(tmp_path):
+    app = create_app(database_path=tmp_path / "demo.sqlite3", testing=True)
+    client = app.test_client()
+    run = client.post(
+        "/api/demo/scenarios/missing-delivery/run",
+        headers=auth(client, "operator"),
+    ).get_json()
+
+    response = client.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        headers=auth(client, "approver"),
+        json={"decision_id": run["decision"]["id"]},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "APPROVAL_ERROR"
+
+
+def test_approval_cannot_be_rebound_to_another_invoice(tmp_path):
+    app = create_app(database_path=tmp_path / "demo.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    first = client.post(
+        "/api/demo/scenarios/large-invoice/run", headers=operator_headers
+    ).get_json()
+    second = client.post(
+        "/api/demo/scenarios/large-invoice/run", headers=operator_headers
+    ).get_json()
+    approval = client.post(
+        f"/api/decisions/{first['decision']['id']}/request-approval",
+        headers=operator_headers,
+    ).get_json()["approval"]
+    assert client.post(
+        f"/api/approvals/{approval['id']}/resolve",
+        headers=approver_headers,
+        json={"approve": True, "note": "Approved only for first invoice", "expected_version": 1},
+    ).status_code == 200
+
+    response = client.post(
+        f"/api/invoices/{second['invoice']['id']}/settle",
+        headers=approver_headers,
+        json={
+            "decision_id": second["decision"]["id"],
+            "approval_reference": approval["id"],
+        },
+    )
+    assert response.status_code == 409
+    assert "not bound" in response.get_json()["error"]["message"]

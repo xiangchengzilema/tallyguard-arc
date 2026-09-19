@@ -28,6 +28,11 @@ Mainnet remains disabled by default. The live adapter also enforces an independe
 
 Only after all checks pass does TallyGuard create a confirmed settlement receipt.
 
+The payment intent and receipt are stored in SQLite. One tenant/decision pair can own only one
+intent, and its provider idempotency key is immutable. If the service restarts after Circle has
+accepted or completed a transfer, the retry reuses that same key. If a confirmed receipt was
+already stored, the provider is not called again.
+
 ## Local configuration
 
 Install the optional Circle dependency:
