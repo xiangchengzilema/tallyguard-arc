@@ -43,6 +43,28 @@ class AuditEvent:
     created_at: datetime
 
 
+def audit_event_hash(
+    *,
+    sequence: int,
+    aggregate_type: str,
+    aggregate_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    previous_hash: str,
+    created_at: datetime,
+) -> str:
+    envelope = {
+        "sequence": sequence,
+        "aggregate_type": aggregate_type,
+        "aggregate_id": aggregate_id,
+        "event_type": event_type,
+        "payload": payload,
+        "previous_hash": previous_hash,
+        "created_at": created_at,
+    }
+    return hashlib.sha256(canonical_json(envelope).encode("utf-8")).hexdigest()
+
+
 class AuditChain:
     def __init__(self) -> None:
         self._events: list[AuditEvent] = []
@@ -63,7 +85,7 @@ class AuditChain:
         timestamp = created_at or datetime.now(timezone.utc)
         sequence = len(self._events) + 1
         previous_hash = self._events[-1].event_hash if self._events else GENESIS_HASH
-        event_hash = self._hash_event(
+        event_hash = audit_event_hash(
             sequence=sequence,
             aggregate_type=aggregate_type,
             aggregate_id=aggregate_id,
@@ -90,7 +112,7 @@ class AuditChain:
         for expected_sequence, event in enumerate(self._events, start=1):
             if event.sequence != expected_sequence or event.previous_hash != previous_hash:
                 return False
-            expected_hash = self._hash_event(
+            expected_hash = audit_event_hash(
                 sequence=event.sequence,
                 aggregate_type=event.aggregate_type,
                 aggregate_id=event.aggregate_id,
@@ -103,26 +125,4 @@ class AuditChain:
                 return False
             previous_hash = event.event_hash
         return True
-
-    @staticmethod
-    def _hash_event(
-        *,
-        sequence: int,
-        aggregate_type: str,
-        aggregate_id: str,
-        event_type: str,
-        payload: dict[str, Any],
-        previous_hash: str,
-        created_at: datetime,
-    ) -> str:
-        envelope = {
-            "sequence": sequence,
-            "aggregate_type": aggregate_type,
-            "aggregate_id": aggregate_id,
-            "event_type": event_type,
-            "payload": payload,
-            "previous_hash": previous_hash,
-            "created_at": created_at,
-        }
-        return hashlib.sha256(canonical_json(envelope).encode("utf-8")).hexdigest()
 

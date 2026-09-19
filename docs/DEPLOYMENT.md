@@ -9,7 +9,7 @@ safe simulation mode and never requires wallet credentials.
 The container currently runs Gunicorn with one process and eight threads. Core
 sessions, decisions, approvals, invoices, payment intents, and receipts are all
 restart-safe. The remaining one-process constraint comes from the in-process
-rate limiter and audit-chain accumulator; multiple threads still allow concurrent
+rate limiter; multiple threads still allow concurrent
 judge traffic without presenting the service as horizontally scalable.
 
 SQLite stores invoices, state transitions, payment intents, and receipts. On a
@@ -22,7 +22,7 @@ scenario on demand. It is not an acceptable production persistence model.
 Before a real multi-instance deployment:
 
 1. Replace local SQLite with managed Postgres.
-2. Move the rate limiter and audit-chain accumulator to shared infrastructure.
+2. Move the rate limiter to shared infrastructure.
 3. Enable multiple Gunicorn workers and run worker-restart recovery tests.
 4. Keep `TALLYGUARD_MODE=simulation` on public infrastructure unless a dedicated
    test wallet and environment-only Circle credentials are configured.

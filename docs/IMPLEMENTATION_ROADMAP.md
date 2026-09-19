@@ -169,6 +169,7 @@ Implemented foundation:
 - Repeated settlement requests return the persisted receipt without another provider submission
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
+- Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries

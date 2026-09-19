@@ -155,7 +155,7 @@ def create_app(
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
     authenticator = Authenticator(store=repository)
-    decision_service = DecisionService(repository=repository)
+    decision_service = DecisionService(repository=repository, audit_chain=repository)
     approval_inbox = ApprovalInbox(store=repository)
     network_config = settlement_config or ArcNetworkConfig.from_env()
     if settlement_adapter is None:
@@ -425,6 +425,18 @@ def create_app(
             decision_id=decision_id,
         )
         approval = approval_inbox.request(decision, requested_by=g.principal)
+        repository.append(
+            aggregate_type="approval",
+            aggregate_id=approval.id,
+            event_type="APPROVAL_REQUESTED",
+            payload={
+                "organization_id": approval.organization_id,
+                "invoice_id": approval.invoice_id,
+                "decision_id": approval.decision_id,
+                "requested_by_user_id": approval.requested_by_user_id,
+            },
+            created_at=approval.requested_at,
+        )
         return jsonify(
             {
                 "approval": {
@@ -474,6 +486,19 @@ def create_app(
                 actor_user_id=g.principal.user_id,
                 correlation_id=_correlation_id(),
             )
+        repository.append(
+            aggregate_type="approval",
+            aggregate_id=resolved.id,
+            event_type="APPROVAL_RESOLVED",
+            payload={
+                "organization_id": resolved.organization_id,
+                "invoice_id": resolved.invoice_id,
+                "decision_id": resolved.decision_id,
+                "status": resolved.status.value,
+                "resolved_by_user_id": resolved.resolved_by_user_id,
+            },
+            created_at=resolved.resolved_at,
+        )
         return jsonify(
             {
                 "approval": {
@@ -582,6 +607,22 @@ def create_app(
             actor_user_id=g.principal.user_id,
             correlation_id=_correlation_id(),
         )
+        repository.append(
+            aggregate_type="payment",
+            aggregate_id=outcome.intent.id,
+            event_type="SETTLEMENT_RECONCILED",
+            payload={
+                "organization_id": outcome.intent.organization_id,
+                "invoice_id": outcome.intent.invoice_id,
+                "decision_id": outcome.intent.decision_id,
+                "approval_reference": outcome.intent.approval_reference,
+                "network": outcome.receipt.network.value,
+                "provider": outcome.receipt.provider,
+                "transaction_hash": outcome.receipt.transaction_hash,
+                "status": outcome.receipt.status.value,
+            },
+            created_at=outcome.receipt.confirmed_at,
+        )
         return jsonify(
             {
                 "payment": _payment_json(outcome, network_config),
@@ -613,6 +654,32 @@ def create_app(
         return jsonify(
             {
                 "payment": _payment_json(outcome, network_config),
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/audit/events")
+    @require(Permission.AUDIT_READ)
+    def get_audit_events():
+        events = repository.audit_events(organization_id=g.principal.organization_id)
+        return jsonify(
+            {
+                "chain_valid": repository.verify_audit_chain(
+                    organization_id=g.principal.organization_id
+                ),
+                "items": [
+                    {
+                        "sequence": event.sequence,
+                        "aggregate_type": event.aggregate_type,
+                        "aggregate_id": event.aggregate_id,
+                        "event_type": event.event_type,
+                        "payload": event.payload,
+                        "previous_hash": event.previous_hash,
+                        "event_hash": event.event_hash,
+                        "created_at": event.created_at.isoformat(),
+                    }
+                    for event in events
+                ],
                 "correlation_id": _correlation_id(),
             }
         )

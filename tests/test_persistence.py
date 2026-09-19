@@ -290,6 +290,46 @@ def test_opaque_session_survives_restart_and_revocation_is_durable(tmp_path):
         )
 
 
+def test_persistent_audit_chain_is_tenant_scoped_idempotent_and_tamper_evident(tmp_path):
+    repo = repository(tmp_path)
+    timestamp = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    first = repo.append(
+        aggregate_type="decision",
+        aggregate_id="decision-1",
+        event_type="POLICY_DECISION_RECORDED",
+        payload={"organization_id": "org-1", "action": "PAY"},
+        created_at=timestamp,
+    )
+    duplicate = repo.append(
+        aggregate_type="decision",
+        aggregate_id="decision-1",
+        event_type="POLICY_DECISION_RECORDED",
+        payload={"organization_id": "org-1", "action": "PAY"},
+        created_at=timestamp,
+    )
+    other = repo.append(
+        aggregate_type="decision",
+        aggregate_id="decision-2",
+        event_type="POLICY_DECISION_RECORDED",
+        payload={"organization_id": "org-2", "action": "HOLD"},
+        created_at=timestamp,
+    )
+
+    assert duplicate == first
+    assert other.sequence == 1
+    assert len(repo.audit_events(organization_id="org-1")) == 1
+    assert repo.verify_audit_chain(organization_id="org-1") is True
+
+    repo._connection.execute(
+        """
+        UPDATE audit_events SET payload_json = ?
+        WHERE organization_id = ? AND sequence = ?
+        """,
+        ('{"action":"REJECT","organization_id":"org-1"}', "org-1", 1),
+    )
+    assert repo.verify_audit_chain(organization_id="org-1") is False
+
+
 def test_decision_retries_reuse_original_uuid4_and_reject_changed_payment(tmp_path):
     repo = repository(tmp_path)
     repo.create_invoice(invoice())

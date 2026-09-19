@@ -11,7 +11,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 
-from .audit import canonical_json
+from .audit import AuditEvent, GENESIS_HASH, audit_event_hash, canonical_json
 from .approvals import ApprovalError, ApprovalRequest, ApprovalStatus
 from .auth import Principal, Role, Session
 from .decisions import AgentRecommendation, DecisionRecord
@@ -172,6 +172,25 @@ CREATE TABLE IF NOT EXISTS approvals (
 
 CREATE INDEX IF NOT EXISTS idx_approvals_tenant_status
     ON approvals (organization_id, status, requested_at);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    organization_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    aggregate_type TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    previous_hash TEXT NOT NULL,
+    event_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, sequence),
+    UNIQUE (organization_id, aggregate_type, aggregate_id, event_type),
+    UNIQUE (organization_id, event_hash),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_tenant_aggregate
+    ON audit_events (organization_id, aggregate_type, aggregate_id, sequence);
 
 CREATE TABLE IF NOT EXISTS invoice_transitions (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -773,6 +792,116 @@ class SqliteRepository:
             ).fetchall()
         return tuple(self._approval(row) for row in rows)
 
+    def append(
+        self,
+        *,
+        aggregate_type: str,
+        aggregate_id: str,
+        event_type: str,
+        payload: dict[str, object],
+        created_at: datetime | None = None,
+    ) -> AuditEvent:
+        organization_id = str(payload.get("organization_id", "")).strip()
+        if not organization_id:
+            raise PersistenceError("Audit payload requires an organization_id.")
+        timestamp = created_at or datetime.now(timezone.utc)
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._connection.execute(
+                    """
+                    SELECT * FROM audit_events
+                    WHERE organization_id = ? AND aggregate_type = ?
+                      AND aggregate_id = ? AND event_type = ?
+                    """,
+                    (organization_id, aggregate_type, aggregate_id, event_type),
+                ).fetchone()
+                if existing is not None:
+                    self._connection.execute("COMMIT")
+                    return self._audit_event(existing)
+                previous = self._connection.execute(
+                    """
+                    SELECT sequence, event_hash FROM audit_events
+                    WHERE organization_id = ? ORDER BY sequence DESC LIMIT 1
+                    """,
+                    (organization_id,),
+                ).fetchone()
+                sequence = (previous["sequence"] + 1) if previous is not None else 1
+                previous_hash = previous["event_hash"] if previous is not None else GENESIS_HASH
+                event_hash = audit_event_hash(
+                    sequence=sequence,
+                    aggregate_type=aggregate_type,
+                    aggregate_id=aggregate_id,
+                    event_type=event_type,
+                    payload=payload,
+                    previous_hash=previous_hash,
+                    created_at=timestamp,
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO audit_events
+                        (organization_id, sequence, aggregate_type, aggregate_id,
+                         event_type, payload_json, previous_hash, event_hash, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        organization_id,
+                        sequence,
+                        aggregate_type,
+                        aggregate_id,
+                        event_type,
+                        canonical_json(payload),
+                        previous_hash,
+                        event_hash,
+                        timestamp.isoformat(),
+                    ),
+                )
+                self._connection.execute("COMMIT")
+                return AuditEvent(
+                    sequence=sequence,
+                    aggregate_type=aggregate_type,
+                    aggregate_id=aggregate_id,
+                    event_type=event_type,
+                    payload=payload,
+                    previous_hash=previous_hash,
+                    event_hash=event_hash,
+                    created_at=timestamp,
+                )
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def audit_events(self, *, organization_id: str) -> tuple[AuditEvent, ...]:
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM audit_events
+                WHERE organization_id = ? ORDER BY sequence
+                """,
+                (organization_id,),
+            ).fetchall()
+        return tuple(self._audit_event(row) for row in rows)
+
+    def verify_audit_chain(self, *, organization_id: str) -> bool:
+        previous_hash = GENESIS_HASH
+        for expected_sequence, event in enumerate(
+            self.audit_events(organization_id=organization_id), start=1
+        ):
+            if event.sequence != expected_sequence or event.previous_hash != previous_hash:
+                return False
+            if event.event_hash != audit_event_hash(
+                sequence=event.sequence,
+                aggregate_type=event.aggregate_type,
+                aggregate_id=event.aggregate_id,
+                event_type=event.event_type,
+                payload=event.payload,
+                previous_hash=event.previous_hash,
+                created_at=event.created_at,
+            ):
+                return False
+            previous_hash = event.event_hash
+        return True
+
     def create_or_get_payment_intent(
         self,
         intent: PaymentIntent,
@@ -1041,6 +1170,19 @@ class SqliteRepository:
                 else None
             ),
             resolution_note=row["resolution_note"],
+        )
+
+    @staticmethod
+    def _audit_event(row: sqlite3.Row) -> AuditEvent:
+        return AuditEvent(
+            sequence=row["sequence"],
+            aggregate_type=row["aggregate_type"],
+            aggregate_id=row["aggregate_id"],
+            event_type=row["event_type"],
+            payload=json.loads(row["payload_json"]),
+            previous_hash=row["previous_hash"],
+            event_hash=row["event_hash"],
+            created_at=datetime.fromisoformat(row["created_at"]),
         )
 
     @staticmethod

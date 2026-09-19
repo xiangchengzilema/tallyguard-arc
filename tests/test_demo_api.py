@@ -130,6 +130,17 @@ def test_approved_escalation_can_settle_after_service_restart(tmp_path):
     payment = settled.get_json()["payment"]
     assert payment["intent"]["approval_reference"] == approval["id"]
     assert payment["invoice"]["status"] == "RECONCILED"
+    audit = restarted.get(
+        "/api/audit/events",
+        headers=approver_headers,
+    ).get_json()
+    assert audit["chain_valid"] is True
+    assert [item["event_type"] for item in audit["items"]] == [
+        "POLICY_DECISION_RECORDED",
+        "APPROVAL_REQUESTED",
+        "APPROVAL_RESOLVED",
+        "SETTLEMENT_RECONCILED",
+    ]
 
 
 def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
@@ -182,6 +193,13 @@ def test_clean_scenario_settles_once_and_exposes_auditor_receipt(tmp_path):
     )
     assert fetched.status_code == 200
     assert fetched.get_json()["payment"]["receipt"] == first_payment["receipt"]
+
+    audit = client.get("/api/audit/events", headers=auditor_headers).get_json()
+    assert audit["chain_valid"] is True
+    assert [item["event_type"] for item in audit["items"]].count(
+        "SETTLEMENT_RECONCILED"
+    ) == 1
+    assert all(len(item["event_hash"]) == 64 for item in audit["items"])
 
 
 def test_non_pay_decision_cannot_enter_settlement(tmp_path):
