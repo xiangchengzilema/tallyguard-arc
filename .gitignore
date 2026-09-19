@@ -20,3 +20,5 @@ web/vite.config.js
 web/vite.config.d.ts
 .playwright-cli/
 artifacts/
+.codex-deck/
+submission/node_modules/
