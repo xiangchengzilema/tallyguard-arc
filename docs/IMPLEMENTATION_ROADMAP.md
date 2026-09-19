@@ -180,6 +180,19 @@ Exit criteria:
 
 ### Milestone 6 — Judge-ready finance dashboard
 
+Status: in progress.
+
+Implemented foundation:
+
+- Responsive React console built with the Carbon enterprise design system
+- Seven selectable scenarios backed by the real Flask API and policy engine
+- Evidence summary, immutable source hash, versioned policy binding, and per-rule findings
+- Clear visual separation between AI recommendation and deterministic authorization
+- Role-separated large-invoice approval flow
+- Settlement receipt with provider, network, block, transaction hash, and idempotency state
+- Honest visual distinction between public simulation and live Arc proof
+- Loading, empty, error, desktop, and mobile states
+
 - Operations overview with payable exposure, due dates, held value, and treasury reserve
 - Invoice work queue with fast filters
 - Evidence match view modeled after mature AP review tools

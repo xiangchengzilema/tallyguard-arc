@@ -8,7 +8,15 @@ venv/
 .env
 *.db
 data/*.sqlite3
+data/*.sqlite3-*
 dist/
 build/
 *.egg-info/
 .tmp_sdk/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+.playwright-cli/
+artifacts/

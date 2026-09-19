@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from flask import Flask, Response, g, jsonify, request
+from flask import Flask, Response, g, jsonify, request, send_from_directory
 
 from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
 from .auth import (
@@ -143,7 +143,8 @@ def create_app(
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
 ) -> Flask:
-    app = Flask(__name__)
+    frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    app = Flask(__name__, static_folder=None)
     app.config.update(TESTING=testing)
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
@@ -193,6 +194,16 @@ def create_app(
         response.headers["X-Correlation-ID"] = _correlation_id()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'"
+        )
         return response
 
     @app.errorhandler(AuthenticationDenied)
@@ -571,6 +582,24 @@ def create_app(
                 "correlation_id": _correlation_id(),
             }
         )
+
+    @app.get("/")
+    def frontend_index():
+        if not (frontend_dist / "index.html").is_file():
+            return _error(
+                "FRONTEND_NOT_BUILT",
+                "Build the judge console with 'npm run build' in web/.",
+                503,
+            )
+        return send_from_directory(frontend_dist, "index.html")
+
+    @app.get("/assets/<path:filename>")
+    def frontend_assets(filename: str):
+        return send_from_directory(frontend_dist / "assets", filename)
+
+    @app.get("/favicon.svg")
+    def frontend_favicon():
+        return send_from_directory(frontend_dist, "favicon.svg")
 
     return app
 

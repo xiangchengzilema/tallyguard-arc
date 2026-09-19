@@ -34,6 +34,14 @@ def test_health_and_readiness_are_public(tmp_path):
     assert client.get("/api/readiness").get_json()["database"] == "ok"
 
 
+def test_api_responses_include_browser_security_headers(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    response = app.test_client().get("/api/health")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "same-origin"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
 def test_invoice_endpoints_require_authentication(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     response = app.test_client().get("/api/invoices")

@@ -48,6 +48,20 @@ Every payment answers four questions:
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior
 - Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
 - Credential-free automated unit and fault-injection suite
+- Responsive React judge console built on Carbon, with seven live risk scenarios
+- One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
+
+## Run the judge console
+
+```powershell
+cd web
+npm ci
+npm run build
+cd ..
+.\.venv\Scripts\python.exe -m tallyguard.api
+```
+
+Open `http://127.0.0.1:8000`. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
 
 ## Canonical planning documents
 
