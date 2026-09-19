@@ -32,7 +32,9 @@ import {
   ApiError,
   activatePolicyVersion,
   bootstrap,
+  createAgentRun,
   downloadEvidencePacket,
+  executeAgentRun,
   fetchGovernanceOverview,
   fetchInvoiceAudit,
   fetchOperationsOverview,
@@ -52,6 +54,8 @@ import {
 } from './api';
 import type {
   Approval,
+  AgentRun,
+  AgentAction,
   AuditTrail,
   BootstrapData,
   DecisionAction,
@@ -171,6 +175,101 @@ function ReliabilityPanel({ evidence }: { evidence: ReliabilityEvidence }) {
         <div><CheckmarkFilled size={16} /><span>Immutable report · {new Date(report.generated_at).toLocaleDateString()} · {shorten(report.run_id, 12, 8)}</span></div>
         <p>{report.methodology.note} {report.methodology.settlement}.</p>
       </div>
+    </section>
+  );
+}
+
+const AGENT_ACTION_LABEL: Record<AgentAction, string> = {
+  SETTLE: 'Settle now',
+  RETRY_SETTLEMENT: 'Recover payment',
+  WAIT_SCHEDULE: 'Wait for schedule',
+  REQUIRE_APPROVAL: 'Route to approver',
+  REMEDIATE: 'Remediate evidence',
+  INVESTIGATE: 'Manual investigation',
+  COLLECT_EVIDENCE: 'Complete evidence',
+};
+
+function agentActionTag(action: AgentAction) {
+  if (action === 'SETTLE' || action === 'RETRY_SETTLEMENT') return 'green' as const;
+  if (action === 'INVESTIGATE') return 'red' as const;
+  if (action === 'REQUIRE_APPROVAL') return 'purple' as const;
+  if (action === 'REMEDIATE') return 'magenta' as const;
+  return 'blue' as const;
+}
+
+function AutonomousRunPanel({
+  run,
+  busy,
+  settlementStopped,
+  onPlan,
+  onExecute,
+}: {
+  run: AgentRun | null;
+  busy: boolean;
+  settlementStopped: boolean;
+  onPlan: () => void;
+  onExecute: () => void;
+}) {
+  const resultByInvoice = new Map(run?.results.map((result) => [result.invoice_id, result]) ?? []);
+  return (
+    <section className="agent-run" aria-label="Bounded autonomous accounts payable run">
+      <div className="agent-run__lead">
+        <div>
+          <span className="eyebrow">Bounded autonomy / durable plan</span>
+          <h2>One agent run. Every control rechecked.</h2>
+          <p>The agent scans the tenant queue, explains each next action, and can execute only policy-cleared or explicitly retryable payments. Amounts, recipients, and authority always come from sealed records.</p>
+        </div>
+        <div className="agent-run__actions">
+          {run ? <Tag type={run.status === 'EXECUTED' ? 'green' : run.status === 'PARTIAL' ? 'warm-gray' : 'cyan'}>{run.status}</Tag> : <Tag type="cool-gray">No plan yet</Tag>}
+          <Button size="sm" kind="tertiary" renderIcon={Rule} disabled={busy} onClick={onPlan}>
+            {run ? 'Plan current queue' : 'Plan first run'}
+          </Button>
+          {run?.status === 'PLANNED' && run.summary.executable > 0 ? (
+            <Button size="sm" renderIcon={PlayFilled} disabled={busy || settlementStopped} onClick={onExecute}>
+              Execute {run.summary.executable} safe action{run.summary.executable === 1 ? '' : 's'}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {run ? (
+        <>
+          <div className="agent-run__proof">
+            <div><span>Queue scanned</span><strong>{run.summary.scanned}</strong></div>
+            <div><span>Executable</span><strong>{run.summary.executable}</strong></div>
+            <div><span>Human attention</span><strong>{run.summary.requires_attention}</strong></div>
+            <div><span>Plan proof</span><code>{shorten(run.plan_hash, 12, 10)}</code></div>
+          </div>
+          {run.items.length === 0 ? (
+            <div className="agent-run__empty"><CheckmarkFilled size={20} /><span>No open work entered this bounded run.</span></div>
+          ) : (
+            <div className="agent-plan-list">
+              {run.items.map((item, index) => {
+                const result = resultByInvoice.get(item.invoice_id);
+                return (
+                  <article key={item.invoice_id}>
+                    <span className="agent-plan-list__index">{String(index + 1).padStart(2, '0')}</span>
+                    <div className="agent-plan-list__identity">
+                      <strong>{item.invoice_number}</strong>
+                      <small>{formatMoney(item.amount_usdc)} USDC · due {item.due_date}</small>
+                    </div>
+                    <div className="agent-plan-list__reason">
+                      <strong>{item.reason_code.replaceAll('_', ' ')}</strong>
+                      <span>{item.explanation}</span>
+                    </div>
+                    <div className="agent-plan-list__state">
+                      <Tag type={agentActionTag(item.action)}>{AGENT_ACTION_LABEL[item.action]}</Tag>
+                      {result ? <small className={`agent-result agent-result--${result.status.toLowerCase()}`}>{result.status}</small> : <small>{item.executable ? 'Revalidated at execution' : 'No funds authority'}</small>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          <div className="agent-run__boundary"><Locked size={16} /><span>Plan {shorten(run.id, 14, 8)} · state {shorten(run.state_hash, 12, 10)} · execution cannot override deterministic policy.</span></div>
+        </>
+      ) : (
+        <div className="agent-run__empty"><Rule size={20} /><span>Create a plan to turn the current work queue into a traceable sequence of safe actions and human handoffs.</span></div>
+      )}
     </section>
   );
 }
@@ -1144,6 +1243,7 @@ function App() {
   const [policyActivation, setPolicyActivation] = useState<PolicyActivation | null>(null);
   const [vendorDirectory, setVendorDirectory] = useState<VendorTrustRecord[]>([]);
   const [settlementRetryNeeded, setSettlementRetryNeeded] = useState(false);
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1153,6 +1253,7 @@ function App() {
           setData(result);
           setOperations(result.operations);
           setIncidents(result.incidents);
+          setAgentRun(result.agentRun);
           setGovernance(result.governance);
           setVendorDirectory(result.vendorDirectory);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
@@ -1336,6 +1437,23 @@ function App() {
     });
   }, [act, data]);
 
+  const handlePlanAgentRun = useCallback(() => {
+    if (!data) return;
+    void act('Planning a bounded autonomous accounts-payable run', async () => {
+      setAgentRun(await createAgentRun(data.sessions.operator));
+    });
+  }, [act, data]);
+
+  const handleExecuteAgentRun = useCallback(() => {
+    if (!data || !agentRun) return;
+    void act('Revalidating and executing policy-cleared agent actions', async () => {
+      setAgentRun(await executeAgentRun(agentRun.id, data.sessions.approver));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+    });
+  }, [act, agentRun, data]);
+
   const handleRunSchedules = useCallback(() => {
     if (!data) return;
     void act('Revalidating due schedules against current controls', async () => {
@@ -1461,6 +1579,16 @@ function App() {
             </main>
           </div>
         )}
+
+        {operations ? (
+          <AutonomousRunPanel
+            run={agentRun}
+            busy={busy !== null}
+            settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+            onPlan={handlePlanAgentRun}
+            onExecute={handleExecuteAgentRun}
+          />
+        ) : null}
 
         {operations ? (
           <OperationsQueue

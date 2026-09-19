@@ -24,6 +24,8 @@
 | Provider times out mid-workflow | Invoice moves to `SUBMISSION_FAILED`; the same durable intent/key is retried only after current policy and treasury controls pass again; failure and recovery are audited |
 | Provider reports the wrong payment | Exact network, recipient, amount, hash, block, contract, and Transfer-log reconciliation |
 | Ambiguous provider failure is retried automatically | Durable attempt classification permits automatic retry only for explicit transient unavailability; mismatches and unknown errors are locked |
+| Autonomous plan executes after its inputs change | Every item binds invoice version, workflow state, decision ID, and retry flag; execution reloads and compares all bindings, marking changed items stale before settlement |
+| Agent plan treats a recommendation as payment authority | The planner reads only persisted workflow and deterministic decision state; only `PAY` plus an allowed execution state can produce an executable action, and a settlement-authorized role must start execution |
 | Mainnet enabled accidentally | Off by default, explicit flag, recorded approval reference, adapter cap, read-only preflight |
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; no secrets are committed |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |

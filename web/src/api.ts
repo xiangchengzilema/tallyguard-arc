@@ -1,5 +1,6 @@
 import type {
   Approval,
+  AgentRun,
   AuditEvent,
   AuditTrail,
   BootstrapData,
@@ -70,9 +71,10 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  const [operations, incidents, reliability, governance, vendorDirectory] = await Promise.all([
+  const [operations, incidents, agentRun, reliability, governance, vendorDirectory] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchSettlementIncidents(sessions.auditor),
+    fetchLatestAgentRun(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
     fetchGovernanceOverview(sessions.approver),
     fetchVendorDirectory(sessions.auditor),
@@ -83,6 +85,7 @@ export async function bootstrap(): Promise<BootstrapData> {
     sessions,
     operations,
     incidents,
+    agentRun,
     reliability,
     governance,
     vendorDirectory,
@@ -167,6 +170,33 @@ export async function fetchSettlementIncidents(auditorToken: string): Promise<Se
     { method: 'GET' },
     auditorToken,
   );
+}
+
+export async function fetchLatestAgentRun(auditorToken: string): Promise<AgentRun | null> {
+  const payload = await request<{ agent_run: AgentRun | null }>(
+    '/api/agent-runs/latest',
+    { method: 'GET' },
+    auditorToken,
+  );
+  return payload.agent_run;
+}
+
+export async function createAgentRun(operatorToken: string): Promise<AgentRun> {
+  const payload = await request<{ agent_run: AgentRun }>(
+    '/api/agent-runs',
+    { method: 'POST', body: JSON.stringify({ max_items: 25 }) },
+    operatorToken,
+  );
+  return payload.agent_run;
+}
+
+export async function executeAgentRun(runId: string, approverToken: string): Promise<AgentRun> {
+  const payload = await request<{ agent_run: AgentRun }>(
+    `/api/agent-runs/${encodeURIComponent(runId)}/execute`,
+    { method: 'POST', body: JSON.stringify({}) },
+    approverToken,
+  );
+  return payload.agent_run;
 }
 
 const encodeDocument = (value: Record<string, string>): ArrayBuffer => {

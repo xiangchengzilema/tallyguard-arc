@@ -72,6 +72,8 @@ Strongly encouraged:
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
 - Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations
 - Runtime safety boundary is visible in the judge console and sourced from the readiness API
+- A durable bounded-autonomy runner plans a mixed tenant AP queue, hashes both observed state and proposed actions, explains every payment or human handoff, and executes only revalidated `PAY` or explicitly retryable items under the approver role
+- Desktop and 390px mobile browser acceptance completed the autonomous plan-to-settlement path with no console errors or warnings
 
 Milestone 2 is complete. Milestones 3, 4, and 5 are in progress. SQLite persistence now retains
 tenant-scoped evidence, provenance, vendor wallet verification history, invoice state, optimistic versions, and transition history

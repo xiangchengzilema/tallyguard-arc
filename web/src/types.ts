@@ -327,6 +327,61 @@ export interface SettlementIncidentOverview {
   items: SettlementIncident[];
 }
 
+export type AgentAction =
+  | 'SETTLE'
+  | 'RETRY_SETTLEMENT'
+  | 'WAIT_SCHEDULE'
+  | 'REQUIRE_APPROVAL'
+  | 'REMEDIATE'
+  | 'INVESTIGATE'
+  | 'COLLECT_EVIDENCE';
+
+export interface AgentRunItem {
+  invoice_id: string;
+  invoice_number: string;
+  amount_usdc: string;
+  due_date: string;
+  invoice_status: string;
+  invoice_version: number;
+  decision_id: string | null;
+  decision_action: DecisionAction | null;
+  action: AgentAction;
+  reason_code: string;
+  explanation: string;
+  executable: boolean;
+}
+
+export interface AgentRunResult {
+  invoice_id: string;
+  action: AgentAction;
+  status: 'SETTLED' | 'SKIPPED' | 'STALE' | 'FAILED';
+  reason_code?: string;
+  reason_codes?: string[];
+  payment?: Payment;
+  error?: { code: string; message: string };
+}
+
+export interface AgentRun {
+  id: string;
+  organization_id: string;
+  status: 'PLANNED' | 'EXECUTED' | 'PARTIAL';
+  as_of: string;
+  state_hash: string;
+  plan_hash: string;
+  summary: {
+    scanned: number;
+    executable: number;
+    requires_attention: number;
+    actions: Partial<Record<AgentAction, number>>;
+  };
+  items: AgentRunItem[];
+  created_by_user_id: string;
+  created_at: string;
+  executed_by_user_id: string | null;
+  executed_at: string | null;
+  results: AgentRunResult[];
+}
+
 export interface PaymentBatchResult {
   invoice_id: string;
   status: 'SETTLED' | 'FAILED';
@@ -421,6 +476,7 @@ export interface BootstrapData {
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   operations: OperationsOverview;
   incidents: SettlementIncidentOverview;
+  agentRun: AgentRun | null;
   reliability: ReliabilityEvidence;
   governance: GovernanceOverview;
   vendorDirectory: VendorTrustRecord[];

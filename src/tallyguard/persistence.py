@@ -14,6 +14,7 @@ from threading import RLock
 
 from .audit import AuditEvent, GENESIS_HASH, audit_event_hash, canonical_json
 from .approvals import ApprovalError, ApprovalRequest, ApprovalStatus
+from .autonomy import AgentPlanItem, AgentRun, AgentRunStatus
 from .auth import Principal, Role, Session
 from .decisions import AgentRecommendation, DecisionRecord, DecisionReplayInputs
 from .evidence import (
@@ -441,6 +442,29 @@ CREATE TABLE IF NOT EXISTS settlement_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_settlement_attempts_tenant
     ON settlement_attempts (organization_id, sequence DESC);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+    organization_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    as_of TEXT NOT NULL,
+    state_hash TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    plan_json TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    executed_by_user_id TEXT,
+    executed_at TEXT,
+    results_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (organization_id, id),
+    FOREIGN KEY (organization_id, created_by_user_id)
+        REFERENCES users(organization_id, id),
+    FOREIGN KEY (organization_id, executed_by_user_id)
+        REFERENCES users(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_tenant_created
+    ON agent_runs (organization_id, created_at DESC, id DESC);
 """
 
 
@@ -1388,6 +1412,95 @@ class SqliteRepository:
             ),
             work_queue=open_items[:queue_limit],
         )
+
+    def create_agent_run(self, run: AgentRun) -> AgentRun:
+        plan_json = canonical_json([item.to_payload() for item in run.items])
+        with self._guard:
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO agent_runs
+                        (organization_id, id, status, as_of, state_hash, plan_hash,
+                         plan_json, created_by_user_id, created_at,
+                         executed_by_user_id, executed_at, results_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run.organization_id,
+                        run.id,
+                        run.status.value,
+                        run.as_of.isoformat(),
+                        run.state_hash,
+                        run.plan_hash,
+                        plan_json,
+                        run.created_by_user_id,
+                        run.created_at.isoformat(),
+                        run.executed_by_user_id,
+                        run.executed_at.isoformat() if run.executed_at else None,
+                        canonical_json(run.results),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceError("Agent run ID is already in use in this organization.") from exc
+        return run
+
+    def get_agent_run(self, *, organization_id: str, run_id: str) -> AgentRun:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM agent_runs WHERE organization_id = ? AND id = ?",
+                (organization_id, run_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("Agent run was not found in this organization.")
+        return self._agent_run(row)
+
+    def latest_agent_run(self, *, organization_id: str) -> AgentRun | None:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM agent_runs WHERE organization_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+        return self._agent_run(row) if row is not None else None
+
+    def complete_agent_run(
+        self,
+        *,
+        organization_id: str,
+        run_id: str,
+        status: AgentRunStatus,
+        executed_by_user_id: str,
+        results: tuple[dict[str, object], ...],
+        executed_at: datetime | None = None,
+    ) -> AgentRun:
+        timestamp = executed_at or datetime.now(timezone.utc)
+        if status == AgentRunStatus.PLANNED:
+            raise PersistenceError("A completed agent run cannot remain PLANNED.")
+        with self._guard:
+            cursor = self._connection.execute(
+                """
+                UPDATE agent_runs
+                SET status = ?, executed_by_user_id = ?, executed_at = ?, results_json = ?
+                WHERE organization_id = ? AND id = ? AND status = ?
+                """,
+                (
+                    status.value,
+                    executed_by_user_id,
+                    timestamp.isoformat(),
+                    canonical_json(results),
+                    organization_id,
+                    run_id,
+                    AgentRunStatus.PLANNED.value,
+                ),
+            )
+        if cursor.rowcount != 1:
+            existing = self.get_agent_run(organization_id=organization_id, run_id=run_id)
+            if existing.status != AgentRunStatus.PLANNED:
+                return existing
+            raise PersistenceError("Agent run could not be completed.")
+        return self.get_agent_run(organization_id=organization_id, run_id=run_id)
 
     def known_invoice_fingerprints(
         self,
@@ -2487,6 +2600,29 @@ class SqliteRepository:
             error_message=row["error_message"],
             correlation_id=row["correlation_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    @staticmethod
+    def _agent_run(row: sqlite3.Row) -> AgentRun:
+        plan_data = json.loads(row["plan_json"])
+        results_data = json.loads(row["results_json"])
+        return AgentRun(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            status=AgentRunStatus(row["status"]),
+            as_of=date.fromisoformat(row["as_of"]),
+            state_hash=row["state_hash"],
+            plan_hash=row["plan_hash"],
+            items=tuple(AgentPlanItem.from_payload(item) for item in plan_data),
+            created_by_user_id=row["created_by_user_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            executed_by_user_id=row["executed_by_user_id"],
+            executed_at=(
+                datetime.fromisoformat(row["executed_at"])
+                if row["executed_at"] is not None
+                else None
+            ),
+            results=tuple(results_data),
         )
 
     @staticmethod

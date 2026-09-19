@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from hashlib import sha256
@@ -26,6 +26,15 @@ from .agent import (
 )
 from .audit import canonical_json
 from .approvals import ApprovalError, ApprovalInbox, ApprovalRequest, apply_approved_escalation
+from .autonomy import (
+    AgentCandidate,
+    AgentRun,
+    AgentRunStatus,
+    canonical_payload,
+    plan_candidate,
+    plan_payload,
+    state_payload,
+)
 from .auth import (
     AuthenticationDenied,
     Authenticator,
@@ -350,6 +359,33 @@ def _settlement_attempt_json(attempt: SettlementAttempt) -> dict[str, Any]:
         "error_message": attempt.error_message,
         "correlation_id": attempt.correlation_id,
         "created_at": attempt.created_at.isoformat(),
+    }
+
+
+def _agent_run_json(run: AgentRun) -> dict[str, Any]:
+    executable = sum(item.executable for item in run.items)
+    counts: dict[str, int] = {}
+    for item in run.items:
+        counts[item.action.value] = counts.get(item.action.value, 0) + 1
+    return {
+        "id": run.id,
+        "organization_id": run.organization_id,
+        "status": run.status.value,
+        "as_of": run.as_of.isoformat(),
+        "state_hash": run.state_hash,
+        "plan_hash": run.plan_hash,
+        "summary": {
+            "scanned": len(run.items),
+            "executable": executable,
+            "requires_attention": len(run.items) - executable,
+            "actions": counts,
+        },
+        "items": [item.to_payload() for item in run.items],
+        "created_by_user_id": run.created_by_user_id,
+        "created_at": run.created_at.isoformat(),
+        "executed_by_user_id": run.executed_by_user_id,
+        "executed_at": run.executed_at.isoformat() if run.executed_at else None,
+        "results": list(run.results),
     }
 
 
@@ -2033,6 +2069,274 @@ def create_app(
             created_at=outcome.receipt.confirmed_at,
         )
         return outcome
+
+    def build_agent_candidates(*, organization_id: str, max_items: int) -> tuple[AgentCandidate, ...]:
+        terminal = {
+            InvoiceStatus.RECONCILED,
+            InvoiceStatus.REJECTED,
+            InvoiceStatus.CANCELLED,
+        }
+        invoices = repository.list_invoices(
+            organization_id=organization_id,
+            limit=100,
+        ).items
+        candidates: list[AgentCandidate] = []
+        for stored in sorted(invoices, key=lambda item: (item.invoice.due_date, item.invoice.id)):
+            if stored.status in terminal:
+                continue
+            decision_id: str | None = None
+            decision_action: str | None = None
+            scheduled_for: date | None = None
+            retryable = False
+            try:
+                decision = repository.latest_decision_for_invoice(
+                    organization_id=organization_id,
+                    invoice_id=stored.invoice.id,
+                )
+                decision_id = decision.id
+                decision_action = decision.final_action.value
+                scheduled_for = _scheduled_for(decision)
+                try:
+                    intent = repository.get_payment_intent_for_decision(
+                        organization_id=organization_id,
+                        decision_id=decision.id,
+                    )
+                    attempt = repository.latest_settlement_attempt(
+                        organization_id=organization_id,
+                        payment_intent_id=intent.id,
+                    )
+                    retryable = attempt.retryable if attempt is not None else False
+                except PersistenceError:
+                    pass
+            except PersistenceError:
+                pass
+            candidates.append(
+                AgentCandidate(
+                    invoice_id=stored.invoice.id,
+                    invoice_number=stored.invoice.invoice_number,
+                    amount_usdc=format(stored.invoice.amount, "f"),
+                    due_date=stored.invoice.due_date,
+                    status=stored.status,
+                    version=stored.version,
+                    decision_id=decision_id,
+                    decision_action=decision_action,
+                    scheduled_for=scheduled_for,
+                    settlement_retryable=retryable,
+                )
+            )
+            if len(candidates) == max_items:
+                break
+        return tuple(candidates)
+
+    @app.post("/api/agent-runs")
+    @require(Permission.DECISION_RUN)
+    def create_agent_run():
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValueError("Agent run body must be a JSON object.")
+        max_items = int(payload.get("max_items", 25))
+        if not 1 <= max_items <= 25:
+            raise ValueError("Agent runs may scan between 1 and 25 invoices.")
+        organization_id = g.principal.organization_id
+        as_of = current_date()
+        candidates = build_agent_candidates(
+            organization_id=organization_id,
+            max_items=max_items,
+        )
+        items = tuple(plan_candidate(candidate) for candidate in candidates)
+        state_hash = sha256(
+            canonical_payload(state_payload(candidates, as_of=as_of)).encode("utf-8")
+        ).hexdigest()
+        plan_hash = sha256(
+            canonical_payload(plan_payload(items, as_of=as_of)).encode("utf-8")
+        ).hexdigest()
+        timestamp = datetime.now(timezone.utc)
+        run = repository.create_agent_run(
+            AgentRun(
+                id=f"agent_run_{uuid4().hex}",
+                organization_id=organization_id,
+                status=AgentRunStatus.PLANNED,
+                as_of=as_of,
+                state_hash=state_hash,
+                plan_hash=plan_hash,
+                items=items,
+                created_by_user_id=g.principal.user_id,
+                created_at=timestamp,
+            )
+        )
+        repository.append(
+            aggregate_type="agent_run",
+            aggregate_id=run.id,
+            event_type="AGENT_RUN_PLANNED",
+            payload={
+                "organization_id": organization_id,
+                "run_id": run.id,
+                "state_hash": run.state_hash,
+                "plan_hash": run.plan_hash,
+                "scanned": len(run.items),
+                "executable": sum(item.executable for item in run.items),
+                "actor_user_id": g.principal.user_id,
+            },
+            created_at=timestamp,
+        )
+        return jsonify({"agent_run": _agent_run_json(run), "correlation_id": _correlation_id()}), 201
+
+    @app.get("/api/agent-runs/latest")
+    @require(Permission.AUDIT_READ)
+    def get_latest_agent_run():
+        run = repository.latest_agent_run(organization_id=g.principal.organization_id)
+        return jsonify(
+            {
+                "agent_run": _agent_run_json(run) if run is not None else None,
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/agent-runs/<run_id>")
+    @require(Permission.AUDIT_READ)
+    def get_agent_run(run_id: str):
+        run = repository.get_agent_run(
+            organization_id=g.principal.organization_id,
+            run_id=run_id,
+        )
+        return jsonify({"agent_run": _agent_run_json(run), "correlation_id": _correlation_id()})
+
+    @app.post("/api/agent-runs/<run_id>/execute")
+    @require(Permission.SETTLEMENT_EXECUTE)
+    def execute_agent_run(run_id: str):
+        organization_id = g.principal.organization_id
+        run = repository.get_agent_run(organization_id=organization_id, run_id=run_id)
+        if run.status != AgentRunStatus.PLANNED:
+            return jsonify(
+                {
+                    "agent_run": _agent_run_json(run),
+                    "reused_result": True,
+                    "correlation_id": _correlation_id(),
+                }
+            )
+
+        results: list[dict[str, Any]] = []
+        failures = 0
+        for index, item in enumerate(run.items):
+            if not item.executable:
+                results.append(
+                    {
+                        "invoice_id": item.invoice_id,
+                        "action": item.action.value,
+                        "status": "SKIPPED",
+                        "reason_code": item.reason_code,
+                    }
+                )
+                continue
+            try:
+                current = repository.get_invoice(
+                    organization_id=organization_id,
+                    invoice_id=item.invoice_id,
+                )
+                decision = repository.latest_decision_for_invoice(
+                    organization_id=organization_id,
+                    invoice_id=item.invoice_id,
+                )
+                stale_reasons: list[str] = []
+                if current.version != item.invoice_version:
+                    stale_reasons.append("INVOICE_VERSION_CHANGED")
+                if current.status != item.invoice_status:
+                    stale_reasons.append("WORKFLOW_STATUS_CHANGED")
+                if decision.id != item.decision_id or decision.final_action.value != "PAY":
+                    stale_reasons.append("POLICY_DECISION_CHANGED")
+                if item.action.value == "RETRY_SETTLEMENT":
+                    try:
+                        intent = repository.get_payment_intent_for_decision(
+                            organization_id=organization_id,
+                            decision_id=decision.id,
+                        )
+                        attempt = repository.latest_settlement_attempt(
+                            organization_id=organization_id,
+                            payment_intent_id=intent.id,
+                        )
+                        if attempt is None or not attempt.retryable:
+                            stale_reasons.append("RETRY_AUTHORIZATION_CHANGED")
+                    except PersistenceError:
+                        stale_reasons.append("PAYMENT_INTENT_MISSING")
+                if stale_reasons:
+                    failures += 1
+                    results.append(
+                        {
+                            "invoice_id": item.invoice_id,
+                            "action": item.action.value,
+                            "status": "STALE",
+                            "reason_codes": stale_reasons,
+                        }
+                    )
+                    continue
+
+                outcome = execute_settlement(
+                    invoice_id=item.invoice_id,
+                    payload={"decision_id": item.decision_id},
+                    actor_user_id=g.principal.user_id,
+                    correlation_id=f"{_correlation_id()}:{index + 1}",
+                )
+                results.append(
+                    {
+                        "invoice_id": item.invoice_id,
+                        "action": item.action.value,
+                        "status": "SETTLED",
+                        "payment": _payment_json(outcome, network_config),
+                    }
+                )
+            except (
+                ApprovalError,
+                KeyError,
+                PersistenceError,
+                PolicyRepositoryError,
+                SettlementDenied,
+                SettlementUnavailable,
+                ValueError,
+                VendorDirectoryError,
+                WorkflowError,
+            ) as exc:
+                failures += 1
+                results.append(
+                    {
+                        "invoice_id": item.invoice_id,
+                        "action": item.action.value,
+                        "status": "FAILED",
+                        "error": {
+                            "code": type(exc).__name__.upper(),
+                            "message": str(exc).strip("'"),
+                        },
+                    }
+                )
+
+        completed = repository.complete_agent_run(
+            organization_id=organization_id,
+            run_id=run.id,
+            status=AgentRunStatus.PARTIAL if failures else AgentRunStatus.EXECUTED,
+            executed_by_user_id=g.principal.user_id,
+            results=tuple(results),
+        )
+        repository.append(
+            aggregate_type="agent_run",
+            aggregate_id=run.id,
+            event_type="AGENT_RUN_EXECUTED",
+            payload={
+                "organization_id": organization_id,
+                "run_id": run.id,
+                "plan_hash": run.plan_hash,
+                "status": completed.status.value,
+                "settled": sum(result["status"] == "SETTLED" for result in results),
+                "stale": sum(result["status"] == "STALE" for result in results),
+                "failed": sum(result["status"] == "FAILED" for result in results),
+                "actor_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify(
+            {
+                "agent_run": _agent_run_json(completed),
+                "reused_result": False,
+                "correlation_id": _correlation_id(),
+            }
+        ), (207 if failures else 200)
 
     def release_scheduled_invoice(
         *,

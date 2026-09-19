@@ -199,6 +199,16 @@ treasury snapshot, duplicate set, and Arc route. Only a fresh `PAY` decision can
 existing idempotent settlement path; a new hold, rejection, escalation, or schedule produces no
 payment intent.
 
+`POST /api/agent-runs` requires decision-run permission and creates a durable, content-addressed
+plan for at most 25 tenant invoices. Planning cannot create an intent or call a provider. Auditor
+endpoints expose the latest or a named run only inside the authenticated tenant.
+
+`POST /api/agent-runs/{id}/execute` requires settlement-execute permission. It reloads every
+executable item and compares invoice version, workflow state, latest `PAY` decision, and retry
+eligibility with the frozen plan. Changed items become `STALE`; non-executable actions remain
+human handoffs. Valid items use the normal atomic, idempotent settlement orchestrator and retain
+independent results when another item fails.
+
 `GET /api/reliability/report` requires audit-read permission and returns the checked-in synthetic
 multi-tenant load artifact with its SHA-256 content address. The methodology in the response
 explicitly distinguishes reliability evidence from customer traction and states that no funds moved.

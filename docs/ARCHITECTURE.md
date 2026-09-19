@@ -149,6 +149,22 @@ set, and Arc route. Only a new `PAY` decision advances the invoice to `READY` an
 idempotent settlement orchestrator used by immediate payments. A newly active kill switch, depleted
 treasury, changed wallet, or other failed control therefore stops payment before an intent exists.
 
+## Bounded autonomous-run boundary
+
+The autonomous runner is a two-phase durable workflow, not a model-controlled wallet. A finance
+operator first asks it to scan the tenant queue. The deterministic planner maps every current
+invoice to one action: settle, retry, wait, request approval, remediate, investigate, or collect
+evidence. The exact invoice versions, workflow states, decision IDs, retry flags, evaluation date,
+and resulting action list are sealed under separate state and plan hashes.
+
+Only `SETTLE` and `RETRY_SETTLEMENT` are executable. A principal with settlement permission must
+authorize the run, and the API then reloads each invoice and rechecks its version, state, latest
+`PAY` decision, and (for recovery) latest durable retry classification. A changed assumption marks
+that item `STALE`; it cannot move funds. All other actions are non-financial handoffs. Executable
+items enter the same atomic treasury reservation, provider idempotency, independent Arc
+reconciliation, and receipt persistence path as a single approved payment. Runs, item results, and
+their hashes survive restarts and remain tenant scoped.
+
 ## Approval governance boundary
 
 The exception inbox is a tenant-scoped work queue, not a shortcut around policy. Only principals
