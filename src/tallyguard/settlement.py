@@ -42,6 +42,8 @@ class PaymentIntent:
         amount = self.amount_usdc if isinstance(self.amount_usdc, Decimal) else Decimal(str(self.amount_usdc))
         if amount <= 0:
             raise ValueError("Payment amount must be positive.")
+        if amount * Decimal(1_000_000) != (amount * Decimal(1_000_000)).to_integral_value():
+            raise ValueError("USDC payment amounts support at most six decimal places.")
         if not EVM_ADDRESS.fullmatch(self.recipient):
             raise ValueError("Recipient must be a 20-byte EVM address.")
         if not self.idempotency_key.strip():

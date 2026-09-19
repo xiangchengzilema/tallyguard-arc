@@ -11,3 +11,4 @@ data/*.sqlite3
 dist/
 build/
 *.egg-info/
+.tmp_sdk/

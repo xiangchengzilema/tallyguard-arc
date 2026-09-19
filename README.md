@@ -43,7 +43,10 @@ Every payment answers four questions:
 - Mainnet settlement locked behind an explicit runtime flag and approval reference
 - Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation
 - Deterministic Arc simulator for the public demo and load tests
-- 19 automated tests passing
+- Circle developer-wallet adapter with UUID v4 idempotency, lifecycle polling, and hard spend cap
+- Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
+- Authenticated multi-tenant Flask API, persistent workflows, seeded judge scenarios, and segregated approvals
+- Credential-free automated unit and fault-injection suite
 
 ## Canonical planning documents
 
@@ -51,4 +54,5 @@ Every payment answers four questions:
 - [Backend product specification](docs/BACKEND_PRODUCT_SPEC.md)
 - [Frontend reference map](docs/FRONTEND_REFERENCE_MAP.md)
 - [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
+- [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md)
 - [Hackathon context and submission checklist](docs/HACKATHON_CONTEXT.md)

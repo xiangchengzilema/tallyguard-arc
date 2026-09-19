@@ -18,6 +18,9 @@ dependencies = [
 tallyguard-api = "tallyguard.api:main"
 
 [project.optional-dependencies]
+circle = [
+  "circle-developer-controlled-wallets==9.6.0",
+]
 dev = [
   "pytest>=8.3,<10",
 ]

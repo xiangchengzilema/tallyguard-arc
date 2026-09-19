@@ -56,10 +56,15 @@ Strongly encouraged:
 - Authenticated Flask API now exposes health/readiness and tenant-scoped invoice workflows
 - A real local HTTP smoke test created and retrieved an invoice through the public API surface
 - Seven judge scenarios and the segregated large-invoice approval path are available through API
+- Circle's official developer-wallet SDK is isolated behind a live settlement adapter
+- Circle completion is independently reconciled against Arc RPC and the exact USDC transfer event
+- Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - Automated test suite passing
 
-Milestone 2 is complete. SQLite persistence now retains tenant-scoped evidence, provenance,
-invoice state, optimistic versions, and transition history across process restarts.
+Milestone 2 is complete. Milestones 3, 4, and 5 are in progress. SQLite persistence now retains
+tenant-scoped evidence, provenance, invoice state, optimistic versions, and transition history
+across process restarts. A real Arc Testnet transfer is the next external acceptance gate; no
+mainnet credential or balance is needed yet.
 
 ## Submission discipline
 

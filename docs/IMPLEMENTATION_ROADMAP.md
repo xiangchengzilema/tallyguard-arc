@@ -110,6 +110,19 @@ Exit criteria:
 
 ### Milestone 4 — Circle wallets and Arc settlement
 
+Status: in progress.
+
+Implemented foundation:
+
+- Lazy official Circle Developer-Controlled Wallets SDK bridge with environment-only credentials
+- Explicit UUID v4 idempotency enforcement before live provider calls
+- Circle lifecycle polling through `COMPLETE` with fail-closed terminal and timeout handling
+- Independent live-adapter hard transfer cap in addition to organization policy limits
+- Exact Circle reconciliation of network, recipient, amount, transaction ID, hash, and block
+- Independent Arc RPC verification of chain ID, receipt success, canonical USDC contract, recipient, and six-decimal amount
+- Circle/Arc block-height agreement check and fault-injection coverage
+- Public demo remains credential-free through the deterministic simulator
+
 - Circle wallet adapter behind the settlement protocol
 - Arc Testnet USDC transfer
 - Transaction state polling and deterministic-finality handling
@@ -127,6 +140,10 @@ Mainnet launch procedure:
 4. Set a hard per-payment and total demo budget.
 5. Require a recorded approval reference for every mainnet settlement during the hackathon.
 6. Run one or a few low-value payments and preserve Explorer evidence.
+
+Current acceptance status: implementation and credential-free fault tests pass. A real Arc
+Testnet transfer remains intentionally pending until a dedicated Circle test wallet and locally
+stored credentials are available.
 
 ### Milestone 5 — Multi-tenant finance API
 
