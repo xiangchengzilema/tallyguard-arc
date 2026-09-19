@@ -36,6 +36,7 @@ import {
   fetchGovernanceOverview,
   fetchInvoiceAudit,
   fetchOperationsOverview,
+  fetchSettlementIncidents,
   fetchVendorDirectory,
   requestApproval,
   reviewEvidenceFiles,
@@ -69,6 +70,7 @@ import type {
   RunResult,
   ScheduleRun,
   Scenario,
+  SettlementIncidentOverview,
   VendorTrustRecord,
 } from './types';
 
@@ -191,7 +193,9 @@ function OperationsQueue({
   onRunSchedules: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const payable = overview.work_queue.filter((invoice) => ['READY', 'SUBMISSION_FAILED'].includes(invoice.status) && invoice.decision_id);
+  const payable = overview.work_queue.filter((invoice) => (
+    invoice.status === 'READY' || (invoice.status === 'SUBMISSION_FAILED' && invoice.settlement_retryable)
+  ) && invoice.decision_id);
   const scheduled = overview.work_queue.filter((invoice) => invoice.status === 'SCHEDULED');
   useEffect(() => {
     const available = new Set(payable.map((invoice) => invoice.id));
@@ -259,12 +263,12 @@ function OperationsQueue({
           </div>
           {overview.work_queue.map((invoice) => (
             <div className="operations-table__row" role="row" key={invoice.id}>
-              <label className="batch-select" title={['READY', 'SUBMISSION_FAILED'].includes(invoice.status) ? 'Select for idempotent settlement or retry' : 'Only ready or retryable invoices can be settled'}>
+              <label className="batch-select" title={invoice.status === 'READY' || invoice.settlement_retryable ? 'Select for idempotent settlement or retry' : 'This incident is locked for manual investigation'}>
                 <input
                   aria-label={`Select ${invoice.invoice_number} for batch settlement`}
                   type="checkbox"
                   checked={selected.has(invoice.id)}
-                  disabled={busy || !['READY', 'SUBMISSION_FAILED'].includes(invoice.status) || !invoice.decision_id}
+                  disabled={busy || !(invoice.status === 'READY' || invoice.settlement_retryable) || !invoice.decision_id}
                   onChange={() => toggle(invoice.id)}
                 />
               </label>
@@ -274,6 +278,47 @@ function OperationsQueue({
               <strong role="cell">{formatMoney(invoice.amount)} {invoice.currency}</strong>
               <Tag type={invoice.status === 'READY' ? 'green' : invoice.status === 'SUBMISSION_FAILED' ? 'red' : invoice.status === 'HOLD' ? 'magenta' : invoice.status === 'ESCALATED' ? 'purple' : 'blue'}>{invoice.status}</Tag>
             </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SettlementIncidentCenter({ overview }: { overview: SettlementIncidentOverview }) {
+  const stateTag = (state: SettlementIncidentOverview['items'][number]['state']) => {
+    if (state === 'RESOLVED') return <Tag type="green">Resolved</Tag>;
+    if (state === 'OPEN_RETRYABLE') return <Tag type="warm-gray">Safe retry</Tag>;
+    return <Tag type="red">Locked</Tag>;
+  };
+  return (
+    <section className="incident-center" aria-label="Settlement incidents and recovery status">
+      <div className="incident-center__head">
+        <div><span className="eyebrow">Provider recovery ledger</span><h2>Settlement exception center</h2></div>
+        <div className="incident-summary" aria-label="Incident counts">
+          <span><strong>{overview.summary.open_retryable}</strong> retryable</span>
+          <span><strong>{overview.summary.locked}</strong> locked</span>
+          <span><strong>{overview.summary.resolved}</strong> recovered</span>
+        </div>
+      </div>
+      {overview.items.length === 0 ? (
+        <div className="incident-empty"><CheckmarkFilled size={20} /><span>No settlement incidents have been recorded.</span></div>
+      ) : (
+        <div className="incident-list">
+          {overview.items.slice(0, 6).map((incident) => (
+            <article className="incident-card" key={incident.payment_intent_id}>
+              <div className="incident-card__state">{stateTag(incident.state)}<span>{incident.attempt_count} attempt{incident.attempt_count === 1 ? '' : 's'}</span></div>
+              <div className="incident-card__identity">
+                <strong>{incident.invoice.invoice_number}</strong>
+                <span>{formatMoney(incident.invoice.amount)} {incident.invoice.currency} · {incident.provider}</span>
+              </div>
+              <p>{incident.failed_attempt.error_message ?? 'Provider evidence requires manual review.'}</p>
+              <div className="incident-card__proof">
+                <span>Intent fingerprint</span><code>{shorten(incident.idempotency_fingerprint, 12, 10)}</code>
+                <span>Correlation</span><code>{shorten(incident.failed_attempt.correlation_id, 12, 8)}</code>
+              </div>
+              <small>{incident.state === 'OPEN_RETRYABLE' ? 'The same durable payment intent may be retried; no new intent will be created.' : incident.state === 'RESOLVED' ? 'Recovered with one confirmed receipt and the original payment intent.' : 'Automatic retry is disabled. Investigate provider evidence before any manual action.'}</small>
+            </article>
           ))}
         </div>
       )}
@@ -1090,6 +1135,7 @@ function App() {
   const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
+  const [incidents, setIncidents] = useState<SettlementIncidentOverview | null>(null);
   const [governance, setGovernance] = useState<GovernanceOverview | null>(null);
   const [batch, setBatch] = useState<PaymentBatch | null>(null);
   const [scheduleRun, setScheduleRun] = useState<ScheduleRun | null>(null);
@@ -1106,6 +1152,7 @@ function App() {
         if (!cancelled) {
           setData(result);
           setOperations(result.operations);
+          setIncidents(result.incidents);
           setGovernance(result.governance);
           setVendorDirectory(result.vendorDirectory);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
@@ -1259,6 +1306,7 @@ function App() {
       } finally {
         setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
         setOperations(await fetchOperationsOverview(data.sessions.auditor));
+        setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
         setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       }
     });
@@ -1283,6 +1331,7 @@ function App() {
     void act(`Reconciling ${items.length} selected Arc payments`, async () => {
       setBatch(await settlePaymentBatch(items, data.sessions.approver));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
     });
   }, [act, data]);
@@ -1424,6 +1473,8 @@ function App() {
             onRunSchedules={handleRunSchedules}
           />
         ) : null}
+
+        {incidents ? <SettlementIncidentCenter overview={incidents} /> : null}
 
         {governance ? (
           <GovernancePanel

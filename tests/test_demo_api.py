@@ -3,7 +3,23 @@ from datetime import date
 import pytest
 
 from tallyguard.api import create_app
+from tallyguard.network import ArcNetwork
 from tallyguard.persistence import PersistenceError
+from tallyguard.settlement import PaymentIntent, ProviderSubmission
+
+
+class WrongRecipientAdapter:
+    name = "fault-injection"
+
+    def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+        return ProviderSubmission(
+            provider_reference="wrong-recipient",
+            transaction_hash="0x" + "b" * 64,
+            recipient="0x2222222222222222222222222222222222222222",
+            amount_usdc=intent.amount_usdc,
+            network=ArcNetwork.TESTNET,
+            block_number=55,
+        )
 
 
 def auth(client, role):
@@ -63,6 +79,17 @@ def test_provider_timeout_retries_same_durable_intent_without_double_payment(tmp
     original_intent = repository.get_payment_intent_for_decision(
         organization_id="demo-org", decision_id=decision_id
     )
+    failed_attempts = repository.settlement_attempts(
+        organization_id="demo-org", payment_intent_id=original_intent.id
+    )
+    assert len(failed_attempts) == 1
+    assert failed_attempts[0].outcome.value == "FAILED_RETRYABLE"
+    assert failed_attempts[0].retryable is True
+    open_incidents = client.get(
+        "/api/operations/settlement-incidents", headers=auditor_headers
+    ).get_json()
+    assert open_incidents["summary"]["open_retryable"] == 1
+    assert open_incidents["items"][0]["state"] == "OPEN_RETRYABLE"
 
     second = client.post(
         f"/api/invoices/{invoice_id}/settle",
@@ -80,6 +107,20 @@ def test_provider_timeout_retries_same_durable_intent_without_double_payment(tmp
     adapter = app.extensions["tallyguard_settlement_adapter"]
     assert adapter.failed_attempt_count == 1
     assert adapter.submission_count == 1
+    attempts = repository.settlement_attempts(
+        organization_id="demo-org", payment_intent_id=original_intent.id
+    )
+    assert [attempt.outcome.value for attempt in attempts] == [
+        "CONFIRMED",
+        "FAILED_RETRYABLE",
+    ]
+    recovered = client.get(
+        "/api/operations/settlement-incidents", headers=auditor_headers
+    ).get_json()
+    assert recovered["summary"]["resolved"] == 1
+    assert recovered["items"][0]["state"] == "RESOLVED"
+    assert recovered["items"][0]["attempt_count"] == 2
+    assert len(recovered["items"][0]["idempotency_fingerprint"]) == 64
 
     audit = client.get("/api/audit/events", headers=auditor_headers).get_json()
     event_types = [item["event_type"] for item in audit["items"]]
@@ -139,6 +180,48 @@ def test_provider_retry_rechecks_new_kill_switch_before_resubmission(tmp_path):
     adapter = app.extensions["tallyguard_settlement_adapter"]
     assert adapter.failed_attempt_count == 1
     assert adapter.submission_count == 0
+
+
+def test_reconciliation_mismatch_is_visible_and_locked_for_auditors(tmp_path):
+    app = create_app(
+        database_path=tmp_path / "provider-mismatch.sqlite3",
+        testing=True,
+        settlement_adapter=WrongRecipientAdapter(),
+    )
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    auditor_headers = auth(client, "auditor")
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run", headers=operator_headers
+    ).get_json()
+
+    denied = client.post(
+        f"/api/invoices/{run['invoice']['id']}/settle",
+        headers=approver_headers,
+        json={"decision_id": run["decision"]["id"]},
+    )
+    assert denied.status_code == 409
+    repository = app.extensions["tallyguard_repository"]
+    invoice = repository.get_invoice(
+        organization_id="demo-org", invoice_id=run["invoice"]["id"]
+    )
+    assert invoice.status.value == "RECONCILIATION_MISMATCH"
+
+    incidents = client.get(
+        "/api/operations/settlement-incidents", headers=auditor_headers
+    ).get_json()
+    assert incidents["summary"] == {
+        "total": 1,
+        "open_retryable": 0,
+        "locked": 1,
+        "resolved": 0,
+    }
+    incident = incidents["items"][0]
+    assert incident["state"] == "LOCKED"
+    assert incident["retryable"] is False
+    assert incident["failed_attempt"]["error_code"] == "RECONCILIATION_MISMATCH"
+    assert "idempotency_key" not in incident
 
 
 def test_missing_delivery_scenario_explains_remediation(tmp_path):

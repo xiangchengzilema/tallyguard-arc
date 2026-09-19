@@ -87,6 +87,11 @@ def test_payment_workflow_reaches_reconciled_and_retry_is_exactly_once(tmp_path)
     assert second.receipt == first.receipt
     assert first.intent.idempotency_key == second.intent.idempotency_key
     assert adapter.submission_count == 1
+    attempts = repo.settlement_attempts(
+        organization_id="org-1", payment_intent_id=first.intent.id
+    )
+    assert len(attempts) == 1
+    assert attempts[0].outcome.value == "CONFIRMED"
     assert [item.to_status for item in repo.transitions(
         organization_id="org-1", invoice_id="invoice-1"
     )] == [
@@ -139,7 +144,7 @@ class WrongRecipientAdapter:
         )
 
 
-def test_failed_submission_is_retryable_with_the_same_persisted_intent(tmp_path):
+def test_reconciliation_mismatch_is_locked_and_cannot_be_resubmitted(tmp_path):
     repo, stored = ready_repository(tmp_path / "payments.sqlite3")
     with pytest.raises(SettlementDenied, match="wrong recipient"):
         orchestrator(repo, WrongRecipientAdapter()).settle(
@@ -150,20 +155,25 @@ def test_failed_submission_is_retryable_with_the_same_persisted_intent(tmp_path)
             correlation_id="request-1",
         )
     failed = repo.get_invoice(organization_id="org-1", invoice_id="invoice-1")
-    assert failed.status == InvoiceStatus.SUBMISSION_FAILED
+    assert failed.status == InvoiceStatus.RECONCILIATION_MISMATCH
     original_intent = repo.get_payment_intent_for_decision(
         organization_id="org-1", decision_id="decision-1"
     )
-
-    success = orchestrator(repo, SimulatedArcAdapter()).settle(
-        invoice=failed,
-        decision_id="decision-1",
-        decision=authorized_decision(),
-        actor_user_id="approver-1",
-        correlation_id="request-2",
+    attempts = repo.settlement_attempts(
+        organization_id="org-1", payment_intent_id=original_intent.id
     )
-    assert success.invoice.status == InvoiceStatus.RECONCILED
-    assert success.intent.idempotency_key == original_intent.idempotency_key
+    assert len(attempts) == 1
+    assert attempts[0].outcome.value == "RECONCILIATION_MISMATCH"
+    assert attempts[0].retryable is False
+
+    with pytest.raises(WorkflowError, match="must be READY or retryable"):
+        orchestrator(repo, SimulatedArcAdapter()).settle(
+            invoice=failed,
+            decision_id="decision-1",
+            decision=authorized_decision(),
+            actor_user_id="approver-1",
+            correlation_id="request-2",
+        )
 
 
 def test_non_usdc_invoice_never_creates_payment_intent(tmp_path):

@@ -16,6 +16,7 @@ import type {
   ReplayVerification,
   RunResult,
   ScheduleRun,
+  SettlementIncidentOverview,
   VendorRecord,
   VendorTrustRecord,
   VendorWalletEvent,
@@ -69,8 +70,9 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  const [operations, reliability, governance, vendorDirectory] = await Promise.all([
+  const [operations, incidents, reliability, governance, vendorDirectory] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
+    fetchSettlementIncidents(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
     fetchGovernanceOverview(sessions.approver),
     fetchVendorDirectory(sessions.auditor),
@@ -80,6 +82,7 @@ export async function bootstrap(): Promise<BootstrapData> {
     readiness,
     sessions,
     operations,
+    incidents,
     reliability,
     governance,
     vendorDirectory,
@@ -156,6 +159,14 @@ export async function fetchOperationsOverview(auditorToken: string): Promise<Ope
     auditorToken,
   );
   return payload.overview;
+}
+
+export async function fetchSettlementIncidents(auditorToken: string): Promise<SettlementIncidentOverview> {
+  return request<SettlementIncidentOverview>(
+    '/api/operations/settlement-incidents?limit=100',
+    { method: 'GET' },
+    auditorToken,
+  );
 }
 
 const encodeDocument = (value: Record<string, string>): ArrayBuffer => {

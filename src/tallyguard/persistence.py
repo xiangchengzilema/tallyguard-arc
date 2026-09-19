@@ -33,7 +33,13 @@ from .policies import (
     policy_content_hash,
 )
 from .policy import Decision, DecisionAction, Policy, RuleDisposition, RuleResult
-from .settlement import PaymentIntent, SettlementReceipt, SettlementStatus
+from .settlement import (
+    PaymentIntent,
+    SettlementAttempt,
+    SettlementAttemptOutcome,
+    SettlementReceipt,
+    SettlementStatus,
+)
 from .workflow import InvoiceStatus, WorkflowError, require_transition
 from .vendors import (
     VendorDirectoryError,
@@ -414,6 +420,27 @@ CREATE TABLE IF NOT EXISTS settlement_receipts (
     FOREIGN KEY (organization_id, payment_intent_id)
         REFERENCES payment_intents(organization_id, id)
 );
+
+CREATE TABLE IF NOT EXISTS settlement_attempts (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id TEXT NOT NULL,
+    payment_intent_id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    retryable INTEGER NOT NULL CHECK (retryable IN (0, 1)),
+    error_code TEXT,
+    error_message TEXT,
+    correlation_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id, payment_intent_id)
+        REFERENCES payment_intents(organization_id, id),
+    FOREIGN KEY (organization_id, invoice_id)
+        REFERENCES invoices(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_settlement_attempts_tenant
+    ON settlement_attempts (organization_id, sequence DESC);
 """
 
 
@@ -2091,6 +2118,84 @@ class SqliteRepository:
                     raise PersistenceError("Payment intent is already bound to another settlement receipt.") from exc
                 return existing, False
 
+    def record_settlement_attempt(
+        self,
+        attempt: SettlementAttempt,
+    ) -> SettlementAttempt:
+        if not attempt.correlation_id.strip():
+            raise PersistenceError("Settlement attempt requires a correlation ID.")
+        message = attempt.error_message
+        if message is not None:
+            message = " ".join(message.split())[:500]
+        with self._guard:
+            cursor = self._connection.execute(
+                """
+                INSERT INTO settlement_attempts
+                    (organization_id, payment_intent_id, invoice_id, provider,
+                     outcome, retryable, error_code, error_message,
+                     correlation_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attempt.organization_id,
+                    attempt.payment_intent_id,
+                    attempt.invoice_id,
+                    attempt.provider,
+                    attempt.outcome.value,
+                    1 if attempt.retryable else 0,
+                    attempt.error_code,
+                    message,
+                    attempt.correlation_id,
+                    attempt.created_at.isoformat(),
+                ),
+            )
+        return SettlementAttempt(
+            sequence=int(cursor.lastrowid),
+            organization_id=attempt.organization_id,
+            payment_intent_id=attempt.payment_intent_id,
+            invoice_id=attempt.invoice_id,
+            provider=attempt.provider,
+            outcome=attempt.outcome,
+            retryable=attempt.retryable,
+            error_code=attempt.error_code,
+            error_message=message,
+            correlation_id=attempt.correlation_id,
+            created_at=attempt.created_at,
+        )
+
+    def settlement_attempts(
+        self,
+        *,
+        organization_id: str,
+        payment_intent_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[SettlementAttempt, ...]:
+        if limit < 1 or limit > 500:
+            raise PersistenceError("Settlement attempt limit must be between 1 and 500.")
+        query = "SELECT * FROM settlement_attempts WHERE organization_id = ?"
+        values: list[object] = [organization_id]
+        if payment_intent_id is not None:
+            query += " AND payment_intent_id = ?"
+            values.append(payment_intent_id)
+        query += " ORDER BY sequence DESC LIMIT ?"
+        values.append(limit)
+        with self._guard:
+            rows = self._connection.execute(query, values).fetchall()
+        return tuple(self._settlement_attempt(row) for row in rows)
+
+    def latest_settlement_attempt(
+        self,
+        *,
+        organization_id: str,
+        payment_intent_id: str,
+    ) -> SettlementAttempt | None:
+        attempts = self.settlement_attempts(
+            organization_id=organization_id,
+            payment_intent_id=payment_intent_id,
+            limit=1,
+        )
+        return attempts[0] if attempts else None
+
     def get_settlement_receipt(
         self,
         *,
@@ -2366,6 +2471,22 @@ class SqliteRepository:
             network=ArcNetwork(row["network"]),
             status=SettlementStatus(row["status"]),
             confirmed_at=datetime.fromisoformat(row["confirmed_at"]),
+        )
+
+    @staticmethod
+    def _settlement_attempt(row: sqlite3.Row) -> SettlementAttempt:
+        return SettlementAttempt(
+            sequence=int(row["sequence"]),
+            organization_id=row["organization_id"],
+            payment_intent_id=row["payment_intent_id"],
+            invoice_id=row["invoice_id"],
+            provider=row["provider"],
+            outcome=SettlementAttemptOutcome(row["outcome"]),
+            retryable=bool(row["retryable"]),
+            error_code=row["error_code"],
+            error_message=row["error_message"],
+            correlation_id=row["correlation_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
         )
 
     @staticmethod

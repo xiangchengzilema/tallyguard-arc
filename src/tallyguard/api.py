@@ -62,6 +62,7 @@ from .policies import PolicyRepositoryError, StoredPolicy
 from .policy import Policy
 from .settlement import (
     SettlementAdapter,
+    SettlementAttempt,
     SettlementDenied,
     SettlementService,
     SettlementUnavailable,
@@ -333,6 +334,22 @@ def _payment_json(outcome: PaymentOutcome, config: ArcNetworkConfig) -> dict[str
         },
         "invoice": _invoice_json(outcome.invoice),
         "reused_receipt": outcome.reused_receipt,
+    }
+
+
+def _settlement_attempt_json(attempt: SettlementAttempt) -> dict[str, Any]:
+    return {
+        "sequence": attempt.sequence,
+        "organization_id": attempt.organization_id,
+        "payment_intent_id": attempt.payment_intent_id,
+        "invoice_id": attempt.invoice_id,
+        "provider": attempt.provider,
+        "outcome": attempt.outcome.value,
+        "retryable": attempt.retryable,
+        "error_code": attempt.error_code,
+        "error_message": attempt.error_message,
+        "correlation_id": attempt.correlation_id,
+        "created_at": attempt.created_at.isoformat(),
     }
 
 
@@ -1676,9 +1693,28 @@ def create_app(
                         ),
                     }
                 )
+                try:
+                    intent = repository.get_payment_intent_for_decision(
+                        organization_id=g.principal.organization_id,
+                        decision_id=decision.id,
+                    )
+                    latest_attempt = repository.latest_settlement_attempt(
+                        organization_id=g.principal.organization_id,
+                        payment_intent_id=intent.id,
+                    )
+                    item_json["settlement_retryable"] = (
+                        latest_attempt.retryable if latest_attempt is not None else False
+                    )
+                except PersistenceError:
+                    item_json["settlement_retryable"] = False
             except PersistenceError:
                 item_json.update(
-                    {"decision_id": None, "decision_action": None, "scheduled_for": None}
+                    {
+                        "decision_id": None,
+                        "decision_action": None,
+                        "scheduled_for": None,
+                        "settlement_retryable": False,
+                    }
                 )
             work_queue.append(item_json)
 
@@ -1707,6 +1743,75 @@ def create_app(
                     ),
                     "work_queue": work_queue,
                 },
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/operations/settlement-incidents")
+    @require(Permission.AUDIT_READ)
+    def get_settlement_incidents():
+        organization_id = g.principal.organization_id
+        attempts = repository.settlement_attempts(
+            organization_id=organization_id,
+            limit=int(request.args.get("limit", "100")),
+        )
+        grouped: dict[str, list[SettlementAttempt]] = {}
+        for attempt in attempts:
+            grouped.setdefault(attempt.payment_intent_id, []).append(attempt)
+
+        incidents: list[dict[str, Any]] = []
+        for payment_intent_id, history in grouped.items():
+            failed = next(
+                (attempt for attempt in history if attempt.error_code is not None),
+                None,
+            )
+            if failed is None:
+                continue
+            latest = history[0]
+            invoice = repository.get_invoice(
+                organization_id=organization_id,
+                invoice_id=failed.invoice_id,
+            )
+            intent = repository.get_payment_intent(
+                organization_id=organization_id,
+                payment_intent_id=payment_intent_id,
+            )
+            resolved = latest.outcome.value == "CONFIRMED"
+            incidents.append(
+                {
+                    "payment_intent_id": payment_intent_id,
+                    "idempotency_fingerprint": sha256(
+                        intent.idempotency_key.encode("utf-8")
+                    ).hexdigest(),
+                    "invoice": _invoice_json(invoice),
+                    "provider": failed.provider,
+                    "state": (
+                        "RESOLVED"
+                        if resolved
+                        else "OPEN_RETRYABLE"
+                        if latest.retryable
+                        else "LOCKED"
+                    ),
+                    "retryable": latest.retryable and not resolved,
+                    "latest_attempt": _settlement_attempt_json(latest),
+                    "failed_attempt": _settlement_attempt_json(failed),
+                    "attempt_count": len(history),
+                }
+            )
+        incidents.sort(
+            key=lambda item: item["failed_attempt"]["created_at"], reverse=True
+        )
+        return jsonify(
+            {
+                "summary": {
+                    "total": len(incidents),
+                    "open_retryable": sum(
+                        item["state"] == "OPEN_RETRYABLE" for item in incidents
+                    ),
+                    "locked": sum(item["state"] == "LOCKED" for item in incidents),
+                    "resolved": sum(item["state"] == "RESOLVED" for item in incidents),
+                },
+                "items": incidents,
                 "correlation_id": _correlation_id(),
             }
         )

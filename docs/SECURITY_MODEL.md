@@ -23,6 +23,7 @@
 | Retry causes double payment | Durable intent UUID v4, process lock, database uniqueness, provider idempotency, stored-receipt replay |
 | Provider times out mid-workflow | Invoice moves to `SUBMISSION_FAILED`; the same durable intent/key is retried only after current policy and treasury controls pass again; failure and recovery are audited |
 | Provider reports the wrong payment | Exact network, recipient, amount, hash, block, contract, and Transfer-log reconciliation |
+| Ambiguous provider failure is retried automatically | Durable attempt classification permits automatic retry only for explicit transient unavailability; mismatches and unknown errors are locked |
 | Mainnet enabled accidentally | Off by default, explicit flag, recorded approval reference, adapter cap, read-only preflight |
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; no secrets are committed |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
@@ -44,8 +45,9 @@ output.
 4. Use `tallyguard-acceptance` with a controlled recipient and no more than 0.10 test USDC.
 5. Preserve the resulting JSON report, Circle transaction ID, and Arc Explorer URL.
 6. Prove a repeated settlement request returns the same receipt without another provider call.
-7. Keep mainnet disabled until the testnet gate passes.
-8. For any mainnet proof, use a new low-balance wallet, a sub-dollar amount, an explicit approval,
+7. Prove a transient failure retains one intent and becomes resolved after one confirmed retry, while wrong-recipient evidence becomes a terminal reconciliation mismatch.
+8. Keep mainnet disabled until the testnet gate passes.
+9. For any mainnet proof, use a new low-balance wallet, a sub-dollar amount, an explicit approval,
    and immediately disable the runtime flag afterward.
 
 ## Honest limitations

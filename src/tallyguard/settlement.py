@@ -30,6 +30,32 @@ class SettlementUnavailable(SettlementDenied):
     """Raised when a transient provider failure can be retried idempotently."""
 
 
+class SettlementReconciliationMismatch(SettlementDenied):
+    """Raised when provider evidence conflicts with the sealed payment intent."""
+
+
+class SettlementAttemptOutcome(StrEnum):
+    FAILED_RETRYABLE = "FAILED_RETRYABLE"
+    FAILED_LOCKED = "FAILED_LOCKED"
+    RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
+    CONFIRMED = "CONFIRMED"
+
+
+@dataclass(frozen=True, slots=True)
+class SettlementAttempt:
+    sequence: int | None
+    organization_id: str
+    payment_intent_id: str
+    invoice_id: str
+    provider: str
+    outcome: SettlementAttemptOutcome
+    retryable: bool
+    error_code: str | None
+    error_message: str | None
+    correlation_id: str
+    created_at: datetime
+
+
 @dataclass(frozen=True, slots=True)
 class PaymentIntent:
     id: str
@@ -170,15 +196,15 @@ class SettlementService:
     @staticmethod
     def _reconcile(intent: PaymentIntent, submission: ProviderSubmission) -> None:
         if submission.network != intent.network:
-            raise SettlementDenied("Provider confirmed settlement on the wrong network.")
+            raise SettlementReconciliationMismatch("Provider confirmed settlement on the wrong network.")
         if submission.recipient.lower() != intent.recipient:
-            raise SettlementDenied("Provider confirmed settlement to the wrong recipient.")
+            raise SettlementReconciliationMismatch("Provider confirmed settlement to the wrong recipient.")
         if Decimal(str(submission.amount_usdc)) != intent.amount_usdc:
-            raise SettlementDenied("Provider confirmed the wrong settlement amount.")
+            raise SettlementReconciliationMismatch("Provider confirmed the wrong settlement amount.")
         if not re.fullmatch(r"0x[a-fA-F0-9]{64}", submission.transaction_hash):
-            raise SettlementDenied("Provider returned an invalid transaction hash.")
+            raise SettlementReconciliationMismatch("Provider returned an invalid transaction hash.")
         if submission.block_number < 1:
-            raise SettlementDenied("Provider returned an invalid block number.")
+            raise SettlementReconciliationMismatch("Provider returned an invalid block number.")
 
     @staticmethod
     def _ensure_same_intent(receipt: SettlementReceipt, intent: PaymentIntent) -> None:

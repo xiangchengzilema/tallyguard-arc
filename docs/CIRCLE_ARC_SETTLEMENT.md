@@ -24,11 +24,12 @@ completed transaction against the mapped value. `ARC-TESTNET` is identical in bo
 4. Circle creates the transfer using the official SDK. The SDK generates a fresh entity-secret ciphertext for the request.
 5. TallyGuard polls Circle through `INITIATED`, `CLEARED`, `QUEUED`, `SENT`, and `CONFIRMED` until `COMPLETE`.
 6. `STUCK`, `FAILED`, `DENIED`, and `CANCELLED` fail closed. Polling exhaustion returns a retryable service-unavailable result, leaves the invoice in `SUBMISSION_FAILED`, and retains the original intent and provider idempotency key.
-7. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
-8. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
-9. The transaction target must be Arc's canonical USDC ERC-20 interface.
-10. The receipt must contain the exact USDC `Transfer` event for the authorized recipient and six-decimal atomic amount.
-11. If Circle supplies a block height, it must equal the Arc RPC receipt block.
+7. Every provider call creates a tenant-scoped durable attempt record. Transient unavailability is the only automatic-retry class; ambiguous errors are locked.
+8. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
+9. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
+10. The transaction target must be Arc's canonical USDC ERC-20 interface.
+11. The receipt must contain the exact USDC `Transfer` event for the authorized recipient and six-decimal atomic amount.
+12. If Circle supplies a block height, it must equal the Arc RPC receipt block. Any mismatch is terminal and moves the invoice to `RECONCILIATION_MISMATCH`.
 
 Only after all checks pass does TallyGuard create a confirmed settlement receipt.
 
@@ -41,6 +42,9 @@ Before retrying a failed submission, the server rechecks the currently active as
 autonomy, kill-switch, treasury-freshness, daily-limit, and reserve controls in the same atomic
 reservation transaction. A historical `PAY` decision therefore cannot bypass a newly engaged
 emergency stop or tighter treasury limit.
+
+The operations API exposes only a SHA-256 fingerprint of the provider idempotency key. The original
+key remains in the server-side payment intent and is never returned by the exception-center endpoint.
 
 ## Local configuration
 

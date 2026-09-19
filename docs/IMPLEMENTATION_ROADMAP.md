@@ -271,6 +271,8 @@ Implemented foundation:
 - Current full-run throughput reached 15.347 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.587 seconds under SQLite contention
 - The baseline discovered and verified a fix for a stale-version settlement race
 - A provider-timeout recovery drill proves a transient 503 leaves the invoice retryable, preserves the original durable intent and idempotency key, rechecks current controls, and produces exactly one accepted provider submission after recovery
+- A tenant-scoped settlement-attempt ledger classifies every provider call; the exception center exposes safe retries, locked mismatches, and resolved incidents while returning only a hash fingerprint of the idempotency key
+- Wrong-network, wrong-recipient, wrong-amount, malformed-hash, and invalid-block responses now enter terminal `RECONCILIATION_MISMATCH` instead of the retry queue
 - The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, atomic treasury contention, throughput, and P95 figures
 
 Two distinct test classes will be reported honestly:
@@ -286,7 +288,7 @@ Synthetic load suite:
 - Duplicate submission storms against the same idempotency key
 - Independent payment attempts racing for the same daily-limit and reserve headroom
 - Cross-tenant identifier attacks
-- Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection (timeout/retry, malformed receipt, and wrong-recipient paths complete; slow-provider load injection remains optional)
+- Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection (timeout/retry, durable attempt history, malformed receipt, and wrong-recipient lockout complete; slow-provider load injection remains optional)
 - Database contention and worker restart recovery
 - Measured throughput, p50/p95/p99 latency, error rate, and duplicate-payment count
 

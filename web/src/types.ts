@@ -288,6 +288,43 @@ export interface OperationsInvoice extends Invoice {
   decision_id: string | null;
   decision_action: DecisionAction | null;
   scheduled_for: string | null;
+  settlement_retryable: boolean;
+}
+
+export interface SettlementAttempt {
+  sequence: number;
+  organization_id: string;
+  payment_intent_id: string;
+  invoice_id: string;
+  provider: string;
+  outcome: 'FAILED_RETRYABLE' | 'FAILED_LOCKED' | 'RECONCILIATION_MISMATCH' | 'CONFIRMED';
+  retryable: boolean;
+  error_code: string | null;
+  error_message: string | null;
+  correlation_id: string;
+  created_at: string;
+}
+
+export interface SettlementIncident {
+  payment_intent_id: string;
+  idempotency_fingerprint: string;
+  invoice: Invoice;
+  provider: string;
+  state: 'OPEN_RETRYABLE' | 'LOCKED' | 'RESOLVED';
+  retryable: boolean;
+  latest_attempt: SettlementAttempt;
+  failed_attempt: SettlementAttempt;
+  attempt_count: number;
+}
+
+export interface SettlementIncidentOverview {
+  summary: {
+    total: number;
+    open_retryable: number;
+    locked: number;
+    resolved: number;
+  };
+  items: SettlementIncident[];
 }
 
 export interface PaymentBatchResult {
@@ -383,6 +420,7 @@ export interface BootstrapData {
   scenarios: Scenario[];
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   operations: OperationsOverview;
+  incidents: SettlementIncidentOverview;
   reliability: ReliabilityEvidence;
   governance: GovernanceOverview;
   vendorDirectory: VendorTrustRecord[];
