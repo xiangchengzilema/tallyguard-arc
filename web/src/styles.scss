@@ -102,6 +102,31 @@ body {
 
 .error-notice { max-width: 1680px; margin: 0 auto 1rem; }
 
+.runtime-boundary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(280px, 1.15fr) 1fr 1fr auto;
+  align-items: center;
+  gap: 0;
+  max-width: 1680px;
+  margin: 0 auto 1rem;
+  border: 1px solid #c8d6d2;
+  border-left: 4px solid var(--tg-accent);
+  background: #edf7f5;
+}
+
+.runtime-boundary--live { border-color: #8cc7a0; border-left-color: #198038; background: #edf8f0; }
+.runtime-boundary__lead, .runtime-boundary__fact { min-height: 88px; padding: 1rem 1.25rem; }
+.runtime-boundary__lead { display: flex; align-items: center; gap: .75rem; }
+.runtime-boundary__lead > div, .runtime-boundary__fact { display: grid; align-content: center; gap: .25rem; }
+.runtime-boundary__marker { display: grid; place-items: center; width: 36px; height: 36px; background: var(--tg-accent-dark); color: #fff; }
+.runtime-boundary--live .runtime-boundary__marker { background: #198038; }
+.runtime-boundary__lead strong, .runtime-boundary__fact strong { font-size: .8125rem; font-weight: 600; }
+.runtime-boundary__fact { border-left: 1px solid #c8d6d2; }
+.runtime-boundary__fact span { color: var(--tg-muted); font-size: .625rem; letter-spacing: .06em; text-transform: uppercase; }
+.runtime-boundary__fact small { color: var(--tg-muted); font-size: .6875rem; }
+.runtime-boundary > .cds--tag { justify-self: end; margin: 0 1.25rem; }
+
 .metrics-band {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -351,6 +376,10 @@ body {
   .decision-grid { grid-template-columns: 1fr; }
   .evidence-panel { border-right: 0; border-bottom: 1px solid var(--tg-line); }
   .receipt-grid { grid-template-columns: repeat(2, 1fr); }
+  .runtime-boundary { grid-template-columns: 1fr 1fr; }
+  .runtime-boundary__lead { grid-column: 1 / -1; border-bottom: 1px solid #c8d6d2; }
+  .runtime-boundary__fact:first-of-type { border-left: 0; }
+  .runtime-boundary > .cds--tag { position: absolute; top: 1rem; right: 1.25rem; margin: 0; }
 }
 
 @media (max-width: 800px) {
@@ -360,6 +389,10 @@ body {
   .context-bar h1 { font-size: 2.5rem; }
   .system-state { width: 100%; }
   .metrics-band { grid-template-columns: repeat(2, 1fr); }
+  .runtime-boundary { grid-template-columns: 1fr; }
+  .runtime-boundary__lead { grid-column: auto; }
+  .runtime-boundary__fact { min-height: 74px; border-top: 1px solid #c8d6d2; border-left: 0; }
+  .runtime-boundary > .cds--tag { position: static; justify-self: start; margin: 1rem 1.25rem; }
   .metric:nth-child(2) { border-right: 0; }
   .metric:nth-child(-n+2) { border-bottom: 1px solid var(--tg-line); }
   .workspace-grid { grid-template-columns: 1fr; }

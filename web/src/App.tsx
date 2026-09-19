@@ -106,6 +106,32 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   );
 }
 
+function RuntimeBoundary({ readiness }: { readiness: BootstrapData['readiness'] }) {
+  const simulated = readiness.settlement_mode === 'simulation';
+  return (
+    <section className={simulated ? 'runtime-boundary' : 'runtime-boundary runtime-boundary--live'} aria-label="Runtime safety boundary">
+      <div className="runtime-boundary__lead">
+        <span className="runtime-boundary__marker" aria-hidden="true"><Locked size={18} /></span>
+        <div>
+          <span className="eyebrow">Runtime boundary</span>
+          <strong>{simulated ? 'Judge simulation — no funds move' : 'Circle wallet execution enabled'}</strong>
+        </div>
+      </div>
+      <div className="runtime-boundary__fact">
+        <span>Decision authority</span>
+        <strong>Deterministic policy engine</strong>
+        <small>AI recommendation cannot authorize payment</small>
+      </div>
+      <div className="runtime-boundary__fact">
+        <span>Settlement proof</span>
+        <strong>{simulated ? 'Deterministic receipt' : 'Circle + independent Arc RPC'}</strong>
+        <small>{readiness.network} · mainnet {readiness.mainnet_enabled ? 'enabled' : 'locked'}</small>
+      </div>
+      <Tag type={simulated ? 'cool-gray' : 'green'}>{simulated ? 'SIMULATION' : 'LIVE USDC'}</Tag>
+    </section>
+  );
+}
+
 function ScenarioRail({
   scenarios,
   activeKey,
@@ -723,6 +749,8 @@ function App() {
             onCloseButtonClick={() => setError(null)}
           />
         ) : null}
+
+        {data ? <RuntimeBoundary readiness={data.readiness} /> : null}
 
         <div className="metrics-band" aria-label="Session metrics">
           <Metric label="Evaluations" value={String(history.length).padStart(2, '0')} detail="This judge session" />

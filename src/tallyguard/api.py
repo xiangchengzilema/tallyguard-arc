@@ -530,12 +530,18 @@ def create_app(
     @app.get("/api/readiness")
     def readiness():
         repository.list_invoices(organization_id=DEMO_ORGANIZATION_ID, limit=1)
+        simulated = settlement_adapter.name == "arc-simulator"
         return jsonify(
             {
                 "status": "ready",
                 "database": "ok",
                 "network": network_config.name.value,
                 "settlement_adapter": settlement_adapter.name,
+                "settlement_mode": "simulation" if simulated else "circle-live",
+                "funds_movement": "disabled" if simulated else "enabled",
+                "arc_rpc_verification": "simulated" if simulated else "independent-live",
+                "mainnet_enabled": network_config.is_mainnet and allow_mainnet,
+                "demo_sessions_enabled": demo_sessions_enabled,
                 "evidence_analyst": getattr(
                     evidence_analyst, "name", evidence_analyst.__class__.__name__
                 ),

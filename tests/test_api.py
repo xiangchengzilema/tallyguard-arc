@@ -39,6 +39,11 @@ def test_health_and_readiness_are_public(tmp_path):
     readiness = client.get("/api/readiness").get_json()
     assert readiness["database"] == "ok"
     assert readiness["evidence_analyst"] == "deterministic-evidence-analyst"
+    assert readiness["settlement_mode"] == "simulation"
+    assert readiness["funds_movement"] == "disabled"
+    assert readiness["arc_rpc_verification"] == "simulated"
+    assert readiness["mainnet_enabled"] is False
+    assert readiness["demo_sessions_enabled"] is True
 
 
 def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, monkeypatch):

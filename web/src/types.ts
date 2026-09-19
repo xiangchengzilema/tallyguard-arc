@@ -145,6 +145,11 @@ export interface BootstrapData {
     database: string;
     network: string;
     settlement_adapter: string;
+    settlement_mode: 'simulation' | 'circle-live';
+    funds_movement: 'disabled' | 'enabled';
+    arc_rpc_verification: 'simulated' | 'independent-live';
+    mainnet_enabled: boolean;
+    demo_sessions_enabled: boolean;
     evidence_analyst: string;
   };
 }
