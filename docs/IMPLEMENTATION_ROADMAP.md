@@ -53,7 +53,7 @@ Exit criteria:
 
 ### Milestone 2 — Evidence intake and three-way match
 
-Status: in progress.
+Status: complete (2026-09-20).
 
 Implemented foundation:
 
@@ -93,6 +93,7 @@ Implemented foundation:
 - Immutable policy versions, content hashes, active-version lookup, and field-level diffs
 - Segregated exception inbox: requester cannot self-approve and only pure escalations are overridable
 - Approved decisions and payment intents must carry the exact same approval reference
+- Durable invoice state machine with optimistic concurrency and immutable transition history
 
 - Agent-generated evidence summary
 - Recommended action with structured reason codes

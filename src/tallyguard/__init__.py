@@ -26,7 +26,9 @@ from .models import (
 from .normalization import EvidenceNormalizer, NormalizedEvidence
 from .policies import PolicyFieldChange, PolicyRepository, StoredPolicy, policy_content_hash
 from .policy import Decision, DecisionAction, Policy, PolicyEngine
+from .persistence import InvoiceTransition, PersistenceError, SqliteRepository, StoredInvoice
 from .vendors import VendorDirectory, VendorWalletEvent, WalletVerificationMethod
+from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 __all__ = [
     "AuditChain",
@@ -53,23 +55,30 @@ __all__ = [
     "ExtractionMethod",
     "Invoice",
     "InvoiceIdentity",
+    "InvoiceStatus",
+    "InvoiceTransition",
     "NormalizedEvidence",
     "Policy",
     "PolicyFieldChange",
     "PolicyEngine",
     "PolicyRepository",
+    "PersistenceError",
     "Permission",
     "Principal",
     "PurchaseOrder",
     "Role",
     "SourceLocation",
+    "SqliteRepository",
+    "StoredInvoice",
     "StoredPolicy",
     "TreasurySnapshot",
     "Vendor",
     "VendorDirectory",
     "VendorWalletEvent",
     "WalletVerificationMethod",
+    "WorkflowError",
     "authorize",
     "apply_approved_escalation",
     "policy_content_hash",
+    "status_for_decision",
 ]

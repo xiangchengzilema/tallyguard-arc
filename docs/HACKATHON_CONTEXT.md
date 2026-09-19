@@ -55,8 +55,8 @@ Strongly encouraged:
 - Human exception approval is segregated and explicitly bound to settlement intent
 - Automated test suite passing
 
-Milestone 2 remains active. Evidence-to-domain normalization, verified vendor wallet history,
-and tenant-aware session/RBAC controls are implemented; durable persistence remains.
+Milestone 2 is complete. SQLite persistence now retains tenant-scoped evidence, provenance,
+invoice state, optimistic versions, and transition history across process restarts.
 
 ## Submission discipline
 
