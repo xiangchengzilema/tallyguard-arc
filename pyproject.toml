@@ -10,7 +10,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "TallyGuard contributors" }]
-dependencies = []
+dependencies = [
+  "Flask>=3.0,<4",
+]
+
+[project.scripts]
+tallyguard-api = "tallyguard.api:main"
 
 [project.optional-dependencies]
 dev = [
@@ -24,4 +29,3 @@ where = ["src"]
 addopts = "-q"
 pythonpath = ["src"]
 testpaths = ["tests"]
-

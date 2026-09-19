@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import json
@@ -46,6 +47,12 @@ class InvoiceTransition:
     actor_user_id: str
     correlation_id: str
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class InvoicePage:
+    items: tuple[StoredInvoice, ...]
+    next_cursor: str | None
 
 
 SCHEMA = """
@@ -305,6 +312,44 @@ class SqliteRepository:
             raise PersistenceError("Invoice was not found in this organization.")
         return self._stored_invoice(row)
 
+    def list_invoices(
+        self,
+        *,
+        organization_id: str,
+        status: InvoiceStatus | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> InvoicePage:
+        if limit < 1 or limit > 100:
+            raise PersistenceError("Invoice page limit must be between 1 and 100.")
+        clauses = ["organization_id = ?"]
+        values: list[object] = [organization_id]
+        if status is not None:
+            clauses.append("status = ?")
+            values.append(status.value)
+        if cursor is not None:
+            cursor_updated_at, cursor_id = self._decode_cursor(cursor)
+            clauses.append("(updated_at < ? OR (updated_at = ? AND id < ?))")
+            values.extend((cursor_updated_at, cursor_updated_at, cursor_id))
+        values.append(limit + 1)
+        query = f"""
+            SELECT * FROM invoices
+            WHERE {' AND '.join(clauses)}
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+        """
+        with self._guard:
+            rows = self._connection.execute(query, values).fetchall()
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
+        next_cursor = None
+        if has_more and visible_rows:
+            next_cursor = self._encode_cursor(visible_rows[-1]["updated_at"], visible_rows[-1]["id"])
+        return InvoicePage(
+            items=tuple(self._stored_invoice(row) for row in visible_rows),
+            next_cursor=next_cursor,
+        )
+
     def transition_invoice(
         self,
         *,
@@ -413,3 +458,17 @@ class SqliteRepository:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+    @staticmethod
+    def _encode_cursor(updated_at: str, invoice_id: str) -> str:
+        raw = canonical_json({"updated_at": updated_at, "id": invoice_id}).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_cursor(cursor: str) -> tuple[str, str]:
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            return str(payload["updated_at"]), str(payload["id"])
+        except (ValueError, KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PersistenceError("Invoice cursor is invalid.") from exc

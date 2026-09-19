@@ -53,6 +53,8 @@ Strongly encouraged:
 - Agent recommendations are separated from deterministic, evidence-bound control decisions
 - Versioned policy history, policy diffs, and scheduled-payment outcomes implemented
 - Human exception approval is segregated and explicitly bound to settlement intent
+- Authenticated Flask API now exposes health/readiness and tenant-scoped invoice workflows
+- A real local HTTP smoke test created and retrieved an invoice through the public API surface
 - Automated test suite passing
 
 Milestone 2 is complete. SQLite persistence now retains tenant-scoped evidence, provenance,

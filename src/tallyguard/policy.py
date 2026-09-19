@@ -58,6 +58,8 @@ class Policy:
     schedule_payments_before_due_days: int | None = None
 
     def __post_init__(self) -> None:
+        if not self.version.strip() or not self.organization_id.strip():
+            raise ValueError("Policy version and organization ID are required.")
         for field_name in (
             "daily_payment_limit_usdc",
             "minimum_cash_reserve_usdc",
@@ -65,6 +67,18 @@ class Policy:
             "po_amount_tolerance_usdc",
         ):
             object.__setattr__(self, field_name, Decimal(str(getattr(self, field_name))))
+        if any(
+            getattr(self, field_name) < 0
+            for field_name in (
+                "daily_payment_limit_usdc",
+                "minimum_cash_reserve_usdc",
+                "maximum_autonomous_payment_usdc",
+                "po_amount_tolerance_usdc",
+            )
+        ):
+            raise ValueError("Policy monetary limits must not be negative.")
+        object.__setattr__(self, "allowed_asset", self.allowed_asset.strip().upper())
+        object.__setattr__(self, "allowed_network", self.allowed_network.strip().upper())
         if self.schedule_payments_before_due_days is not None and self.schedule_payments_before_due_days < 0:
             raise ValueError("Payment scheduling lead time must not be negative.")
 

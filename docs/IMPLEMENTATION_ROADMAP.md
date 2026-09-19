@@ -130,6 +130,16 @@ Mainnet launch procedure:
 
 ### Milestone 5 — Multi-tenant finance API
 
+Status: in progress.
+
+Implemented foundation:
+
+- Runnable Flask service with health and readiness probes
+- Seeded role-separated judge sessions without committed credentials
+- Tenant-scoped invoice create/read/list endpoints with opaque bearer authentication
+- Stable status filtering and cursor pagination
+- Correlation IDs and fail-closed JSON errors
+
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries
 - Vendor, invoice, evidence, decision, approval, settlement, receipt, and audit APIs

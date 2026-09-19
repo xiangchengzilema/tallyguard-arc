@@ -7,7 +7,7 @@ htmlcov/
 venv/
 .env
 *.db
+data/*.sqlite3
 dist/
 build/
 *.egg-info/
-
