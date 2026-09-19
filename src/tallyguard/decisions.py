@@ -24,6 +24,7 @@ class AgentRecommendation:
     summary: str
     reason_codes: tuple[str, ...]
     confidence: Decimal
+    evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         confidence = self.confidence if isinstance(self.confidence, Decimal) else Decimal(str(self.confidence))
@@ -31,6 +32,10 @@ class AgentRecommendation:
             raise ValueError("Agent confidence must be between 0 and 1.")
         if not self.summary.strip():
             raise ValueError("Agent recommendation summary is required.")
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ValueError("Agent evidence references must be unique.")
+        if any(not reference.strip() for reference in self.evidence_refs):
+            raise ValueError("Agent evidence references must not be empty.")
         object.__setattr__(self, "confidence", confidence)
 
 

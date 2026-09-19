@@ -17,6 +17,7 @@ from flask import Flask, Response, g, jsonify, request, send_file, send_from_dir
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
+from .agent import DeterministicEvidenceAnalyst, EvidenceAnalyst
 from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
 from .auth import (
     AuthenticationDenied,
@@ -259,6 +260,7 @@ def _decision_json(record: DecisionRecord) -> dict[str, Any]:
                 "summary": recommendation.summary,
                 "reason_codes": list(recommendation.reason_codes),
                 "confidence": format(recommendation.confidence, "f"),
+                "evidence_refs": list(recommendation.evidence_refs),
             }
             if recommendation is not None
             else None
@@ -328,6 +330,7 @@ def create_app(
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
     rate_limit_per_minute: int | None = None,
+    evidence_analyst: EvidenceAnalyst | None = None,
 ) -> Flask:
     default_frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
     frontend_dist = Path(
@@ -375,6 +378,7 @@ def create_app(
     )
     rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
     request_metrics = RequestMetrics()
+    evidence_analyst = evidence_analyst or DeterministicEvidenceAnalyst()
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
@@ -384,6 +388,7 @@ def create_app(
     app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
     app.extensions["tallyguard_rate_limiter"] = rate_limiter
     app.extensions["tallyguard_request_metrics"] = request_metrics
+    app.extensions["tallyguard_evidence_analyst"] = evidence_analyst
 
     _seed_demo_identity(repository)
 
@@ -1137,6 +1142,12 @@ def create_app(
             vendor=vendor,
             treasury=treasury,
             policy=policy,
+            agent_recommendation=evidence_analyst.recommend(
+                evidence=normalized,
+                vendor=vendor,
+                treasury=treasury,
+                policy=policy,
+            ),
             known_invoice_fingerprints=repository.known_invoice_fingerprints(
                 organization_id=g.principal.organization_id,
                 exclude_invoice_id=invoice_id,

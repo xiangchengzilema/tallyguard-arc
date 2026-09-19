@@ -105,8 +105,9 @@ Implemented foundation:
 - Approved settlement authorization is reconstructed from the bound decision and approval instead of trusted from process memory
 - The authenticated evaluation API now normalizes real uploaded three-way-match evidence and binds it to the verified vendor, active policy, latest treasury snapshot, and Arc network
 - Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
+- A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
 
-- Agent-generated evidence summary (structured deterministic fallback pending model adapter)
+- Agent-generated evidence summary (credential-free structured analyst complete; hosted model adapter optional)
 - Recommended action with structured reason codes
 - Deterministic policy override boundary
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows

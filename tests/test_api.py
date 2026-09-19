@@ -391,6 +391,11 @@ def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_p
     assert result["decision"]["final_action"] == "PAY"
     assert result["invoice"]["status"] == "READY"
     assert result["decision"]["reason_codes"] == []
+    assert result["decision"]["agent_recommendation"]["action"] == "PAY"
+    assert result["decision"]["agent_recommendation"]["evidence_refs"] == [
+        "package:invoice-live",
+        result["decision"]["evidence_manifest_hash"],
+    ]
 
     assert client.post(
         "/api/policies",

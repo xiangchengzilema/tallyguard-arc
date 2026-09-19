@@ -1260,6 +1260,7 @@ class SqliteRepository:
                     "summary": record.agent_recommendation.summary,
                     "reason_codes": record.agent_recommendation.reason_codes,
                     "confidence": format(record.agent_recommendation.confidence, "f"),
+                    "evidence_refs": record.agent_recommendation.evidence_refs,
                 }
             )
             if record.agent_recommendation is not None
@@ -1893,6 +1894,7 @@ class SqliteRepository:
                 summary=agent_data["summary"],
                 reason_codes=tuple(agent_data["reason_codes"]),
                 confidence=Decimal(agent_data["confidence"]),
+                evidence_refs=tuple(agent_data.get("evidence_refs", ())),
             )
             if agent_data is not None
             else None
