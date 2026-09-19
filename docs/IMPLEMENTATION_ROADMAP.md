@@ -66,13 +66,16 @@ Implemented foundation:
 - Explicit fail-closed outcomes for missing PO and delivery evidence
 - Evidence normalization into invoice, PO, and delivery domain records with confidence gates
 - Verified vendor-wallet onboarding and append-only wallet replacement history
+- Authenticated multipart evidence upload persists original bytes and links exactly one invoice, purchase order, and delivery document per invoice
+- Structured JSON is extracted with exact JSON pointers; PDF/image observations require explicit page or bounding-box provenance
+- Evidence downloads and metadata lists are tenant-scoped, size-capped, and audit recorded
 
 - Organization and user authentication
 - Vendor onboarding and verified wallet history
-- Invoice upload: PDF, image, JSON, and seeded fixtures
+- Invoice upload: PDF, image, JSON, and seeded fixtures (API complete)
 - Purchase-order import
 - Delivery/acceptance evidence import
-- Source file hashing and immutable evidence references
+- Source file hashing and immutable evidence references (API complete)
 - Structured extraction confidence and field-level provenance
 - Duplicate detection across invoice number, content hash, amount, vendor, and near-duplicate text
 

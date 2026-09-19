@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import base64
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -109,6 +110,29 @@ CREATE TABLE IF NOT EXISTS evidence_documents (
     PRIMARY KEY (organization_id, id),
     UNIQUE (organization_id, content_sha256),
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS evidence_blobs (
+    organization_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    content BLOB NOT NULL,
+    PRIMARY KEY (organization_id, document_id),
+    FOREIGN KEY (organization_id, document_id)
+        REFERENCES evidence_documents(organization_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS invoice_evidence (
+    organization_id TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    evidence_type TEXT NOT NULL,
+    linked_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, invoice_id, document_id),
+    UNIQUE (organization_id, invoice_id, evidence_type),
+    FOREIGN KEY (organization_id, invoice_id)
+        REFERENCES invoices(organization_id, id),
+    FOREIGN KEY (organization_id, document_id)
+        REFERENCES evidence_documents(organization_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS invoices (
@@ -357,10 +381,21 @@ class SqliteRepository:
             )
         return self.get_session(token_hash)
 
-    def save_evidence(self, record: EvidenceRecord) -> EvidenceRecord:
+    def save_evidence(
+        self,
+        record: EvidenceRecord,
+        *,
+        content: bytes | None = None,
+    ) -> EvidenceRecord:
         document = record.document
+        if content is not None:
+            if len(content) != document.byte_size:
+                raise PersistenceError("Evidence byte size does not match its immutable metadata.")
+            if hashlib.sha256(content).hexdigest() != document.content_sha256:
+                raise PersistenceError("Evidence bytes do not match the immutable content hash.")
         fields_json = canonical_json(record.fields)
         with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
             try:
                 self._connection.execute(
                     """
@@ -381,8 +416,21 @@ class SqliteRepository:
                         fields_json,
                     ),
                 )
+                if content is not None:
+                    self._connection.execute(
+                        """
+                        INSERT INTO evidence_blobs (organization_id, document_id, content)
+                        VALUES (?, ?, ?)
+                        """,
+                        (document.organization_id, document.id, content),
+                    )
+                self._connection.execute("COMMIT")
             except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
                 raise PersistenceError("Evidence ID or content already exists in this organization.") from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
         return record
 
     def get_evidence(self, *, organization_id: str, document_id: str) -> EvidenceRecord:
@@ -425,6 +473,141 @@ class SqliteRepository:
             for item in fields_data
         )
         return EvidenceRecord(document=document, fields=fields)
+
+    def get_evidence_content(self, *, organization_id: str, document_id: str) -> bytes:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT content FROM evidence_blobs
+                WHERE organization_id = ? AND document_id = ?
+                """,
+                (organization_id, document_id),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("Evidence content was not found in this organization.")
+        return bytes(row["content"])
+
+    def link_invoice_evidence(
+        self,
+        *,
+        organization_id: str,
+        invoice_id: str,
+        document_id: str,
+        evidence_type: EvidenceType,
+        linked_at: datetime | None = None,
+    ) -> None:
+        timestamp = linked_at or datetime.now(timezone.utc)
+        with self._guard:
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO invoice_evidence
+                        (organization_id, invoice_id, document_id, evidence_type, linked_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        organization_id,
+                        invoice_id,
+                        document_id,
+                        evidence_type.value,
+                        timestamp.isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceError(
+                    "Invoice evidence must exist in the same organization and each type may be linked once."
+                ) from exc
+
+    def save_and_link_invoice_evidence(
+        self,
+        record: EvidenceRecord,
+        *,
+        content: bytes,
+        invoice_id: str,
+        linked_at: datetime | None = None,
+    ) -> EvidenceRecord:
+        document = record.document
+        if len(content) != document.byte_size:
+            raise PersistenceError("Evidence byte size does not match its immutable metadata.")
+        if hashlib.sha256(content).hexdigest() != document.content_sha256:
+            raise PersistenceError("Evidence bytes do not match the immutable content hash.")
+        timestamp = linked_at or datetime.now(timezone.utc)
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_documents
+                        (organization_id, id, evidence_type, filename, mime_type,
+                         content_sha256, byte_size, ingested_at, fields_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        document.organization_id,
+                        document.id,
+                        document.evidence_type.value,
+                        document.filename,
+                        document.mime_type,
+                        document.content_sha256,
+                        document.byte_size,
+                        document.ingested_at.isoformat(),
+                        canonical_json(record.fields),
+                    ),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_blobs (organization_id, document_id, content)
+                    VALUES (?, ?, ?)
+                    """,
+                    (document.organization_id, document.id, content),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO invoice_evidence
+                        (organization_id, invoice_id, document_id, evidence_type, linked_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        document.organization_id,
+                        invoice_id,
+                        document.id,
+                        document.evidence_type.value,
+                        timestamp.isoformat(),
+                    ),
+                )
+                self._connection.execute("COMMIT")
+                return record
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                raise PersistenceError(
+                    "Evidence must be unique, tenant-bound, and the only linked document of its type."
+                ) from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def list_invoice_evidence(
+        self,
+        *,
+        organization_id: str,
+        invoice_id: str,
+    ) -> tuple[EvidenceRecord, ...]:
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT document_id FROM invoice_evidence
+                WHERE organization_id = ? AND invoice_id = ?
+                ORDER BY evidence_type, linked_at, document_id
+                """,
+                (organization_id, invoice_id),
+            ).fetchall()
+        return tuple(
+            self.get_evidence(
+                organization_id=organization_id,
+                document_id=row["document_id"],
+            )
+            for row in rows
+        )
 
     def create_invoice(
         self,

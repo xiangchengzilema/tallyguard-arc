@@ -19,6 +19,8 @@ services:
         value: "5.00"
       - key: TALLYGUARD_RATE_LIMIT_PER_MINUTE
         value: "6000"
+      - key: TALLYGUARD_MAX_EVIDENCE_BYTES
+        value: "10485760"
       - key: TALLYGUARD_DATABASE_PATH
         value: /tmp/tallyguard.sqlite3
       - key: TALLYGUARD_FRONTEND_DIST

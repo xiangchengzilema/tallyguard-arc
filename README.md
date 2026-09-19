@@ -37,6 +37,7 @@ Every payment answers four questions:
 ## Current implementation status
 
 - Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
+- Authenticated multipart evidence API persists original PDF, PNG, JPEG, and JSON bytes with signature checks, SHA-256 addressing, invoice binding, and field-level provenance
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration

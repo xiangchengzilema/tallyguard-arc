@@ -5,13 +5,17 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from functools import wraps
+from io import BytesIO
+import json
 import os
 from pathlib import Path
 from time import monotonic
 from typing import Any, Callable
 from uuid import uuid4
 
-from flask import Flask, Response, g, jsonify, request, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_file, send_from_directory
+from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.utils import secure_filename
 
 from .approvals import ApprovalError, ApprovalInbox, apply_approved_escalation
 from .auth import (
@@ -26,6 +30,14 @@ from .auth import (
 from .models import Invoice
 from .network import ArcNetworkConfig
 from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
+from .evidence import (
+    EvidenceRecord,
+    EvidenceStore,
+    EvidenceType,
+    ExtractedField,
+    ExtractionMethod,
+    SourceLocation,
+)
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
@@ -40,6 +52,118 @@ from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 
 DEMO_ORGANIZATION_ID = "demo-org"
+
+
+def _evidence_json(record: EvidenceRecord) -> dict[str, Any]:
+    document = record.document
+    return {
+        "id": document.id,
+        "organization_id": document.organization_id,
+        "evidence_type": document.evidence_type.value,
+        "filename": document.filename,
+        "mime_type": document.mime_type,
+        "content_sha256": document.content_sha256,
+        "byte_size": document.byte_size,
+        "ingested_at": document.ingested_at.isoformat(),
+        "fields": [
+            {
+                "name": field.name,
+                "raw_value": field.raw_value,
+                "normalized_value": field.normalized_value,
+                "confidence": format(field.confidence, "f"),
+                "method": field.method.value,
+                "source": {
+                    "document_id": field.source.document_id,
+                    "page_number": field.source.page_number,
+                    "bounding_box": field.source.bounding_box,
+                    "json_pointer": field.source.json_pointer,
+                },
+            }
+            for field in record.fields
+        ],
+    }
+
+
+def _json_pointer_segment(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
+def _evidence_fields(
+    *,
+    document_id: str,
+    mime_type: str,
+    content: bytes,
+    submitted_fields: str | None,
+) -> tuple[ExtractedField, ...]:
+    if submitted_fields:
+        data = json.loads(submitted_fields)
+        if not isinstance(data, list) or not data or len(data) > 64:
+            raise ValueError("Evidence fields must be a JSON array containing 1 to 64 items.")
+        fields: list[ExtractedField] = []
+        for item in data:
+            if not isinstance(item, dict):
+                raise ValueError("Each evidence field must be a JSON object.")
+            source = item.get("source") or {}
+            if not isinstance(source, dict):
+                raise ValueError("Evidence field source must be a JSON object.")
+            bounding_box = source.get("bounding_box")
+            fields.append(
+                ExtractedField(
+                    name=str(item.get("name", "")),
+                    raw_value=str(item.get("raw_value", item.get("normalized_value", ""))),
+                    normalized_value=str(item.get("normalized_value", "")),
+                    confidence=Decimal(str(item.get("confidence", "1"))),
+                    method=ExtractionMethod(
+                        str(
+                            item.get(
+                                "method",
+                                "JSON" if mime_type == "application/json" else "MANUAL",
+                            )
+                        ).upper()
+                    ),
+                    source=SourceLocation(
+                        document_id=document_id,
+                        page_number=(
+                            int(source["page_number"])
+                            if source.get("page_number") is not None
+                            else None
+                        ),
+                        bounding_box=(
+                            tuple(float(value) for value in bounding_box)
+                            if bounding_box is not None
+                            else None
+                        ),
+                        json_pointer=source.get("json_pointer"),
+                    ),
+                )
+            )
+        return tuple(fields)
+
+    if mime_type != "application/json":
+        raise ValueError("PDF and image evidence require provenance-bound extracted fields.")
+    parsed = json.loads(content.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON evidence must contain a top-level object.")
+    fields = tuple(
+        ExtractedField(
+            name=str(name),
+            raw_value=str(value),
+            normalized_value=str(value),
+            confidence=Decimal("1"),
+            method=ExtractionMethod.JSON,
+            source=SourceLocation(
+                document_id=document_id,
+                json_pointer=f"/{_json_pointer_segment(str(name))}",
+            ),
+        )
+        for name, value in parsed.items()
+        if value is not None and not isinstance(value, (dict, list))
+    )
+    if not fields:
+        raise ValueError("JSON evidence contains no scalar fields to extract.")
+    if len(fields) > 64:
+        raise ValueError("JSON evidence may expose at most 64 top-level scalar fields.")
+    return fields
 
 
 def _invoice_json(stored: StoredInvoice) -> dict[str, Any]:
@@ -151,7 +275,15 @@ def create_app(
         os.getenv("TALLYGUARD_FRONTEND_DIST", str(default_frontend_dist))
     ).resolve()
     app = Flask(__name__, static_folder=None)
-    app.config.update(TESTING=testing)
+    max_evidence_bytes = int(
+        os.getenv("TALLYGUARD_MAX_EVIDENCE_BYTES", str(10 * 1024 * 1024))
+    )
+    if max_evidence_bytes < 1:
+        raise ValueError("TALLYGUARD_MAX_EVIDENCE_BYTES must be positive.")
+    app.config.update(
+        TESTING=testing,
+        MAX_CONTENT_LENGTH=max_evidence_bytes + (1024 * 1024),
+    )
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
     authenticator = Authenticator(store=repository)
@@ -222,6 +354,10 @@ def create_app(
             "frame-ancestors 'none'"
         )
         return response
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def request_too_large_error(exc: RequestEntityTooLarge):
+        return _error("REQUEST_TOO_LARGE", "Evidence request exceeds the configured limit.", 413)
 
     @app.errorhandler(AuthenticationDenied)
     def authentication_error(exc: AuthenticationDenied):
@@ -539,6 +675,112 @@ def create_app(
             raise ValueError(f"Invalid invoice payload: {exc}") from exc
         stored = repository.create_invoice(invoice)
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()}), 201
+
+    @app.post("/api/invoices/<invoice_id>/evidence")
+    @require(Permission.EVIDENCE_WRITE)
+    def upload_invoice_evidence(invoice_id: str):
+        stored = repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        upload = request.files.get("file")
+        if upload is None:
+            raise ValueError("Evidence upload requires a multipart file field named 'file'.")
+        filename = secure_filename(upload.filename or "")
+        if not filename:
+            raise ValueError("Evidence filename is required.")
+        mime_type = (upload.mimetype or "").strip().lower()
+        try:
+            evidence_type = EvidenceType(str(request.form.get("evidence_type", "")).upper())
+        except ValueError as exc:
+            raise ValueError("evidence_type must be INVOICE, PURCHASE_ORDER, or DELIVERY.") from exc
+        content = upload.read(max_evidence_bytes + 1)
+        if len(content) > max_evidence_bytes:
+            raise RequestEntityTooLarge()
+        document_id = f"evidence_{uuid4().hex}"
+        fields = _evidence_fields(
+            document_id=document_id,
+            mime_type=mime_type,
+            content=content,
+            submitted_fields=request.form.get("fields"),
+        )
+        record = EvidenceStore().ingest(
+            document_id=document_id,
+            organization_id=g.principal.organization_id,
+            evidence_type=evidence_type,
+            filename=filename,
+            mime_type=mime_type,
+            content=content,
+            fields=fields,
+        )
+        if evidence_type == EvidenceType.INVOICE:
+            if record.document.content_sha256 != stored.invoice.source_document_hash:
+                raise ValueError(
+                    "Invoice evidence hash must match the invoice source_document_hash."
+                )
+            if record.field("invoice_id").normalized_value.strip() != invoice_id:
+                raise ValueError("Invoice evidence invoice_id must match the URL invoice ID.")
+        repository.save_and_link_invoice_evidence(
+            record,
+            content=content,
+            invoice_id=invoice_id,
+        )
+        repository.append(
+            aggregate_type="evidence",
+            aggregate_id=record.document.id,
+            event_type="EVIDENCE_INGESTED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "invoice_id": invoice_id,
+                "evidence_type": evidence_type.value,
+                "content_sha256": record.document.content_sha256,
+                "field_names": [field.name for field in record.fields],
+            },
+            created_at=record.document.ingested_at,
+        )
+        return jsonify(
+            {
+                "evidence": _evidence_json(record),
+                "correlation_id": _correlation_id(),
+            }
+        ), 201
+
+    @app.get("/api/invoices/<invoice_id>/evidence")
+    @require(Permission.INVOICE_READ)
+    def list_invoice_evidence(invoice_id: str):
+        repository.get_invoice(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        records = repository.list_invoice_evidence(
+            organization_id=g.principal.organization_id,
+            invoice_id=invoice_id,
+        )
+        return jsonify(
+            {
+                "items": [_evidence_json(record) for record in records],
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.get("/api/evidence/<document_id>/content")
+    @require(Permission.INVOICE_READ)
+    def download_evidence(document_id: str):
+        record = repository.get_evidence(
+            organization_id=g.principal.organization_id,
+            document_id=document_id,
+        )
+        content = repository.get_evidence_content(
+            organization_id=g.principal.organization_id,
+            document_id=document_id,
+        )
+        return send_file(
+            BytesIO(content),
+            mimetype=record.document.mime_type,
+            as_attachment=True,
+            download_name=record.document.filename,
+            max_age=0,
+        )
 
     @app.get("/api/invoices")
     @require(Permission.INVOICE_READ)

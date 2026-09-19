@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+from io import BytesIO
+import json
 
 from tallyguard.api import create_app
 from tallyguard.auth import Principal, Role
@@ -14,7 +17,7 @@ def headers(token: str, correlation_id: str = "test-request-1") -> dict[str, str
     }
 
 
-def invoice_payload(invoice_id: str = "invoice-1"):
+def invoice_payload(invoice_id: str = "invoice-1", source_document_hash: str = "a" * 64):
     return {
         "id": invoice_id,
         "vendor_id": "vendor-1",
@@ -23,7 +26,7 @@ def invoice_payload(invoice_id: str = "invoice-1"):
         "amount": "1200.00",
         "due_date": "2026-10-08",
         "payment_wallet_address": WALLET,
-        "source_document_hash": "a" * 64,
+        "source_document_hash": source_document_hash,
     }
 
 
@@ -128,6 +131,138 @@ def test_operator_creates_and_reads_tenant_invoice(tmp_path):
     fetched = client.get("/api/invoices/invoice-1", headers=headers(token))
     assert fetched.status_code == 200
     assert fetched.get_json()["invoice"]["amount"] == "1200.00"
+
+
+def test_json_evidence_upload_persists_bytes_provenance_and_audit(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    token = client.post("/api/demo/session", json={"role": "operator"}).get_json()["access_token"]
+    content = json.dumps(
+        {
+            "invoice_id": "invoice-evidence",
+            "vendor_id": "vendor-1",
+            "invoice_number": "INV-EVIDENCE",
+            "currency": "USDC",
+            "amount": "1200.00",
+            "due_date": "2026-10-08",
+            "payment_wallet_address": WALLET,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hashlib.sha256(content).hexdigest()
+    created = client.post(
+        "/api/invoices",
+        json=invoice_payload("invoice-evidence", digest),
+        headers=headers(token),
+    )
+    assert created.status_code == 201
+
+    uploaded = client.post(
+        "/api/invoices/invoice-evidence/evidence",
+        data={
+            "evidence_type": "INVOICE",
+            "file": (BytesIO(content), "invoice evidence.json", "application/json"),
+        },
+        content_type="multipart/form-data",
+        headers=headers(token, "upload-evidence"),
+    )
+
+    assert uploaded.status_code == 201
+    evidence = uploaded.get_json()["evidence"]
+    assert evidence["content_sha256"] == digest
+    assert evidence["filename"] == "invoice_evidence.json"
+    assert evidence["byte_size"] == len(content)
+    invoice_id_field = next(field for field in evidence["fields"] if field["name"] == "invoice_id")
+    assert invoice_id_field["source"]["json_pointer"] == "/invoice_id"
+
+    listed = client.get(
+        "/api/invoices/invoice-evidence/evidence",
+        headers=headers(token),
+    ).get_json()["items"]
+    assert [item["id"] for item in listed] == [evidence["id"]]
+
+    downloaded = client.get(
+        f"/api/evidence/{evidence['id']}/content",
+        headers=headers(token),
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.data == content
+    assert downloaded.mimetype == "application/json"
+    assert "attachment" in downloaded.headers["Content-Disposition"]
+
+    repository = app.extensions["tallyguard_repository"]
+    repository.create_organization(organization_id="evidence-other", name="Evidence Other")
+    repository.create_user(
+        organization_id="evidence-other",
+        user_id="other-auditor",
+        display_name="Other Auditor",
+        roles=(Role.AUDITOR.value,),
+    )
+    other_token, _ = app.extensions["tallyguard_authenticator"].issue_session(
+        Principal(
+            user_id="other-auditor",
+            organization_id="evidence-other",
+            roles=(Role.AUDITOR,),
+        )
+    )
+    cross_tenant = client.get(
+        f"/api/evidence/{evidence['id']}/content",
+        headers=headers(other_token),
+    )
+    assert cross_tenant.status_code == 404
+
+    audit = client.get("/api/audit/events", headers=headers(token)).get_json()
+    assert audit["chain_valid"] is True
+    assert audit["items"][-1]["event_type"] == "EVIDENCE_INGESTED"
+
+
+def test_evidence_upload_rejects_bad_signature_and_oversized_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("TALLYGUARD_MAX_EVIDENCE_BYTES", "64")
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    token = client.post("/api/demo/session", json={"role": "operator"}).get_json()["access_token"]
+    assert client.post(
+        "/api/invoices",
+        json=invoice_payload("invoice-limits"),
+        headers=headers(token),
+    ).status_code == 201
+    fields = json.dumps(
+        [
+            {
+                "name": "purchase_order_id",
+                "normalized_value": "po-1",
+                "confidence": "1",
+                "method": "OCR",
+                "source": {"page_number": 1, "bounding_box": [0.1, 0.1, 0.9, 0.2]},
+            }
+        ]
+    )
+
+    bad_signature = client.post(
+        "/api/invoices/invoice-limits/evidence",
+        data={
+            "evidence_type": "PURCHASE_ORDER",
+            "fields": fields,
+            "file": (BytesIO(b"not a pdf"), "po.pdf", "application/pdf"),
+        },
+        content_type="multipart/form-data",
+        headers=headers(token),
+    )
+    assert bad_signature.status_code == 400
+    assert bad_signature.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+    oversized = client.post(
+        "/api/invoices/invoice-limits/evidence",
+        data={
+            "evidence_type": "PURCHASE_ORDER",
+            "fields": fields,
+            "file": (BytesIO(b"%PDF-" + b"x" * 100), "large.pdf", "application/pdf"),
+        },
+        content_type="multipart/form-data",
+        headers=headers(token),
+    )
+    assert oversized.status_code == 413
+    assert oversized.get_json()["error"]["code"] == "REQUEST_TOO_LARGE"
 
 
 def test_auditor_cannot_create_invoice(tmp_path):
