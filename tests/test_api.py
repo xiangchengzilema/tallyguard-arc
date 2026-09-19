@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import hashlib
 from io import BytesIO
 import json
@@ -486,6 +487,43 @@ def test_auditor_cannot_create_invoice(tmp_path):
     response = client.post("/api/invoices", json=invoice_payload(), headers=headers(token))
     assert response.status_code == 403
     assert response.get_json()["error"]["code"] == "AUTHORIZATION_DENIED"
+
+
+def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path):
+    app = create_app(database_path=tmp_path / "operations.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    results = {}
+    for key in ("clean-payment", "wallet-change", "duplicate-invoice"):
+        response = client.post(
+            f"/api/demo/scenarios/{key}/run",
+            headers=headers(operator, f"run-{key}"),
+        )
+        assert response.status_code == 200
+        results[key] = response.get_json()
+
+    response = client.get(
+        "/api/operations/overview?as_of=2026-10-05&queue_limit=10",
+        headers=headers(auditor, "overview-1"),
+    )
+    assert response.status_code == 200
+    overview = response.get_json()["overview"]
+    clean_amount = Decimal(results["clean-payment"]["invoice"]["amount"])
+    wallet_amount = Decimal(results["wallet-change"]["invoice"]["amount"])
+    duplicate_amount = Decimal(results["duplicate-invoice"]["invoice"]["amount"])
+    assert overview["invoice_count"] == 3
+    assert overview["status_counts"]["READY"] == 1
+    assert overview["status_counts"]["HOLD"] == 1
+    assert overview["status_counts"]["REJECTED"] == 1
+    assert Decimal(overview["open_exposure_usdc"]) == clean_amount + wallet_amount
+    assert Decimal(overview["blocked_exposure_usdc"]) == wallet_amount + duplicate_amount
+    assert {item["status"] for item in overview["work_queue"]} == {"READY", "HOLD"}
+    assert overview["treasury_available_usdc"] is None
 
 
 def test_vendor_wallet_verification_history_is_durable_tenant_scoped_and_audited(tmp_path):

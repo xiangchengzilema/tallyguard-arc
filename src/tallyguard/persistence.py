@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import base64
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -81,6 +81,25 @@ class StoredTreasurySnapshot:
     source_reference: str
     recorded_by_user_id: str
     recorded_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OperationsOverview:
+    organization_id: str
+    as_of: date
+    invoice_count: int
+    status_counts: dict[str, int]
+    open_exposure_usdc: Decimal
+    blocked_exposure_usdc: Decimal
+    due_next_7_days_usdc: Decimal
+    due_next_7_days_count: int
+    overdue_usdc: Decimal
+    overdue_count: int
+    reconciled_usdc: Decimal
+    treasury_available_usdc: Decimal | None
+    minimum_reserve_usdc: Decimal | None
+    projected_after_open_usdc: Decimal | None
+    work_queue: tuple[StoredInvoice, ...]
 
 
 SCHEMA = """
@@ -1146,6 +1165,93 @@ class SqliteRepository:
         return InvoicePage(
             items=tuple(self._stored_invoice(row) for row in visible_rows),
             next_cursor=next_cursor,
+        )
+
+    def operations_overview(
+        self,
+        *,
+        organization_id: str,
+        as_of: date | None = None,
+        queue_limit: int = 12,
+    ) -> OperationsOverview:
+        if queue_limit < 1 or queue_limit > 50:
+            raise PersistenceError("Operations queue limit must be between 1 and 50.")
+        effective_date = as_of or date.today()
+        with self._guard:
+            rows = self._connection.execute(
+                "SELECT * FROM invoices WHERE organization_id = ? ORDER BY due_date, updated_at DESC",
+                (organization_id,),
+            ).fetchall()
+        invoices = tuple(self._stored_invoice(row) for row in rows)
+        terminal = {
+            InvoiceStatus.RECONCILED,
+            InvoiceStatus.REJECTED,
+            InvoiceStatus.CANCELLED,
+            InvoiceStatus.RECONCILIATION_MISMATCH,
+        }
+        blocked = {
+            InvoiceStatus.HOLD,
+            InvoiceStatus.REJECTED,
+            InvoiceStatus.ESCALATED,
+            InvoiceStatus.SUBMISSION_FAILED,
+            InvoiceStatus.CONFIRMATION_TIMEOUT,
+            InvoiceStatus.RECONCILIATION_MISMATCH,
+        }
+        open_items = tuple(item for item in invoices if item.status not in terminal)
+        status_counts = {
+            status.value: sum(1 for item in invoices if item.status == status)
+            for status in InvoiceStatus
+        }
+        week_end = effective_date + timedelta(days=7)
+        due_soon = tuple(
+            item
+            for item in open_items
+            if effective_date <= item.invoice.due_date <= week_end
+        )
+        overdue = tuple(item for item in open_items if item.invoice.due_date < effective_date)
+
+        def total(items: tuple[StoredInvoice, ...]) -> Decimal:
+            return sum((item.invoice.amount for item in items), Decimal("0"))
+
+        treasury_available: Decimal | None = None
+        minimum_reserve: Decimal | None = None
+        try:
+            treasury_available = self.latest_treasury_snapshot(
+                organization_id=organization_id
+            ).snapshot.available_usdc
+        except PersistenceError:
+            pass
+        try:
+            minimum_reserve = self.active_policy(
+                organization_id=organization_id
+            ).policy.minimum_cash_reserve_usdc
+        except PolicyRepositoryError:
+            pass
+        open_exposure = total(open_items)
+        return OperationsOverview(
+            organization_id=organization_id,
+            as_of=effective_date,
+            invoice_count=len(invoices),
+            status_counts=status_counts,
+            open_exposure_usdc=open_exposure,
+            blocked_exposure_usdc=total(
+                tuple(item for item in invoices if item.status in blocked)
+            ),
+            due_next_7_days_usdc=total(due_soon),
+            due_next_7_days_count=len(due_soon),
+            overdue_usdc=total(overdue),
+            overdue_count=len(overdue),
+            reconciled_usdc=total(
+                tuple(item for item in invoices if item.status == InvoiceStatus.RECONCILED)
+            ),
+            treasury_available_usdc=treasury_available,
+            minimum_reserve_usdc=minimum_reserve,
+            projected_after_open_usdc=(
+                treasury_available - open_exposure
+                if treasury_available is not None
+                else None
+            ),
+            work_queue=open_items[:queue_limit],
         )
 
     def known_invoice_fingerprints(

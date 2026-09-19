@@ -156,9 +156,28 @@ export interface Payment {
   reused_receipt: boolean;
 }
 
+export interface OperationsOverview {
+  organization_id: string;
+  as_of: string;
+  invoice_count: number;
+  status_counts: Record<string, number>;
+  open_exposure_usdc: string;
+  blocked_exposure_usdc: string;
+  due_next_7_days_usdc: string;
+  due_next_7_days_count: number;
+  overdue_usdc: string;
+  overdue_count: number;
+  reconciled_usdc: string;
+  treasury_available_usdc: string | null;
+  minimum_reserve_usdc: string | null;
+  projected_after_open_usdc: string | null;
+  work_queue: Invoice[];
+}
+
 export interface BootstrapData {
   scenarios: Scenario[];
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
+  operations: OperationsOverview;
   readiness: {
     status: string;
     database: string;

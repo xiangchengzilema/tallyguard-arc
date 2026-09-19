@@ -34,7 +34,14 @@ from .models import (
 from .normalization import EvidenceNormalizer, NormalizedEvidence
 from .policies import PolicyFieldChange, PolicyRepository, StoredPolicy, policy_content_hash
 from .policy import Decision, DecisionAction, Policy, PolicyEngine
-from .persistence import InvoicePage, InvoiceTransition, PersistenceError, SqliteRepository, StoredInvoice
+from .persistence import (
+    InvoicePage,
+    InvoiceTransition,
+    OperationsOverview,
+    PersistenceError,
+    SqliteRepository,
+    StoredInvoice,
+)
 from .vendors import VendorDirectory, VendorWalletEvent, WalletVerificationMethod
 from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
@@ -69,6 +76,7 @@ __all__ = [
     "InvoiceStatus",
     "InvoiceTransition",
     "NormalizedEvidence",
+    "OperationsOverview",
     "Policy",
     "PolicyFieldChange",
     "PolicyEngine",

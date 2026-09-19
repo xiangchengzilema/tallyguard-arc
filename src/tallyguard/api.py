@@ -1305,6 +1305,49 @@ def create_app(
             }
         )
 
+    @app.get("/api/operations/overview")
+    @require(Permission.INVOICE_READ)
+    def get_operations_overview():
+        raw_as_of = request.args.get("as_of")
+        as_of = date.fromisoformat(raw_as_of) if raw_as_of else None
+        overview = repository.operations_overview(
+            organization_id=g.principal.organization_id,
+            as_of=as_of,
+            queue_limit=int(request.args.get("queue_limit", "12")),
+        )
+
+        def optional_money(value: Decimal | None) -> str | None:
+            return format(value, "f") if value is not None else None
+
+        return jsonify(
+            {
+                "overview": {
+                    "organization_id": overview.organization_id,
+                    "as_of": overview.as_of.isoformat(),
+                    "invoice_count": overview.invoice_count,
+                    "status_counts": overview.status_counts,
+                    "open_exposure_usdc": format(overview.open_exposure_usdc, "f"),
+                    "blocked_exposure_usdc": format(overview.blocked_exposure_usdc, "f"),
+                    "due_next_7_days_usdc": format(overview.due_next_7_days_usdc, "f"),
+                    "due_next_7_days_count": overview.due_next_7_days_count,
+                    "overdue_usdc": format(overview.overdue_usdc, "f"),
+                    "overdue_count": overview.overdue_count,
+                    "reconciled_usdc": format(overview.reconciled_usdc, "f"),
+                    "treasury_available_usdc": optional_money(
+                        overview.treasury_available_usdc
+                    ),
+                    "minimum_reserve_usdc": optional_money(
+                        overview.minimum_reserve_usdc
+                    ),
+                    "projected_after_open_usdc": optional_money(
+                        overview.projected_after_open_usdc
+                    ),
+                    "work_queue": [_invoice_json(item) for item in overview.work_queue],
+                },
+                "correlation_id": _correlation_id(),
+            }
+        )
+
     @app.get("/api/invoices/<invoice_id>")
     @require(Permission.INVOICE_READ)
     def get_invoice(invoice_id: str):

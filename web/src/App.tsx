@@ -30,6 +30,7 @@ import {
   ApiError,
   bootstrap,
   fetchInvoiceAudit,
+  fetchOperationsOverview,
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
@@ -46,6 +47,7 @@ import type {
   DecisionAction,
   EvidenceFileBundle,
   EvidenceFileReview,
+  OperationsOverview,
   Payment,
   ReplayVerification,
   RuleDisposition,
@@ -105,6 +107,47 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
       <strong>{value}</strong>
       <span className="metric__detail">{detail}</span>
     </div>
+  );
+}
+
+function OperationsBand({ overview, sessionEvaluations }: { overview: OperationsOverview; sessionEvaluations: number }) {
+  const projected = overview.projected_after_open_usdc;
+  return (
+    <div className="metrics-band" aria-label="Persistent finance operations summary">
+      <Metric label="Open exposure" value={`${formatMoney(overview.open_exposure_usdc)} USDC`} detail={`${overview.invoice_count} durable invoices · ${sessionEvaluations} this session`} />
+      <Metric label="Blocked value" value={`${formatMoney(overview.blocked_exposure_usdc)} USDC`} detail="Held, rejected, or approval-gated" />
+      <Metric label="Due within 7 days" value={`${formatMoney(overview.due_next_7_days_usdc)} USDC`} detail={`${overview.due_next_7_days_count} invoices · ${overview.overdue_count} overdue`} />
+      <Metric label="Projected liquidity" value={projected === null ? 'Awaiting treasury' : `${formatMoney(projected)} USDC`} detail={overview.minimum_reserve_usdc === null ? 'Record a treasury snapshot' : `${formatMoney(overview.minimum_reserve_usdc)} USDC minimum reserve`} />
+    </div>
+  );
+}
+
+function OperationsQueue({ overview }: { overview: OperationsOverview }) {
+  return (
+    <section className="operations-queue" aria-label="Invoice work queue">
+      <div className="operations-queue__head">
+        <div><span className="eyebrow">Persistent operations</span><h2>Invoice work queue</h2></div>
+        <Tag type={overview.overdue_count > 0 ? 'red' : 'cool-gray'}>{overview.overdue_count} overdue</Tag>
+      </div>
+      {overview.work_queue.length === 0 ? (
+        <div className="operations-queue__empty"><CheckmarkFilled size={20} /><span>No open invoices. Run a control case or upload evidence to populate the durable queue.</span></div>
+      ) : (
+        <div className="operations-table" role="table" aria-label="Open invoices sorted by due date">
+          <div className="operations-table__head" role="row">
+            <span role="columnheader">Invoice</span><span role="columnheader">Vendor</span><span role="columnheader">Due</span><span role="columnheader">Exposure</span><span role="columnheader">State</span>
+          </div>
+          {overview.work_queue.map((invoice) => (
+            <div className="operations-table__row" role="row" key={invoice.id}>
+              <div role="cell"><strong>{invoice.invoice_number}</strong><code>{shorten(invoice.id, 12, 6)}</code></div>
+              <code role="cell">{shorten(invoice.vendor_id, 13, 6)}</code>
+              <span role="cell">{invoice.due_date}</span>
+              <strong role="cell">{formatMoney(invoice.amount)} {invoice.currency}</strong>
+              <Tag type={invoice.status === 'READY' ? 'green' : invoice.status === 'HOLD' ? 'magenta' : invoice.status === 'ESCALATED' ? 'purple' : 'blue'}>{invoice.status}</Tag>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -635,6 +678,7 @@ function App() {
   const [mode, setMode] = useState<'scenario' | 'live'>('scenario');
   const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
+  const [operations, setOperations] = useState<OperationsOverview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -642,6 +686,7 @@ function App() {
       .then((result) => {
         if (!cancelled) {
           setData(result);
+          setOperations(result.operations);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
         }
       })
@@ -674,6 +719,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -698,6 +744,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -715,6 +762,7 @@ function App() {
       setPayment(null);
       setReplay(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -723,6 +771,7 @@ function App() {
     void act('Verifying and signing the approval record', async () => {
       setApproval(await resolveApproval(approval, data.sessions.approver));
       if (run) setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, approval, data, run]);
 
@@ -731,6 +780,7 @@ function App() {
     void act('Persisting intent, settling USDC, and reconciling Arc proof', async () => {
       setPayment(await settleInvoice(run, data.sessions.approver, approval?.status === 'APPROVED' ? approval.id : undefined));
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
     });
   }, [act, approval, data, run]);
 
@@ -745,9 +795,6 @@ function App() {
     () => data?.scenarios.find((item) => item.key === selectedKey),
     [data, selectedKey],
   );
-  const protectedCount = history.filter((item) => item.decision.final_action !== 'PAY').length;
-  const processedValue = history.reduce((sum, item) => sum + Number(item.invoice.amount), 0);
-
   return (
     <Theme theme="g10">
       <a className="skip-link" href="#main-content">Skip to main content</a>
@@ -787,12 +834,14 @@ function App() {
 
         {data ? <RuntimeBoundary readiness={data.readiness} /> : null}
 
-        <div className="metrics-band" aria-label="Session metrics">
-          <Metric label="Evaluations" value={String(history.length).padStart(2, '0')} detail="This judge session" />
-          <Metric label="Value reviewed" value={`${processedValue.toLocaleString()} USDC`} detail="Evidence-bound volume" />
-          <Metric label="Payments protected" value={String(protectedCount).padStart(2, '0')} detail="Held, rejected, or gated" />
-          <Metric label="Control coverage" value="100%" detail="Every decision gets a reason" />
-        </div>
+        {operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : (
+          <div className="metrics-band" aria-label="Loading finance operations summary">
+            <Metric label="Open exposure" value="—" detail="Loading durable invoices" />
+            <Metric label="Blocked value" value="—" detail="Loading control outcomes" />
+            <Metric label="Due within 7 days" value="—" detail="Loading due dates" />
+            <Metric label="Projected liquidity" value="—" detail="Loading treasury state" />
+          </div>
+        )}
 
         {!data ? (
           <div className="loading-layout" aria-label="Loading judge console">
@@ -840,6 +889,8 @@ function App() {
             </main>
           </div>
         )}
+
+        {operations ? <OperationsQueue overview={operations} /> : null}
 
         <footer className="product-footer">
           <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>

@@ -161,12 +161,14 @@ POST   /api/treasury/snapshots
 POST   /api/invoices
 GET    /api/invoices
 GET    /api/invoices/{id}
+GET    /api/operations/overview
 POST   /api/invoices/{id}/evidence
 POST   /api/invoices/{id}/evaluate
 POST   /api/invoices/{id}/approve
 POST   /api/invoices/{id}/settle
 GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
+GET    /api/decisions/{id}/replay
 GET    /api/audit/events
 GET    /api/treasury/summary
 GET    /api/health

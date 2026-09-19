@@ -5,6 +5,7 @@ import type {
   BootstrapData,
   EvidenceFileBundle,
   EvidenceFileReview,
+  OperationsOverview,
   Payment,
   ReplayVerification,
   RunResult,
@@ -57,11 +58,22 @@ export async function bootstrap(): Promise<BootstrapData> {
     request<BootstrapData['readiness']>('/api/readiness'),
     Promise.all(sessionRoles.map(createSession)),
   ]);
+  const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
   return {
     scenarios: catalog.items,
     readiness,
-    sessions: Object.fromEntries(sessionEntries) as BootstrapData['sessions'],
+    sessions,
+    operations: await fetchOperationsOverview(sessions.auditor),
   };
+}
+
+export async function fetchOperationsOverview(auditorToken: string): Promise<OperationsOverview> {
+  const payload = await request<{ overview: OperationsOverview }>(
+    '/api/operations/overview?queue_limit=12',
+    { method: 'GET' },
+    auditorToken,
+  );
+  return payload.overview;
 }
 
 const encodeDocument = (value: Record<string, string>): ArrayBuffer => {

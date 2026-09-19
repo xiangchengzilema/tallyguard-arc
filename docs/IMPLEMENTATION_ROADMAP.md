@@ -107,6 +107,7 @@ Implemented foundation:
 - Completed evaluations are idempotent and retain their original policy version even after a newer policy becomes active
 - A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
 - An optional OpenAI-compatible hosted adapter adds probabilistic document reasoning behind an environment-only credential boundary; its four-field schema forbids payment parameters, evidence citations are assigned locally, unsafe responses are rejected, and provider failure falls back deterministically
+- Each decision seals its exact point-in-time evidence, vendor, treasury, policy, duplicate set, settlement route, and date; the auditor endpoint and console recompute and verify 11 independent bindings without consulting mutable current state
 
 - Agent-generated evidence summary (credential-free and hosted structured adapters complete)
 - Recommended action with structured reason codes
@@ -114,7 +115,7 @@ Implemented foundation:
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows
 - Human approval inbox for exceptions
 - Versioned policy editor with before/after diff (backend API complete)
-- Decision replay using the exact historical policy version
+- Decision replay using the exact historical policy version (complete)
 
 Exit criteria:
 
@@ -215,9 +216,10 @@ Implemented foundation:
 - Reviewers can select their own invoice, purchase-order, and delivery JSON files; client-side schema and relationship validation previews the extracted amounts, IDs, due date, and recipient before any record is persisted
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
+- Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
 
-- Operations overview with payable exposure, due dates, held value, and treasury reserve
-- Invoice work queue with fast filters
+- Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
+- Invoice work queue with fast filters (durable queue complete; interactive filters optional)
 - Evidence match view modeled after mature AP review tools
 - Decision timeline showing evidence, rules, and agent explanation separately
 - Approval inbox for exceptions
