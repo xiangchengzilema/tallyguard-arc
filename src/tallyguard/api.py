@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -1063,6 +1064,109 @@ def create_app(
                             "actual": check.actual,
                         }
                         for check in verification.checks
+                    ],
+                },
+                "correlation_id": _correlation_id(),
+            }
+        )
+
+    @app.post("/api/decisions/<decision_id>/policy-simulation")
+    @require(Permission.POLICY_WRITE)
+    def simulate_decision_policy(decision_id: str):
+        record = decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        inputs = record.replay_inputs
+        if inputs is None or record.replay_input_hash is None:
+            raise ValueError("Decision predates replay snapshots and cannot be simulated safely.")
+        payload = request.get_json(silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("Policy simulation body must be a JSON object.")
+        allowed = {
+            "daily_payment_limit_usdc",
+            "minimum_cash_reserve_usdc",
+            "maximum_autonomous_payment_usdc",
+            "po_amount_tolerance_usdc",
+            "kill_switch_enabled",
+            "schedule_payments_before_due_days",
+        }
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError(f"Unsupported policy simulation fields: {', '.join(unknown)}.")
+        if not payload:
+            raise ValueError("Policy simulation requires at least one changed field.")
+
+        changes: dict[str, Any] = {"version": f"{inputs.policy.version}:simulation"}
+        monetary_fields = allowed - {"kill_switch_enabled", "schedule_payments_before_due_days"}
+        try:
+            for field_name in monetary_fields:
+                if field_name in payload:
+                    changes[field_name] = Decimal(str(payload[field_name]))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("Policy simulation monetary fields must be valid decimals.") from exc
+        if "kill_switch_enabled" in payload:
+            if not isinstance(payload["kill_switch_enabled"], bool):
+                raise ValueError("kill_switch_enabled must be a boolean.")
+            changes["kill_switch_enabled"] = payload["kill_switch_enabled"]
+        if "schedule_payments_before_due_days" in payload:
+            value = payload["schedule_payments_before_due_days"]
+            if isinstance(value, bool):
+                raise ValueError(
+                    "schedule_payments_before_due_days must be an integer or null."
+                )
+            try:
+                changes["schedule_payments_before_due_days"] = (
+                    int(value) if value is not None else None
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "schedule_payments_before_due_days must be an integer or null."
+                ) from exc
+        simulated_policy = replace(inputs.policy, **changes)
+        simulated = decision_service.policy_engine.evaluate(
+            invoice=inputs.evidence.invoice,
+            vendor=inputs.vendor,
+            purchase_order=inputs.evidence.purchase_order,
+            delivery=inputs.evidence.delivery,
+            treasury=inputs.treasury,
+            policy=simulated_policy,
+            known_invoice_fingerprints=inputs.known_invoice_fingerprints,
+            asset=inputs.asset,
+            network=inputs.network,
+            evaluation_date=inputs.evaluation_date,
+        )
+
+        changed_fields = []
+        for field_name in sorted(set(changes) - {"version"}):
+            before = getattr(inputs.policy, field_name)
+            after = getattr(simulated_policy, field_name)
+            changed_fields.append(
+                {
+                    "field": field_name,
+                    "before": _json_scalar(before),
+                    "after": _json_scalar(after),
+                }
+            )
+        return jsonify(
+            {
+                "simulation": {
+                    "persisted": False,
+                    "source_decision_id": record.id,
+                    "source_replay_input_hash": record.replay_input_hash,
+                    "original_action": record.final_action.value,
+                    "simulated_action": simulated.action.value,
+                    "changed_fields": changed_fields,
+                    "reason_codes": list(simulated.reason_codes),
+                    "remediation": list(simulated.remediation),
+                    "rules": [
+                        {
+                            "code": item.code,
+                            "disposition": item.disposition.value,
+                            "message": item.message,
+                            "remediation": item.remediation,
+                        }
+                        for item in simulated.rule_results
                     ],
                 },
                 "correlation_id": _correlation_id(),

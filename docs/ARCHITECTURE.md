@@ -123,6 +123,15 @@ SHA-256 of canonical packet JSON in both the body and `X-TallyGuard-Packet-SHA25
 bytes remain available through separately authorized evidence downloads and are not copied into
 the packet.
 
+## Policy what-if boundary
+
+An administrator may run a temporary policy patch against a decision's sealed replay inputs. Only
+explicit policy fields are accepted; vendor identity, recipient, amount, evidence, route, and
+evaluation date cannot be replaced through this endpoint. The result is returned as a comparison
+only. It does not persist a policy or decision, emit an audit mutation, satisfy an approval, create a
+payment intent, or call a settlement provider. This keeps planning and control analysis outside the
+authorization path.
+
 ## Tenant isolation
 
 Every durable financial record carries `organization_id`. Repository reads and mutations require

@@ -41,6 +41,7 @@ import {
   runScenario,
   settleInvoice,
   settlePaymentBatch,
+  simulateDecisionPolicy,
   verifyDecisionReplay,
 } from './api';
 import type {
@@ -53,6 +54,7 @@ import type {
   OperationsOverview,
   Payment,
   PaymentBatch,
+  PolicySimulation,
   ReliabilityEvidence,
   ReplayVerification,
   RuleDisposition,
@@ -579,20 +581,24 @@ function DecisionPanel({
   payment,
   busy,
   replay,
+  simulation,
   onRequestApproval,
   onApprove,
   onSettle,
   onVerifyReplay,
+  onSimulatePolicy,
 }: {
   run: RunResult;
   approval: Approval | null;
   payment: Payment | null;
   busy: string | null;
   replay: ReplayVerification | null;
+  simulation: PolicySimulation | null;
   onRequestApproval: () => void;
   onApprove: () => void;
   onSettle: () => void;
   onVerifyReplay: () => void;
+  onSimulatePolicy: (changes: Record<string, string | number | boolean | null>) => void;
 }) {
   const { decision } = run;
   const isPayable = decision.final_action === 'PAY';
@@ -630,6 +636,24 @@ function DecisionPanel({
         >
           {replay ? 'Verify again' : 'Verify replay'}
         </Button>
+      </div>
+
+      <div className="policy-sandbox">
+        <div className="policy-sandbox__head">
+          <div><span>Policy what-if sandbox</span><strong>Re-run the sealed evidence without changing production state.</strong></div>
+          <Tag type="cool-gray">Not persisted</Tag>
+        </div>
+        <div className="policy-sandbox__actions">
+          <Button size="sm" kind="tertiary" disabled={busy !== null} onClick={() => onSimulatePolicy({ maximum_autonomous_payment_usdc: '500' })}>Cap autonomy at 500 USDC</Button>
+          <Button size="sm" kind="danger--tertiary" disabled={busy !== null} onClick={() => onSimulatePolicy({ kill_switch_enabled: true })}>Engage kill switch</Button>
+        </div>
+        {simulation ? (
+          <div className="policy-sandbox__result">
+            <div><StatusTag action={simulation.original_action} /><ArrowRight size={16} /><StatusTag action={simulation.simulated_action} /></div>
+            <small>{simulation.changed_fields.map((item) => `${item.field}: ${String(item.before)} → ${String(item.after)}`).join(' · ')}</small>
+            <code>{simulation.reason_codes.join(' · ') || 'ALL_MANDATORY_CONTROLS_PASSED'}</code>
+          </div>
+        ) : null}
       </div>
 
       {decision.agent_recommendation ? (
@@ -791,6 +815,7 @@ function App() {
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
   const [batch, setBatch] = useState<PaymentBatch | null>(null);
   const [packetHash, setPacketHash] = useState<string | null>(null);
+  const [simulation, setSimulation] = useState<PolicySimulation | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -830,6 +855,7 @@ function App() {
       setApproval(null);
       setPayment(null);
       setReplay(null);
+      setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
@@ -856,6 +882,7 @@ function App() {
       setApproval(null);
       setPayment(null);
       setReplay(null);
+      setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
@@ -875,6 +902,7 @@ function App() {
       setApproval(null);
       setPayment(null);
       setReplay(null);
+      setSimulation(null);
       setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
       setPacketHash(null);
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
@@ -903,6 +931,13 @@ function App() {
     if (!data || !run) return;
     void act('Recomputing the decision from its sealed input snapshot', async () => {
       setReplay(await verifyDecisionReplay(run.decision.id, data.sessions.auditor));
+    });
+  }, [act, data, run]);
+
+  const handleSimulatePolicy = useCallback((changes: Record<string, string | number | boolean | null>) => {
+    if (!data || !run) return;
+    void act('Re-evaluating sealed evidence under an alternate policy', async () => {
+      setSimulation(await simulateDecisionPolicy(run.decision.id, changes, data.sessions.admin));
     });
   }, [act, data, run]);
 
@@ -983,10 +1018,10 @@ function App() {
               scenarios={data.scenarios}
               activeKey={selectedKey}
               busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); setPacketHash(null); }}
+              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRun={handleRun}
               mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setAuditTrail(null); setPacketHash(null); }}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRunLive={handleRunLive}
             />
             <main className="workbench">
@@ -1004,10 +1039,12 @@ function App() {
                       payment={payment}
                       busy={busy}
                       replay={replay}
+                      simulation={simulation}
                       onRequestApproval={handleRequestApproval}
                       onApprove={handleApprove}
                       onSettle={handleSettle}
                       onVerifyReplay={handleVerifyReplay}
+                      onSimulatePolicy={handleSimulatePolicy}
                     />
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}

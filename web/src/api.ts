@@ -8,6 +8,7 @@ import type {
   OperationsOverview,
   PaymentBatch,
   Payment,
+  PolicySimulation,
   ReliabilityEvidence,
   ReplayVerification,
   RunResult,
@@ -457,6 +458,19 @@ export async function verifyDecisionReplay(
     auditorToken,
   );
   return payload.verification;
+}
+
+export async function simulateDecisionPolicy(
+  decisionId: string,
+  changes: Record<string, string | number | boolean | null>,
+  adminToken: string,
+): Promise<PolicySimulation> {
+  const payload = await request<{ simulation: PolicySimulation }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}/policy-simulation`,
+    { method: 'POST', body: JSON.stringify(changes) },
+    adminToken,
+  );
+  return payload.simulation;
 }
 
 export async function downloadEvidencePacket(

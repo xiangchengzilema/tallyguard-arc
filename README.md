@@ -58,6 +58,7 @@ Every payment answers four questions:
 - Restart-safe opaque sessions stored only as SHA-256 token digests
 - Restart-safe policy decisions and role-separated approval records; payment authorization is deterministically reconstructed rather than cached
 - Every new decision seals the normalized evidence, vendor, treasury, policy, duplicate set, route, and evaluation date into a hashed replay snapshot; auditors can independently recompute all 11 bindings through `GET /api/decisions/<id>/replay`
+- Administrators can run a non-mutating policy what-if against those exact sealed inputs; the simulation cannot change the original decision, create an approval, or reach settlement
 - Auditors can download a content-addressed Payment Evidence Packet containing source metadata and hashes, sealed replay inputs, all 11 replay checks, approval state, reconciled Arc receipt, and invoice-scoped audit events
 - Persistent per-tenant tamper-evident audit chains with an authenticated verification endpoint
 - Credential-free automated unit and fault-injection suite
@@ -82,7 +83,7 @@ cd ..
 .\.venv\Scripts\python.exe -m tallyguard.api
 ```
 
-Open `http://127.0.0.1:8000`. The top summary and invoice queue are computed from persistent tenant data. `READY` rows can be selected and settled as an independently idempotent batch. Use **Control lab** for the seven adversarial judge cases or **Live evidence** to create and evaluate a new immutable three-document package through the public API. After evaluation, **Verify replay** recomputes the decision from its sealed point-in-time inputs without consulting mutable current state, while **Download evidence packet** exports the complete auditor artifact. Live evidence also accepts the sample files in `examples/evidence/` so a reviewer can inspect extracted values before committing them. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
+Open `http://127.0.0.1:8000`. The top summary and invoice queue are computed from persistent tenant data. `READY` rows can be selected and settled as an independently idempotent batch. Use **Control lab** for the seven adversarial judge cases or **Live evidence** to create and evaluate a new immutable three-document package through the public API. After evaluation, **Verify replay** recomputes the decision from its sealed point-in-time inputs without consulting mutable current state. **Policy what-if sandbox** re-evaluates those same inputs under temporary controls without persisting the result or authorizing payment, while **Download evidence packet** exports the complete auditor artifact. Live evidence also accepts the sample files in `examples/evidence/` so a reviewer can inspect extracted values before committing them. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
 
 Run a local reliability baseline:
 

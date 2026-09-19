@@ -606,6 +606,70 @@ def test_payment_evidence_packet_binds_replay_settlement_and_audit(tmp_path):
     assert packet["audit"]["last_invoice_event_hash"] is not None
 
 
+def test_policy_simulation_reuses_sealed_inputs_without_mutating_decision(tmp_path):
+    app = create_app(database_path=tmp_path / "simulation.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    admin = client.post(
+        "/api/demo/session", json={"role": "admin"}
+    ).get_json()["access_token"]
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=headers(operator, "simulate-run"),
+    ).get_json()
+    decision_id = run["decision"]["id"]
+
+    denied = client.post(
+        f"/api/decisions/{decision_id}/policy-simulation",
+        json={"kill_switch_enabled": True},
+        headers=headers(operator, "simulate-denied"),
+    )
+    assert denied.status_code == 403
+
+    capped = client.post(
+        f"/api/decisions/{decision_id}/policy-simulation",
+        json={"maximum_autonomous_payment_usdc": "500"},
+        headers=headers(admin, "simulate-cap"),
+    )
+    assert capped.status_code == 200
+    cap_result = capped.get_json()["simulation"]
+    assert cap_result["persisted"] is False
+    assert cap_result["original_action"] == "PAY"
+    assert cap_result["simulated_action"] == "ESCALATE"
+    assert "AUTONOMY_LIMIT_EXCEEDED" in cap_result["reason_codes"]
+
+    stopped = client.post(
+        f"/api/decisions/{decision_id}/policy-simulation",
+        json={"kill_switch_enabled": True},
+        headers=headers(admin, "simulate-stop"),
+    )
+    assert stopped.status_code == 200
+    assert stopped.get_json()["simulation"]["simulated_action"] == "HOLD"
+
+    invalid_decimal = client.post(
+        f"/api/decisions/{decision_id}/policy-simulation",
+        json={"maximum_autonomous_payment_usdc": "not-a-number"},
+        headers=headers(admin, "simulate-invalid-decimal"),
+    )
+    assert invalid_decimal.status_code == 400
+
+    unknown_field = client.post(
+        f"/api/decisions/{decision_id}/policy-simulation",
+        json={"recipient_wallet": "0x0000000000000000000000000000000000000000"},
+        headers=headers(admin, "simulate-unknown"),
+    )
+    assert unknown_field.status_code == 400
+
+    original = client.get(
+        f"/api/decisions/{decision_id}",
+        headers=headers(operator, "simulate-original"),
+    ).get_json()["decision"]
+    assert original["final_action"] == "PAY"
+    assert original["policy_version"] == run["decision"]["policy_version"]
+
+
 def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
     app = create_app(database_path=tmp_path / "batch.sqlite3", testing=True)
     client = app.test_client()

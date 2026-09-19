@@ -75,6 +75,18 @@ export interface ReplayVerification {
   checks: ReplayCheck[];
 }
 
+export interface PolicySimulation {
+  persisted: false;
+  source_decision_id: string;
+  source_replay_input_hash: string;
+  original_action: DecisionAction;
+  simulated_action: DecisionAction;
+  changed_fields: Array<{ field: string; before: string | number | boolean | null; after: string | number | boolean | null }>;
+  reason_codes: string[];
+  remediation: string[];
+  rules: RuleResult[];
+}
+
 export interface RunResult {
   scenario?: Pick<Scenario, 'key' | 'title'>;
   invoice: Invoice;

@@ -332,6 +332,18 @@ body {
 .replay-proof strong { font-size: .8125rem; }
 .replay-proof small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
 .replay-proof .cds--btn { white-space: nowrap; }
+.policy-sandbox { padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
+.policy-sandbox__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.policy-sandbox__head > div { display: grid; gap: .3rem; }
+.policy-sandbox__head span { color: var(--tg-accent-dark); font-size: .625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.policy-sandbox__head strong { max-width: 38ch; font-size: .75rem; line-height: 1.45; }
+.policy-sandbox__head .cds--tag { margin: 0; }
+.policy-sandbox__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.policy-sandbox__result { display: grid; gap: .65rem; margin-top: 1rem; padding: 1rem; border-left: 3px solid var(--tg-accent); background: #edf7f5; }
+.policy-sandbox__result > div { display: flex; align-items: center; gap: .5rem; }
+.policy-sandbox__result .cds--tag { margin: 0; }
+.policy-sandbox__result small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
+.policy-sandbox__result code { overflow-wrap: anywhere; color: var(--tg-accent-dark); font-size: .6875rem; }
 .agent-note, .remediation, .approval-record { padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
 .agent-note__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: .75rem; font-weight: 600; }
 .agent-note__head .cds--tag { margin: 0; }
@@ -481,6 +493,8 @@ body {
   .reliability-grid > div:last-child, .reliability-latency > div:last-child { border-bottom: 0; }
   .replay-proof { grid-template-columns: 1fr; }
   .replay-proof .cds--btn { width: 100%; max-width: none; }
+  .policy-sandbox__head, .policy-sandbox__actions { flex-direction: column; }
+  .policy-sandbox__actions .cds--btn { width: 100%; max-width: none; }
   .run-meta { align-items: flex-start; flex-direction: column; padding: .75rem 1rem; }
 }
 

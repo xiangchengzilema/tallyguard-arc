@@ -108,6 +108,7 @@ Implemented foundation:
 - A protocol-based evidence analyst now produces structured recommendations with confidence, reason codes, and immutable package citations; it cannot construct a payment payload
 - An optional OpenAI-compatible hosted adapter adds probabilistic document reasoning behind an environment-only credential boundary; its four-field schema forbids payment parameters, evidence citations are assigned locally, unsafe responses are rejected, and provider failure falls back deterministically
 - Each decision seals its exact point-in-time evidence, vendor, treasury, policy, duplicate set, settlement route, and date; the auditor endpoint and console recompute and verify 11 independent bindings without consulting mutable current state
+- An admin-only policy what-if endpoint re-evaluates the sealed historical inputs under an allowlisted temporary policy patch; it returns a comparison but never persists a decision, approval, audit event, or payment authorization
 - A downloadable, SHA-256 content-addressed Payment Evidence Packet combines the sealed inputs, replay checks, source metadata, approval, settlement receipt, and invoice audit events into one portable auditor artifact
 
 - Agent-generated evidence summary (credential-free and hosted structured adapters complete)
@@ -220,6 +221,7 @@ Implemented foundation:
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
 - The audit view downloads the current invoice's Payment Evidence Packet and displays its server-computed content hash after a successful export
+- The decision view includes a visibly non-persistent policy sandbox that can demonstrate an autonomy-cap or kill-switch change against the exact sealed inputs and compare the resulting action and reason codes
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
 - The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
 

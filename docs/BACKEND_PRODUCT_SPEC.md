@@ -171,6 +171,7 @@ POST   /api/payment-batches/settle
 GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
 GET    /api/decisions/{id}/replay
+POST   /api/decisions/{id}/policy-simulation
 GET    /api/audit/events
 GET    /api/reliability/report
 GET    /api/treasury/summary
@@ -195,6 +196,12 @@ explicitly distinguishes reliability evidence from customer traction and states 
 JSON envelope. Its packet hash covers canonical UTF-8 JSON containing the immutable invoice,
 source evidence metadata and hashes, sealed replay inputs, replay verification, approval, optional
 settlement proof, and invoice-scoped audit events. Raw uploaded files are not duplicated in the packet.
+
+`POST /api/decisions/{id}/policy-simulation` requires policy-write permission and accepts only an
+allowlisted subset of deterministic policy fields. It applies the temporary patch to the decision's
+sealed replay snapshot, not current vendor or treasury state. The response compares the original and
+simulated action, changed fields, reason codes, and full rule trace. It deliberately writes no policy,
+decision, approval, audit event, payment intent, or receipt.
 
 ## 7. Demo scenarios
 
