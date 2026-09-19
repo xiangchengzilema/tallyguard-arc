@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 import os
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from .auth import (
 )
 from .models import Invoice
 from .network import ArcNetworkConfig
+from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
@@ -142,6 +144,7 @@ def create_app(
     testing: bool = False,
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
+    rate_limit_per_minute: int | None = None,
 ) -> Flask:
     default_frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
     frontend_dist = Path(
@@ -177,6 +180,11 @@ def create_app(
         settlement_service=settlement_service,
         network=network_config,
     )
+    configured_rate_limit = rate_limit_per_minute or int(
+        os.getenv("TALLYGUARD_RATE_LIMIT_PER_MINUTE", "6000")
+    )
+    rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
+    request_metrics = RequestMetrics()
     app.extensions["tallyguard_repository"] = repository
     app.extensions["tallyguard_authenticator"] = authenticator
     app.extensions["tallyguard_decision_service"] = decision_service
@@ -185,15 +193,23 @@ def create_app(
     app.extensions["tallyguard_network"] = network_config
     app.extensions["tallyguard_settlement_adapter"] = settlement_adapter
     app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
+    app.extensions["tallyguard_rate_limiter"] = rate_limiter
+    app.extensions["tallyguard_request_metrics"] = request_metrics
 
     _seed_demo_identity(repository)
 
     @app.before_request
     def assign_correlation_id() -> None:
         _correlation_id()
+        g.request_started_monotonic = monotonic()
 
     @app.after_request
     def attach_correlation_id(response: Response) -> Response:
+        request_metrics.observe(
+            endpoint=request.endpoint or "unmatched",
+            status_code=response.status_code,
+            elapsed_seconds=monotonic() - g.request_started_monotonic,
+        )
         response.headers["X-Correlation-ID"] = _correlation_id()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"
@@ -221,6 +237,12 @@ def create_app(
     def persistence_error(exc: PersistenceError):
         status = 404 if "not found" in str(exc).lower() else 409
         return _error("PERSISTENCE_ERROR", str(exc), status)
+
+    @app.errorhandler(RateLimitExceeded)
+    def rate_limit_error(exc: RateLimitExceeded):
+        response, status = _error("RATE_LIMIT_EXCEEDED", str(exc), 429)
+        response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        return response, status
 
     @app.errorhandler(ApprovalError)
     def approval_error(exc: ApprovalError):
@@ -256,6 +278,7 @@ def create_app(
                     permission=permission,
                     resource_organization_id=principal.organization_id,
                 )
+                rate_limiter.check(principal.organization_id)
                 g.principal = principal
                 return handler(*args, **kwargs)
 
@@ -276,6 +299,20 @@ def create_app(
                 "database": "ok",
                 "network": network_config.name.value,
                 "settlement_adapter": settlement_adapter.name,
+            }
+        )
+
+    @app.get("/api/metrics")
+    def metrics():
+        snapshot = request_metrics.snapshot()
+        return jsonify(
+            {
+                "requests_total": snapshot.requests_total,
+                "responses_by_class": snapshot.responses_by_class,
+                "responses_by_endpoint": snapshot.responses_by_endpoint,
+                "latency_ms": snapshot.latency_ms,
+                "uptime_seconds": snapshot.uptime_seconds,
+                "labels": "No tenant, user, invoice, vendor, or wallet labels are recorded.",
             }
         )
 

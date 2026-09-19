@@ -164,14 +164,16 @@ Implemented foundation:
 - Approver-only settlement endpoint binds invoice, decision, approval, payment intent, and receipt
 - Auditor-readable receipt endpoint includes the corresponding Arc Explorer URL
 - Repeated settlement requests return the persisted receipt without another provider submission
+- Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
+- Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries
 - Vendor, invoice, evidence, decision, approval, settlement, receipt, and audit APIs
 - Cursor pagination and stable filters
-- Per-tenant rate limits and quotas
+- Per-tenant rate limits and quotas (rate limit complete; durable quotas pending)
 - Request correlation IDs and structured logs
-- Health, readiness, and metrics endpoints
+- Health, readiness, and metrics endpoints (complete)
 
 Exit criteria:
 

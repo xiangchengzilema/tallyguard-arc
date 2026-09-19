@@ -34,6 +34,40 @@ def test_health_and_readiness_are_public(tmp_path):
     assert client.get("/api/readiness").get_json()["database"] == "ok"
 
 
+def test_metrics_report_aggregate_requests_without_financial_labels(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    client.get("/api/health")
+    client.get("/api/readiness")
+
+    response = client.get("/api/metrics")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["requests_total"] == 2
+    assert payload["responses_by_class"] == {"2xx": 2}
+    assert "tenant" not in " ".join(payload["responses_by_endpoint"]).lower()
+    assert "No tenant" in payload["labels"]
+
+
+def test_authenticated_endpoints_enforce_per_tenant_rate_limit(tmp_path):
+    app = create_app(
+        database_path=tmp_path / "api.sqlite3",
+        testing=True,
+        rate_limit_per_minute=2,
+    )
+    client = app.test_client()
+    token = client.post("/api/demo/session", json={"role": "auditor"}).get_json()["access_token"]
+
+    assert client.get("/api/invoices", headers=headers(token)).status_code == 200
+    assert client.get("/api/invoices", headers=headers(token)).status_code == 200
+    limited = client.get("/api/invoices", headers=headers(token))
+
+    assert limited.status_code == 429
+    assert limited.get_json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert int(limited.headers["Retry-After"]) >= 1
+
+
 def test_api_responses_include_browser_security_headers(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     response = app.test_client().get("/api/health")

@@ -51,6 +51,7 @@ Every payment answers four questions:
 - Responsive React judge console built on Carbon, with seven live risk scenarios
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
 - Real-HTTP synthetic multi-tenant load harness with latency, isolation, and duplicate-payment metrics
+- Tenant-scoped sliding-window rate limits and bounded operational request metrics
 
 ## Run the judge console
 
