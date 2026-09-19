@@ -380,6 +380,95 @@ def test_vendor_wallet_verification_history_is_durable_tenant_scoped_and_audited
     assert event_types[-2:] == ["VENDOR_ONBOARDED", "VENDOR_WALLET_REPLACED"]
 
 
+def test_policy_and_treasury_apis_are_versioned_role_scoped_and_audited(tmp_path):
+    app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
+    client = app.test_client()
+    admin = client.post(
+        "/api/demo/session", json={"role": "admin"}
+    ).get_json()["access_token"]
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+
+    base = {
+        "daily_payment_limit_usdc": "5000",
+        "minimum_cash_reserve_usdc": "1000",
+        "maximum_autonomous_payment_usdc": "2000",
+        "po_amount_tolerance_usdc": "10",
+        "allowed_asset": "USDC",
+        "allowed_network": "ARC-TESTNET",
+        "kill_switch_enabled": False,
+    }
+    first = client.post(
+        "/api/policies",
+        json={"version": "v1", **base},
+        headers=headers(admin, "policy-v1"),
+    )
+    second = client.post(
+        "/api/policies",
+        json={
+            "version": "v2",
+            **base,
+            "daily_payment_limit_usdc": "7500",
+            "kill_switch_enabled": True,
+        },
+        headers=headers(admin, "policy-v2"),
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.get_json()["policy"]["content_hash"] != second.get_json()["policy"][
+        "content_hash"
+    ]
+
+    forbidden = client.post(
+        "/api/policies",
+        json={"version": "operator-policy", **base},
+        headers=headers(operator, "policy-forbidden"),
+    )
+    assert forbidden.status_code == 403
+
+    active = client.get("/api/policies/active", headers=headers(auditor)).get_json()
+    assert active["policy"]["version"] == "v2"
+    history = client.get("/api/policies", headers=headers(auditor)).get_json()
+    assert history["active_version"] == "v2"
+    assert [item["version"] for item in history["items"]] == ["v1", "v2"]
+    diff = client.get(
+        "/api/policies/diff?from=v1&to=v2", headers=headers(auditor)
+    ).get_json()["changes"]
+    assert {item["field"] for item in diff} == {
+        "daily_payment_limit_usdc",
+        "kill_switch_enabled",
+        "version",
+    }
+
+    treasury = client.post(
+        "/api/treasury/snapshots",
+        json={
+            "available_usdc": "12000",
+            "spent_today_usdc": "450",
+            "source_reference": "circle-balance-2026-09-20T01:00:00Z",
+        },
+        headers=headers(operator, "treasury-record"),
+    )
+    assert treasury.status_code == 201
+    summary = client.get(
+        "/api/treasury/summary", headers=headers(auditor)
+    ).get_json()["treasury"]
+    assert summary["available_usdc"] == "12000"
+    assert summary["source_reference"] == "circle-balance-2026-09-20T01:00:00Z"
+
+    audit = client.get("/api/audit/events", headers=headers(auditor)).get_json()
+    assert audit["chain_valid"] is True
+    assert [item["event_type"] for item in audit["items"]][-3:] == [
+        "POLICY_ACTIVATED",
+        "POLICY_ACTIVATED",
+        "TREASURY_SNAPSHOT_RECORDED",
+    ]
+
+
 def test_cross_tenant_invoice_is_invisible(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()

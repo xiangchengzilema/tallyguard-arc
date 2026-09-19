@@ -144,6 +144,13 @@ Every non-pay outcome must include machine-readable reason codes and a human-rea
 ```text
 POST   /api/vendors
 GET    /api/vendors
+PATCH  /api/vendors/{id}/wallet
+GET    /api/vendors/{id}/wallet-history
+POST   /api/policies
+GET    /api/policies
+GET    /api/policies/active
+GET    /api/policies/diff?from={version}&to={version}
+POST   /api/treasury/snapshots
 POST   /api/invoices
 GET    /api/invoices
 GET    /api/invoices/{id}
@@ -189,4 +196,3 @@ The seeded demo should include:
 6. Circle/Arc adapter.
 7. API and seeded judge scenarios.
 8. Frontend implementation using the separate reference map.
-

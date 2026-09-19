@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import base64
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -24,9 +24,15 @@ from .evidence import (
     ExtractionMethod,
     SourceLocation,
 )
-from .models import Invoice, Vendor, normalize_wallet
+from .models import Invoice, TreasurySnapshot, Vendor, normalize_wallet
 from .network import ArcNetwork
-from .policy import Decision, DecisionAction, RuleDisposition, RuleResult
+from .policies import (
+    PolicyFieldChange,
+    PolicyRepositoryError,
+    StoredPolicy,
+    policy_content_hash,
+)
+from .policy import Decision, DecisionAction, Policy, RuleDisposition, RuleResult
 from .settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from .workflow import InvoiceStatus, WorkflowError, require_transition
 from .vendors import (
@@ -68,6 +74,15 @@ class InvoicePage:
     next_cursor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class StoredTreasurySnapshot:
+    sequence: int
+    snapshot: TreasurySnapshot
+    source_reference: str
+    recorded_by_user_id: str
+    recorded_at: datetime
+
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -102,6 +117,50 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry
     ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS policies (
+    organization_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    daily_payment_limit_usdc TEXT NOT NULL,
+    minimum_cash_reserve_usdc TEXT NOT NULL,
+    maximum_autonomous_payment_usdc TEXT NOT NULL,
+    po_amount_tolerance_usdc TEXT NOT NULL,
+    allowed_asset TEXT NOT NULL,
+    allowed_network TEXT NOT NULL,
+    kill_switch_enabled INTEGER NOT NULL CHECK (kill_switch_enabled IN (0, 1)),
+    schedule_payments_before_due_days INTEGER,
+    activated_by_user_id TEXT NOT NULL,
+    activated_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, version),
+    UNIQUE (organization_id, content_hash),
+    FOREIGN KEY (organization_id, activated_by_user_id)
+        REFERENCES users(organization_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS active_policies (
+    organization_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    activated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id, version)
+        REFERENCES policies(organization_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS treasury_snapshots (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id TEXT NOT NULL,
+    available_usdc TEXT NOT NULL,
+    spent_today_usdc TEXT NOT NULL,
+    source_reference TEXT NOT NULL,
+    recorded_by_user_id TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (organization_id, recorded_by_user_id)
+        REFERENCES users(organization_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_treasury_snapshots_tenant
+    ON treasury_snapshots (organization_id, sequence DESC);
 
 CREATE TABLE IF NOT EXISTS vendors (
     organization_id TEXT NOT NULL,
@@ -418,6 +477,206 @@ class SqliteRepository:
                 (revoked_at.isoformat(), token_hash),
             )
         return self.get_session(token_hash)
+
+    def activate_policy(
+        self,
+        policy: Policy,
+        *,
+        activated_by_user_id: str,
+        activated_at: datetime | None = None,
+    ) -> StoredPolicy:
+        timestamp = activated_at or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise PolicyRepositoryError("Policy activation timestamp must be timezone-aware.")
+        if not activated_by_user_id.strip():
+            raise PolicyRepositoryError("Policy activator is required.")
+        stored = StoredPolicy(
+            policy=policy,
+            content_hash=policy_content_hash(policy),
+            activated_by_user_id=activated_by_user_id,
+            activated_at=timestamp,
+        )
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._connection.execute(
+                    """
+                    SELECT 1 FROM policies
+                    WHERE organization_id = ? AND version = ?
+                    """,
+                    (policy.organization_id, policy.version),
+                ).fetchone()
+                if existing is not None:
+                    raise PolicyRepositoryError(
+                        "Policy versions are immutable and cannot be overwritten."
+                    )
+                self._connection.execute(
+                    """
+                    INSERT INTO policies
+                        (organization_id, version, content_hash,
+                         daily_payment_limit_usdc, minimum_cash_reserve_usdc,
+                         maximum_autonomous_payment_usdc, po_amount_tolerance_usdc,
+                         allowed_asset, allowed_network, kill_switch_enabled,
+                         schedule_payments_before_due_days, activated_by_user_id,
+                         activated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        policy.organization_id,
+                        policy.version,
+                        stored.content_hash,
+                        format(policy.daily_payment_limit_usdc, "f"),
+                        format(policy.minimum_cash_reserve_usdc, "f"),
+                        format(policy.maximum_autonomous_payment_usdc, "f"),
+                        format(policy.po_amount_tolerance_usdc, "f"),
+                        policy.allowed_asset,
+                        policy.allowed_network,
+                        int(policy.kill_switch_enabled),
+                        policy.schedule_payments_before_due_days,
+                        activated_by_user_id,
+                        timestamp.isoformat(),
+                    ),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO active_policies (organization_id, version, activated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(organization_id) DO UPDATE SET
+                        version = excluded.version,
+                        activated_at = excluded.activated_at
+                    """,
+                    (policy.organization_id, policy.version, timestamp.isoformat()),
+                )
+                self._connection.execute("COMMIT")
+                return stored
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                message = str(exc).lower()
+                if "policies.organization_id, policies.version" in message:
+                    raise PolicyRepositoryError(
+                        "Policy versions are immutable and cannot be overwritten."
+                    ) from exc
+                if "policies.organization_id, policies.content_hash" in message:
+                    raise PolicyRepositoryError(
+                        "A new policy version must change at least one control field."
+                    ) from exc
+                raise PolicyRepositoryError(
+                    "Policy activation requires a valid organization and activator."
+                ) from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
+    def get_policy(self, *, organization_id: str, version: str) -> StoredPolicy:
+        with self._guard:
+            row = self._connection.execute(
+                "SELECT * FROM policies WHERE organization_id = ? AND version = ?",
+                (organization_id, version),
+            ).fetchone()
+        if row is None:
+            raise PolicyRepositoryError("Policy version was not found in this organization.")
+        return self._stored_policy(row)
+
+    def active_policy(self, *, organization_id: str) -> StoredPolicy:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT p.* FROM active_policies a
+                JOIN policies p
+                  ON p.organization_id = a.organization_id AND p.version = a.version
+                WHERE a.organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+        if row is None:
+            raise PolicyRepositoryError("No active policy exists for this organization.")
+        return self._stored_policy(row)
+
+    def policy_history(self, *, organization_id: str) -> tuple[StoredPolicy, ...]:
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM policies WHERE organization_id = ?
+                ORDER BY activated_at, version
+                """,
+                (organization_id,),
+            ).fetchall()
+        return tuple(self._stored_policy(row) for row in rows)
+
+    def policy_diff(
+        self,
+        *,
+        organization_id: str,
+        from_version: str,
+        to_version: str,
+    ) -> tuple[PolicyFieldChange, ...]:
+        before = asdict(
+            self.get_policy(organization_id=organization_id, version=from_version).policy
+        )
+        after = asdict(
+            self.get_policy(organization_id=organization_id, version=to_version).policy
+        )
+        return tuple(
+            PolicyFieldChange(field=field, before=before[field], after=after[field])
+            for field in sorted(before)
+            if before[field] != after[field]
+        )
+
+    def record_treasury_snapshot(
+        self,
+        snapshot: TreasurySnapshot,
+        *,
+        source_reference: str,
+        recorded_by_user_id: str,
+        recorded_at: datetime | None = None,
+    ) -> StoredTreasurySnapshot:
+        timestamp = recorded_at or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise PersistenceError("Treasury snapshot timestamp must be timezone-aware.")
+        if not source_reference.strip() or not recorded_by_user_id.strip():
+            raise PersistenceError("Treasury source reference and recorder are required.")
+        with self._guard:
+            try:
+                cursor = self._connection.execute(
+                    """
+                    INSERT INTO treasury_snapshots
+                        (organization_id, available_usdc, spent_today_usdc,
+                         source_reference, recorded_by_user_id, recorded_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot.organization_id,
+                        format(snapshot.available_usdc, "f"),
+                        format(snapshot.spent_today_usdc, "f"),
+                        source_reference,
+                        recorded_by_user_id,
+                        timestamp.isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceError(
+                    "Treasury snapshot requires a valid organization and recorder."
+                ) from exc
+        return StoredTreasurySnapshot(
+            sequence=int(cursor.lastrowid),
+            snapshot=snapshot,
+            source_reference=source_reference,
+            recorded_by_user_id=recorded_by_user_id,
+            recorded_at=timestamp,
+        )
+
+    def latest_treasury_snapshot(self, *, organization_id: str) -> StoredTreasurySnapshot:
+        with self._guard:
+            row = self._connection.execute(
+                """
+                SELECT * FROM treasury_snapshots
+                WHERE organization_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+        if row is None:
+            raise PersistenceError("No treasury snapshot exists for this organization.")
+        return self._treasury_snapshot(row)
 
     def onboard_vendor(
         self,
@@ -1485,6 +1744,44 @@ class SqliteRepository:
             version=row["version"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _stored_policy(row: sqlite3.Row) -> StoredPolicy:
+        return StoredPolicy(
+            policy=Policy(
+                version=row["version"],
+                organization_id=row["organization_id"],
+                daily_payment_limit_usdc=Decimal(row["daily_payment_limit_usdc"]),
+                minimum_cash_reserve_usdc=Decimal(row["minimum_cash_reserve_usdc"]),
+                maximum_autonomous_payment_usdc=Decimal(
+                    row["maximum_autonomous_payment_usdc"]
+                ),
+                po_amount_tolerance_usdc=Decimal(row["po_amount_tolerance_usdc"]),
+                allowed_asset=row["allowed_asset"],
+                allowed_network=row["allowed_network"],
+                kill_switch_enabled=bool(row["kill_switch_enabled"]),
+                schedule_payments_before_due_days=row[
+                    "schedule_payments_before_due_days"
+                ],
+            ),
+            content_hash=row["content_hash"],
+            activated_by_user_id=row["activated_by_user_id"],
+            activated_at=datetime.fromisoformat(row["activated_at"]),
+        )
+
+    @staticmethod
+    def _treasury_snapshot(row: sqlite3.Row) -> StoredTreasurySnapshot:
+        return StoredTreasurySnapshot(
+            sequence=row["sequence"],
+            snapshot=TreasurySnapshot(
+                organization_id=row["organization_id"],
+                available_usdc=Decimal(row["available_usdc"]),
+                spent_today_usdc=Decimal(row["spent_today_usdc"]),
+            ),
+            source_reference=row["source_reference"],
+            recorded_by_user_id=row["recorded_by_user_id"],
+            recorded_at=datetime.fromisoformat(row["recorded_at"]),
         )
 
     @staticmethod

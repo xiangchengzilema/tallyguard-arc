@@ -14,9 +14,11 @@ from tallyguard.evidence import (
     ExtractionMethod,
     SourceLocation,
 )
-from tallyguard.models import Invoice, Vendor
+from tallyguard.models import Invoice, TreasurySnapshot, Vendor
 from tallyguard.network import ArcNetwork
 from tallyguard.persistence import PersistenceError, SqliteRepository
+from tallyguard.policies import PolicyRepositoryError
+from tallyguard.policy import Policy
 from tallyguard.settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from tallyguard.workflow import InvoiceStatus, WorkflowError
 from tallyguard.vendors import WalletVerificationMethod
@@ -126,6 +128,72 @@ def test_verified_vendor_wallet_history_survives_restart(tmp_path):
         "call-001",
     ]
     assert history[1].previous_wallet_address == original_wallet
+
+
+def test_active_policy_and_treasury_snapshot_survive_restart(tmp_path):
+    database = tmp_path / "tallyguard.sqlite3"
+    repo = SqliteRepository(database)
+    repo.create_organization(organization_id="org-1", name="Northwind AI")
+    repo.create_user(
+        organization_id="org-1",
+        user_id="admin-1",
+        display_name="Policy Admin",
+        roles=(Role.ADMIN.value,),
+    )
+    repo.create_user(
+        organization_id="org-1",
+        user_id="operator-1",
+        display_name="Finance Operator",
+        roles=(Role.FINANCE_OPERATOR.value,),
+    )
+    first = Policy(
+        version="v1",
+        organization_id="org-1",
+        daily_payment_limit_usdc=Decimal("5000"),
+        minimum_cash_reserve_usdc=Decimal("1000"),
+        maximum_autonomous_payment_usdc=Decimal("2000"),
+    )
+    second = Policy(
+        version="v2",
+        organization_id="org-1",
+        daily_payment_limit_usdc=Decimal("7500"),
+        minimum_cash_reserve_usdc=Decimal("1000"),
+        maximum_autonomous_payment_usdc=Decimal("2000"),
+        kill_switch_enabled=True,
+    )
+    repo.activate_policy(first, activated_by_user_id="admin-1")
+    repo.activate_policy(second, activated_by_user_id="admin-1")
+    with pytest.raises(PolicyRepositoryError, match="immutable"):
+        repo.activate_policy(second, activated_by_user_id="admin-1")
+    recorded = repo.record_treasury_snapshot(
+        TreasurySnapshot(
+            organization_id="org-1",
+            available_usdc=Decimal("12000"),
+            spent_today_usdc=Decimal("450"),
+        ),
+        source_reference="circle-balance-2026-09-20T01:00:00Z",
+        recorded_by_user_id="operator-1",
+    )
+    repo.close()
+
+    restarted = SqliteRepository(database)
+    active = restarted.active_policy(organization_id="org-1")
+    history = restarted.policy_history(organization_id="org-1")
+    changes = restarted.policy_diff(
+        organization_id="org-1", from_version="v1", to_version="v2"
+    )
+    treasury = restarted.latest_treasury_snapshot(organization_id="org-1")
+
+    assert active.policy == second
+    assert [item.policy.version for item in history] == ["v1", "v2"]
+    assert {item.field for item in changes} == {
+        "daily_payment_limit_usdc",
+        "kill_switch_enabled",
+        "version",
+    }
+    assert treasury.sequence == recorded.sequence
+    assert treasury.snapshot.available_usdc == Decimal("12000")
+    assert treasury.source_reference == "circle-balance-2026-09-20T01:00:00Z"
 
 
 def test_evidence_content_is_unique_within_tenant(tmp_path):

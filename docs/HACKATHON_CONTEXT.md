@@ -55,6 +55,7 @@ Strongly encouraged:
 - Human exception approval is segregated and explicitly bound to settlement intent
 - Authenticated Flask API now exposes health/readiness and tenant-scoped invoice workflows
 - Vendor onboarding and wallet replacement now persist in SQLite with tenant-scoped read APIs, explicit verification references, stale-wallet rejection, and append-only history
+- Immutable policy versions and source-referenced treasury snapshots now persist across restarts and are available through role-scoped APIs
 - A real local HTTP smoke test created and retrieved an invoice through the public API surface
 - Seven judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter

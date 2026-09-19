@@ -34,6 +34,7 @@ class Role(StrEnum):
 
 class Permission(StrEnum):
     VENDOR_WRITE = "VENDOR_WRITE"
+    TREASURY_WRITE = "TREASURY_WRITE"
     EVIDENCE_WRITE = "EVIDENCE_WRITE"
     INVOICE_READ = "INVOICE_READ"
     DECISION_RUN = "DECISION_RUN"
@@ -48,6 +49,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.FINANCE_OPERATOR: frozenset(
         {
             Permission.VENDOR_WRITE,
+            Permission.TREASURY_WRITE,
             Permission.EVIDENCE_WRITE,
             Permission.INVOICE_READ,
             Permission.DECISION_RUN,

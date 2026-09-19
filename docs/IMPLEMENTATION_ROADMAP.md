@@ -96,6 +96,8 @@ Implemented foundation:
 - Stable evidence-and-policy-bound decision IDs with tamper-evident audit events
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` control outcomes
 - Immutable policy versions, content hashes, active-version lookup, and field-level diffs
+- Policy history and active selection now persist in SQLite and are exposed through admin-write/auditor-read APIs
+- Source-referenced treasury snapshots persist as append-only tenant records and feed an authenticated summary API
 - Segregated exception inbox: requester cannot self-approve and only pure escalations are overridable
 - Approved decisions and payment intents must carry the exact same approval reference
 - Durable invoice state machine with optimistic concurrency and immutable transition history
@@ -107,7 +109,7 @@ Implemented foundation:
 - Deterministic policy override boundary
 - `PAY`, `SCHEDULE`, `HOLD`, `REJECT`, and `ESCALATE` workflows
 - Human approval inbox for exceptions
-- Versioned policy editor with before/after diff
+- Versioned policy editor with before/after diff (backend API complete)
 - Decision replay using the exact historical policy version
 
 Exit criteria:
@@ -174,6 +176,7 @@ Implemented foundation:
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
+- Role-scoped policy-history, policy-diff, active-policy, treasury-snapshot, vendor, and wallet-history APIs
 
 - Organizations, users, and role-based access
 - Tenant-scoped repositories and queries

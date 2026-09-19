@@ -27,7 +27,7 @@ from .auth import (
     Role,
     authorize,
 )
-from .models import Invoice, Vendor
+from .models import Invoice, TreasurySnapshot, Vendor
 from .network import ArcNetworkConfig
 from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
 from .evidence import (
@@ -41,7 +41,14 @@ from .evidence import (
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
 from .demo import build_demo_scenario, scenario_catalog
-from .persistence import PersistenceError, SqliteRepository, StoredInvoice
+from .persistence import (
+    PersistenceError,
+    SqliteRepository,
+    StoredInvoice,
+    StoredTreasurySnapshot,
+)
+from .policies import PolicyRepositoryError, StoredPolicy
+from .policy import Policy
 from .settlement import (
     SettlementAdapter,
     SettlementDenied,
@@ -196,6 +203,43 @@ def _vendor_json(vendor: Vendor) -> dict[str, Any]:
         "risk_tier": vendor.risk_tier,
         "active": vendor.active,
     }
+
+
+def _policy_json(stored: StoredPolicy) -> dict[str, Any]:
+    policy = stored.policy
+    return {
+        "version": policy.version,
+        "organization_id": policy.organization_id,
+        "daily_payment_limit_usdc": format(policy.daily_payment_limit_usdc, "f"),
+        "minimum_cash_reserve_usdc": format(policy.minimum_cash_reserve_usdc, "f"),
+        "maximum_autonomous_payment_usdc": format(
+            policy.maximum_autonomous_payment_usdc, "f"
+        ),
+        "po_amount_tolerance_usdc": format(policy.po_amount_tolerance_usdc, "f"),
+        "allowed_asset": policy.allowed_asset,
+        "allowed_network": policy.allowed_network,
+        "kill_switch_enabled": policy.kill_switch_enabled,
+        "schedule_payments_before_due_days": policy.schedule_payments_before_due_days,
+        "content_hash": stored.content_hash,
+        "activated_by_user_id": stored.activated_by_user_id,
+        "activated_at": stored.activated_at.isoformat(),
+    }
+
+
+def _treasury_json(stored: StoredTreasurySnapshot) -> dict[str, Any]:
+    return {
+        "sequence": stored.sequence,
+        "organization_id": stored.snapshot.organization_id,
+        "available_usdc": format(stored.snapshot.available_usdc, "f"),
+        "spent_today_usdc": format(stored.snapshot.spent_today_usdc, "f"),
+        "source_reference": stored.source_reference,
+        "recorded_by_user_id": stored.recorded_by_user_id,
+        "recorded_at": stored.recorded_at.isoformat(),
+    }
+
+
+def _json_scalar(value: Any) -> Any:
+    return format(value, "f") if isinstance(value, Decimal) else value
 
 
 def _decision_json(record: DecisionRecord) -> dict[str, Any]:
@@ -401,6 +445,12 @@ def create_app(
         status = 404 if "not found" in str(exc).lower() else 409
         return _error("VENDOR_ERROR", str(exc), status)
 
+    @app.errorhandler(PolicyRepositoryError)
+    def policy_repository_error(exc: PolicyRepositoryError):
+        message = str(exc).lower()
+        status = 404 if "not found" in message or "no active" in message else 409
+        return _error("POLICY_ERROR", str(exc), status)
+
     @app.errorhandler(WorkflowError)
     def workflow_error(exc: WorkflowError):
         return _error("WORKFLOW_ERROR", str(exc), 409)
@@ -473,6 +523,11 @@ def create_app(
         payload = request.get_json(silent=True) or {}
         role_name = str(payload.get("role", "operator")).lower()
         demo_principals = {
+            "admin": Principal(
+                user_id="demo-admin",
+                organization_id=DEMO_ORGANIZATION_ID,
+                roles=(Role.ADMIN,),
+            ),
             "operator": Principal(
                 user_id="demo-operator",
                 organization_id=DEMO_ORGANIZATION_ID,
@@ -491,7 +546,7 @@ def create_app(
         }
         principal = demo_principals.get(role_name)
         if principal is None:
-            raise ValueError("Demo role must be operator, approver, or auditor.")
+            raise ValueError("Demo role must be admin, operator, approver, or auditor.")
         token, session = authenticator.issue_session(principal)
         return jsonify(
             {
@@ -521,6 +576,145 @@ def create_app(
                 ]
             }
         )
+
+    @app.post("/api/policies")
+    @require(Permission.POLICY_WRITE)
+    def activate_policy():
+        payload = request.get_json(silent=False) or {}
+        kill_switch_enabled = payload.get("kill_switch_enabled", False)
+        if not isinstance(kill_switch_enabled, bool):
+            raise ValueError("kill_switch_enabled must be a JSON boolean.")
+        schedule_days = payload.get("schedule_payments_before_due_days")
+        if schedule_days is not None and (
+            isinstance(schedule_days, bool) or not isinstance(schedule_days, int)
+        ):
+            raise ValueError("schedule_payments_before_due_days must be an integer or null.")
+        policy = Policy(
+            version=str(payload["version"]),
+            organization_id=g.principal.organization_id,
+            daily_payment_limit_usdc=Decimal(
+                str(payload["daily_payment_limit_usdc"])
+            ),
+            minimum_cash_reserve_usdc=Decimal(
+                str(payload["minimum_cash_reserve_usdc"])
+            ),
+            maximum_autonomous_payment_usdc=Decimal(
+                str(payload["maximum_autonomous_payment_usdc"])
+            ),
+            po_amount_tolerance_usdc=Decimal(
+                str(payload.get("po_amount_tolerance_usdc", "0"))
+            ),
+            allowed_asset=str(payload.get("allowed_asset", "USDC")),
+            allowed_network=str(payload.get("allowed_network", network_config.name.value)),
+            kill_switch_enabled=kill_switch_enabled,
+            schedule_payments_before_due_days=schedule_days,
+        )
+        stored = repository.activate_policy(
+            policy,
+            activated_by_user_id=g.principal.user_id,
+        )
+        repository.append(
+            aggregate_type="policy",
+            aggregate_id=stored.policy.version,
+            event_type="POLICY_ACTIVATED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "policy_version": stored.policy.version,
+                "content_hash": stored.content_hash,
+                "activated_by_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify({"policy": _policy_json(stored)}), 201
+
+    @app.get("/api/policies")
+    @require(Permission.INVOICE_READ)
+    def list_policies():
+        history = repository.policy_history(
+            organization_id=g.principal.organization_id
+        )
+        active = (
+            repository.active_policy(organization_id=g.principal.organization_id)
+            if history
+            else None
+        )
+        return jsonify(
+            {
+                "active_version": active.policy.version if active is not None else None,
+                "items": [_policy_json(item) for item in history],
+            }
+        )
+
+    @app.get("/api/policies/active")
+    @require(Permission.INVOICE_READ)
+    def get_active_policy():
+        stored = repository.active_policy(
+            organization_id=g.principal.organization_id
+        )
+        return jsonify({"policy": _policy_json(stored)})
+
+    @app.get("/api/policies/diff")
+    @require(Permission.INVOICE_READ)
+    def get_policy_diff():
+        from_version = request.args.get("from", "").strip()
+        to_version = request.args.get("to", "").strip()
+        if not from_version or not to_version:
+            raise ValueError("Policy diff requires from and to version query parameters.")
+        changes = repository.policy_diff(
+            organization_id=g.principal.organization_id,
+            from_version=from_version,
+            to_version=to_version,
+        )
+        return jsonify(
+            {
+                "from_version": from_version,
+                "to_version": to_version,
+                "changes": [
+                    {
+                        "field": item.field,
+                        "before": _json_scalar(item.before),
+                        "after": _json_scalar(item.after),
+                    }
+                    for item in changes
+                ],
+            }
+        )
+
+    @app.post("/api/treasury/snapshots")
+    @require(Permission.TREASURY_WRITE)
+    def record_treasury_snapshot():
+        payload = request.get_json(silent=False) or {}
+        snapshot = TreasurySnapshot(
+            organization_id=g.principal.organization_id,
+            available_usdc=Decimal(str(payload["available_usdc"])),
+            spent_today_usdc=Decimal(str(payload["spent_today_usdc"])),
+        )
+        stored = repository.record_treasury_snapshot(
+            snapshot,
+            source_reference=str(payload["source_reference"]),
+            recorded_by_user_id=g.principal.user_id,
+        )
+        repository.append(
+            aggregate_type="treasury_snapshot",
+            aggregate_id=str(stored.sequence),
+            event_type="TREASURY_SNAPSHOT_RECORDED",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "sequence": stored.sequence,
+                "available_usdc": format(snapshot.available_usdc, "f"),
+                "spent_today_usdc": format(snapshot.spent_today_usdc, "f"),
+                "source_reference": stored.source_reference,
+                "recorded_by_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify({"treasury": _treasury_json(stored)}), 201
+
+    @app.get("/api/treasury/summary")
+    @require(Permission.INVOICE_READ)
+    def get_treasury_summary():
+        stored = repository.latest_treasury_snapshot(
+            organization_id=g.principal.organization_id
+        )
+        return jsonify({"treasury": _treasury_json(stored)})
 
     @app.post("/api/vendors")
     @require(Permission.VENDOR_WRITE)
@@ -1074,6 +1268,7 @@ def _seed_demo_identity(repository: SqliteRepository) -> None:
     except PersistenceError:
         pass
     for user_id, display_name, roles in (
+        ("demo-admin", "Demo Admin", (Role.ADMIN.value,)),
         ("demo-operator", "Demo Operator", (Role.FINANCE_OPERATOR.value,)),
         ("demo-approver", "Demo Approver", (Role.APPROVER.value,)),
         ("demo-auditor", "Demo Auditor", (Role.AUDITOR.value,)),
