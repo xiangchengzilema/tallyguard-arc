@@ -45,6 +45,7 @@ class RuleResult:
 @dataclass(frozen=True, slots=True)
 class Policy:
     version: str
+    organization_id: str
     daily_payment_limit_usdc: Decimal
     minimum_cash_reserve_usdc: Decimal
     maximum_autonomous_payment_usdc: Decimal
@@ -101,6 +102,7 @@ class PolicyEngine:
     ) -> Decision:
         results = (
             self._kill_switch(policy),
+            self._tenant_boundary(invoice, vendor, purchase_order, delivery, treasury, policy),
             self._duplicate(invoice, known_invoice_fingerprints),
             self._vendor(invoice, vendor),
             self._wallet(invoice, vendor),
@@ -122,6 +124,32 @@ class PolicyEngine:
     @staticmethod
     def _pass(code: str, message: str) -> RuleResult:
         return RuleResult(code=code, disposition=RuleDisposition.PASS, message=message)
+
+    @staticmethod
+    def _tenant_boundary(
+        invoice: Invoice,
+        vendor: Vendor,
+        po: PurchaseOrder,
+        delivery: DeliveryEvidence,
+        treasury: TreasurySnapshot,
+        policy: Policy,
+    ) -> RuleResult:
+        organization_ids = {
+            invoice.organization_id,
+            vendor.organization_id,
+            po.organization_id,
+            delivery.organization_id,
+            treasury.organization_id,
+            policy.organization_id,
+        }
+        if len(organization_ids) != 1:
+            return RuleResult(
+                code="TENANT_BOUNDARY_VIOLATION",
+                disposition=RuleDisposition.REJECT,
+                message="Evidence or policy records belong to different organizations.",
+                remediation="Rebuild the evaluation using records from exactly one organization.",
+            )
+        return PolicyEngine._pass("TENANT_BOUNDARY_OK", "All records belong to one organization.")
 
     @staticmethod
     def _kill_switch(policy: Policy) -> RuleResult:
@@ -277,4 +305,3 @@ class PolicyEngine:
         if RuleDisposition.ESCALATE in dispositions:
             return DecisionAction.ESCALATE
         return DecisionAction.PAY
-

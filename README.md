@@ -34,9 +34,20 @@ Every payment answers four questions:
 - Tamper-evident decision receipt and audit event chain
 - Finance operations dashboard
 
+## Current implementation status
+
+- Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
+- Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
+- Tamper-evident append-only audit chain
+- Canonical Arc Mainnet/Testnet configuration
+- Mainnet settlement locked behind an explicit runtime flag and approval reference
+- Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation
+- Deterministic Arc simulator for the public demo and load tests
+- 19 automated tests passing
+
 ## Canonical planning documents
 
 - [Competitor and implementation blueprint](docs/COMPETITOR_IMPLEMENTATION_BLUEPRINT.md)
 - [Backend product specification](docs/BACKEND_PRODUCT_SPEC.md)
 - [Frontend reference map](docs/FRONTEND_REFERENCE_MAP.md)
-
+- [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)

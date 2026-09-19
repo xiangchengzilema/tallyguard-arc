@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -14,6 +15,7 @@ WALLET = "0x1111111111111111111111111111111111111111"
 def case():
     vendor = Vendor(
         id="vendor-1",
+        organization_id="org-1",
         legal_name="Acme Data LLC",
         approved_wallet_address=WALLET,
         autopay_limit=Decimal("2500"),
@@ -31,6 +33,7 @@ def case():
     )
     po = PurchaseOrder(
         id="po-1",
+        organization_id="org-1",
         vendor_id=vendor.id,
         po_number="PO-204",
         currency="USDC",
@@ -38,13 +41,19 @@ def case():
     )
     delivery = DeliveryEvidence(
         id="delivery-1",
+        organization_id="org-1",
         purchase_order_id=po.id,
         delivered_value=Decimal("1200"),
         source_document_hash="b" * 64,
     )
-    treasury = TreasurySnapshot(available_usdc=Decimal("10000"), spent_today_usdc=Decimal("800"))
+    treasury = TreasurySnapshot(
+        organization_id="org-1",
+        available_usdc=Decimal("10000"),
+        spent_today_usdc=Decimal("800"),
+    )
     policy = Policy(
         version="2026-09-19.1",
+        organization_id="org-1",
         daily_payment_limit_usdc=Decimal("5000"),
         minimum_cash_reserve_usdc=Decimal("3000"),
         maximum_autonomous_payment_usdc=Decimal("2000"),
@@ -131,6 +140,7 @@ def test_large_valid_invoice_escalates(case):
     )
     po = PurchaseOrder(
         id="po-1",
+        organization_id="org-1",
         vendor_id=vendor.id,
         po_number="PO-204",
         currency="USDC",
@@ -138,6 +148,7 @@ def test_large_valid_invoice_escalates(case):
     )
     delivery = DeliveryEvidence(
         id=delivery.id,
+        organization_id="org-1",
         purchase_order_id=po.id,
         delivered_value=amount,
         source_document_hash=delivery.source_document_hash,
@@ -155,7 +166,11 @@ def test_large_valid_invoice_escalates(case):
 
 
 def test_minimum_reserve_blocks_payment(case):
-    treasury = TreasurySnapshot(available_usdc=Decimal("4000"), spent_today_usdc=Decimal("0"))
+    treasury = TreasurySnapshot(
+        organization_id="org-1",
+        available_usdc=Decimal("4000"),
+        spent_today_usdc=Decimal("0"),
+    )
     decision = evaluate(case, treasury=treasury)
     assert decision.action == DecisionAction.HOLD
     assert "MINIMUM_RESERVE_BREACH" in decision.reason_codes
@@ -165,6 +180,7 @@ def test_kill_switch_blocks_otherwise_clean_invoice(case):
     original = case[-1]
     policy = Policy(
         version=original.version,
+        organization_id=original.organization_id,
         daily_payment_limit_usdc=original.daily_payment_limit_usdc,
         minimum_cash_reserve_usdc=original.minimum_cash_reserve_usdc,
         maximum_autonomous_payment_usdc=original.maximum_autonomous_payment_usdc,
@@ -174,3 +190,9 @@ def test_kill_switch_blocks_otherwise_clean_invoice(case):
     assert decision.action == DecisionAction.HOLD
     assert "KILL_SWITCH_ACTIVE" in decision.reason_codes
 
+
+def test_cross_tenant_evidence_is_rejected(case):
+    foreign_delivery = replace(case[3], organization_id="org-2")
+    decision = evaluate(case, delivery=foreign_delivery)
+    assert decision.action == DecisionAction.REJECT
+    assert "TENANT_BOUNDARY_VIOLATION" in decision.reason_codes

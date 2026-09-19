@@ -26,6 +26,7 @@ def normalize_wallet(address: str) -> str:
 @dataclass(frozen=True, slots=True)
 class Vendor:
     id: str
+    organization_id: str
     legal_name: str
     approved_wallet_address: str
     autopay_limit: Decimal
@@ -71,6 +72,7 @@ class Invoice:
 @dataclass(frozen=True, slots=True)
 class PurchaseOrder:
     id: str
+    organization_id: str
     vendor_id: str
     po_number: str
     currency: str
@@ -84,6 +86,7 @@ class PurchaseOrder:
 @dataclass(frozen=True, slots=True)
 class DeliveryEvidence:
     id: str
+    organization_id: str
     purchase_order_id: str
     delivered_value: Decimal
     source_document_hash: str
@@ -94,10 +97,10 @@ class DeliveryEvidence:
 
 @dataclass(frozen=True, slots=True)
 class TreasurySnapshot:
+    organization_id: str
     available_usdc: Decimal
     spent_today_usdc: Decimal
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "available_usdc", _decimal(self.available_usdc))
         object.__setattr__(self, "spent_today_usdc", _decimal(self.spent_today_usdc))
-
