@@ -143,6 +143,8 @@ class ArcRpcClient:
         recipient: str,
         amount_usdc: Decimal,
     ) -> ArcTransferProof:
+        _require_transaction_hash(transaction_hash)
+        normalized_recipient = _require_evm_address(recipient, field="recipient")
         chain_id = _hex_int(self._transport("eth_chainId", []), field="chain ID")
         if chain_id != self.config.chain_id:
             raise SettlementDenied(
@@ -159,16 +161,36 @@ class ArcRpcClient:
         block_number = _hex_int(receipt.get("blockNumber"), field="block number")
         if block_number < 1:
             raise SettlementDenied("Arc receipt returned an invalid block number.")
+        receipt_block_hash = _require_transaction_hash(
+            receipt.get("blockHash", ""),
+            field="receipt block hash",
+        )
 
         transaction = self._transport("eth_getTransactionByHash", [transaction_hash])
         if not isinstance(transaction, dict):
             raise SettlementDenied("Arc transaction details are not available.")
+        if str(transaction.get("hash", "")).lower() != transaction_hash.lower():
+            raise SettlementDenied("Arc transaction hash does not match Circle.")
         if transaction.get("to", "").lower() != self.config.usdc_contract_address.lower():
             raise SettlementDenied("Arc transaction did not call the canonical USDC contract.")
+        sender = _require_evm_address(transaction.get("from", ""), field="transaction sender")
+        transaction_block = _hex_int(transaction.get("blockNumber"), field="transaction block number")
+        if transaction_block != block_number:
+            raise SettlementDenied("Arc transaction and receipt block numbers do not match.")
+        transaction_block_hash = _require_transaction_hash(
+            transaction.get("blockHash", ""),
+            field="transaction block hash",
+        )
+        if transaction_block_hash != receipt_block_hash:
+            raise SettlementDenied("Arc transaction and receipt block hashes do not match.")
+        latest_block = _hex_int(self._transport("eth_blockNumber", []), field="latest block")
+        if latest_block < block_number:
+            raise SettlementDenied("Arc receipt block is ahead of the RPC latest block.")
 
         expected_atomic = _to_usdc_atomic_units(amount_usdc)
-        expected_recipient_topic = "0x" + recipient[2:].lower().rjust(64, "0")
-        matching_log = False
+        expected_sender_topic = "0x" + sender[2:].rjust(64, "0")
+        expected_recipient_topic = "0x" + normalized_recipient[2:].rjust(64, "0")
+        matching_logs = 0
         for log in receipt.get("logs", []):
             if not isinstance(log, dict):
                 continue
@@ -177,13 +199,16 @@ class ArcRpcClient:
                 log.get("address", "").lower() == self.config.usdc_contract_address.lower()
                 and len(topics) >= 3
                 and str(topics[0]).lower() == TRANSFER_TOPIC
+                and str(topics[1]).lower() == expected_sender_topic
                 and str(topics[2]).lower() == expected_recipient_topic
                 and _hex_int(log.get("data"), field="USDC transfer amount") == expected_atomic
+                and log.get("removed") is not True
             ):
-                matching_log = True
-                break
-        if not matching_log:
+                matching_logs += 1
+        if matching_logs == 0:
             raise SettlementDenied("Arc receipt does not contain the expected USDC transfer event.")
+        if matching_logs > 1:
+            raise SettlementDenied("Arc receipt contains multiple matching USDC transfer events.")
 
         return ArcTransferProof(transaction_hash=transaction_hash.lower(), block_number=block_number)
 
@@ -452,6 +477,26 @@ def _hex_int(value: Any, *, field: str) -> int:
         return int(value, 16)
     except ValueError as exc:
         raise SettlementDenied(f"Arc RPC returned an invalid {field}.") from exc
+
+
+def _require_evm_address(value: Any, *, field: str) -> str:
+    if not isinstance(value, str) or len(value) != 42 or not value.startswith("0x"):
+        raise SettlementDenied(f"Arc RPC returned an invalid {field}.")
+    try:
+        int(value[2:], 16)
+    except ValueError as exc:
+        raise SettlementDenied(f"Arc RPC returned an invalid {field}.") from exc
+    return value.lower()
+
+
+def _require_transaction_hash(value: Any, *, field: str = "transaction hash") -> str:
+    if not isinstance(value, str) or len(value) != 66 or not value.startswith("0x"):
+        raise SettlementDenied(f"Arc RPC returned an invalid {field}.")
+    try:
+        int(value[2:], 16)
+    except ValueError as exc:
+        raise SettlementDenied(f"Arc RPC returned an invalid {field}.") from exc
+    return value.lower()
 
 
 def _enum_value(value: Any) -> str:

@@ -21,6 +21,7 @@ tallyguard-loadtest = "tallyguard.loadtest:main"
 tallyguard-agent-loadtest = "tallyguard.agentload:main"
 tallyguard-preflight = "tallyguard.preflight:main"
 tallyguard-acceptance = "tallyguard.acceptance:main"
+tallyguard-wallet-setup = "tallyguard.wallet_setup:main"
 
 [project.optional-dependencies]
 circle = [

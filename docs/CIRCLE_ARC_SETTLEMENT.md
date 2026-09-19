@@ -28,8 +28,9 @@ completed transaction against the mapped value. `ARC-TESTNET` is identical in bo
 8. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
 9. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
 10. The transaction target must be Arc's canonical USDC ERC-20 interface.
-11. The receipt must contain the exact USDC `Transfer` event for the authorized recipient and six-decimal atomic amount.
-12. If Circle supplies a block height, it must equal the Arc RPC receipt block. Any mismatch is terminal and moves the invoice to `RECONCILIATION_MISMATCH`.
+11. The transaction and receipt must agree on transaction hash, block number, and block hash, and the receipt block cannot be ahead of the RPC head.
+12. The receipt must contain exactly one non-removed USDC `Transfer` event whose sender equals the transaction sender and whose recipient and six-decimal atomic amount exactly match the authorization.
+13. If Circle supplies a block height, it must equal the Arc RPC receipt block. Any mismatch is terminal and moves the invoice to `RECONCILIATION_MISMATCH`.
 
 Only after all checks pass does TallyGuard create a confirmed settlement receipt.
 
@@ -59,6 +60,21 @@ keep mainnet disabled, set a deliberately small maximum transfer amount, and pro
 `CIRCLE_WEB3_API_KEY`, `CIRCLE_ENTITY_SECRET`, and `CIRCLE_WALLET_ID` only in that local file.
 
 Do not paste the entity secret, API key, private key, or recovery material into chat, issues, logs, screenshots, or committed files.
+
+If a dedicated Circle test wallet does not exist yet, first generate and register the entity
+secret in the Circle Developer Console yourself. After storing the API key and entity secret in
+local environment variables, the explicit setup command can create one new `EOA` wallet on
+`ARC-TESTNET`:
+
+```powershell
+tallyguard-wallet-setup --confirm CREATE-ARC-TESTNET-WALLET
+```
+
+To reuse an existing wallet set, add `--wallet-set-id <id>` or set the non-secret
+`CIRCLE_WALLET_SET_ID`. The command creates account resources but does not fund the wallet or
+move USDC. It prints only the wallet set ID, wallet ID, public address, network, and state. Store
+the returned wallet ID locally as `CIRCLE_WALLET_ID`, then request Arc Testnet USDC for the
+public address from the Circle Faucet.
 
 Live Circle mode disables `/api/demo/session` by default. Do not enable
 `TALLYGUARD_ENABLE_DEMO_SESSIONS` on any deployment connected to a funded wallet. The public
@@ -130,3 +146,4 @@ The mainnet flag must not be enabled until this gate passes.
 - Get transaction: https://developers.circle.com/api-reference/wallets/developer-controlled-wallets/get-transaction
 - Arc network reference: https://docs.arc.io/arc/references/connect-to-arc
 - Arc contract addresses: https://docs.arc.io/arc/references/contract-addresses
+- Arc unified USDC event indexing: https://docs.arc.io/integrate/infrastructure/indexing-events

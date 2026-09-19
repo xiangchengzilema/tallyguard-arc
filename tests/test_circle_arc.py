@@ -19,6 +19,8 @@ from tallyguard.settlement import PaymentIntent, SettlementDenied
 
 RECIPIENT = "0x1111111111111111111111111111111111111111"
 TX_HASH = "0x" + "a" * 64
+BLOCK_HASH = "0x" + "b" * 64
+SENDER = "0x2222222222222222222222222222222222222222"
 UUID4 = "123e4567-e89b-42d3-a456-426614174000"
 
 
@@ -72,19 +74,28 @@ class FakeCircle:
 def valid_rpc_transport(method: str, params: list[object]):
     if method == "eth_chainId":
         return hex(5_042_002)
+    if method == "eth_blockNumber":
+        return hex(43)
     if method == "eth_getTransactionByHash":
-        return {"hash": TX_HASH, "to": "0x3600000000000000000000000000000000000000"}
+        return {
+            "hash": TX_HASH,
+            "from": SENDER,
+            "to": "0x3600000000000000000000000000000000000000",
+            "blockNumber": hex(42),
+            "blockHash": BLOCK_HASH,
+        }
     if method == "eth_getTransactionReceipt":
         return {
             "transactionHash": TX_HASH,
             "status": "0x1",
             "blockNumber": hex(42),
+            "blockHash": BLOCK_HASH,
             "logs": [
                 {
                     "address": "0x3600000000000000000000000000000000000000",
                     "topics": [
                         TRANSFER_TOPIC,
-                        "0x" + "2" * 64,
+                        "0x" + SENDER[2:].rjust(64, "0"),
                         "0x" + RECIPIENT[2:].rjust(64, "0"),
                     ],
                     "data": hex(1_250_000),
@@ -212,6 +223,72 @@ def test_arc_rpc_rejects_receipt_without_exact_usdc_transfer_log():
 
     rpc = ArcRpcClient(config=config, transport=wrong_amount)
     with pytest.raises(SettlementDenied, match="expected USDC transfer event"):
+        rpc.confirm_usdc_transfer(
+            transaction_hash=TX_HASH,
+            recipient=RECIPIENT,
+            amount_usdc=Decimal("1.25"),
+        )
+
+
+def test_arc_rpc_rejects_transfer_event_from_different_sender():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    def wrong_sender(method: str, params: list[object]):
+        result = valid_rpc_transport(method, params)
+        if method == "eth_getTransactionReceipt":
+            result["logs"][0]["topics"][1] = "0x" + "3" * 64
+        return result
+
+    rpc = ArcRpcClient(config=config, transport=wrong_sender)
+    with pytest.raises(SettlementDenied, match="expected USDC transfer event"):
+        rpc.confirm_usdc_transfer(
+            transaction_hash=TX_HASH,
+            recipient=RECIPIENT,
+            amount_usdc=Decimal("1.25"),
+        )
+
+
+def test_arc_rpc_rejects_ambiguous_duplicate_transfer_events():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    def duplicate_event(method: str, params: list[object]):
+        result = valid_rpc_transport(method, params)
+        if method == "eth_getTransactionReceipt":
+            result["logs"].append(dict(result["logs"][0]))
+        return result
+
+    rpc = ArcRpcClient(config=config, transport=duplicate_event)
+    with pytest.raises(SettlementDenied, match="multiple matching"):
+        rpc.confirm_usdc_transfer(
+            transaction_hash=TX_HASH,
+            recipient=RECIPIENT,
+            amount_usdc=Decimal("1.25"),
+        )
+
+
+@pytest.mark.parametrize(
+    "target, expected_message",
+    [
+        ("transaction_block", "block numbers"),
+        ("transaction_block_hash", "block hashes"),
+        ("future_receipt", "ahead of the RPC latest block"),
+    ],
+)
+def test_arc_rpc_rejects_inconsistent_block_inclusion(target, expected_message):
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    def inconsistent_block(method: str, params: list[object]):
+        result = valid_rpc_transport(method, params)
+        if target == "transaction_block" and method == "eth_getTransactionByHash":
+            result["blockNumber"] = hex(41)
+        elif target == "transaction_block_hash" and method == "eth_getTransactionByHash":
+            result["blockHash"] = "0x" + "c" * 64
+        elif target == "future_receipt" and method == "eth_blockNumber":
+            result = hex(41)
+        return result
+
+    rpc = ArcRpcClient(config=config, transport=inconsistent_block)
+    with pytest.raises(SettlementDenied, match=expected_message):
         rpc.confirm_usdc_transfer(
             transaction_hash=TX_HASH,
             recipient=RECIPIENT,
