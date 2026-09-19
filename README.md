@@ -58,6 +58,7 @@ Every payment answers four questions:
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with seven deterministic risk scenarios and a fresh-evidence workflow
 - The fresh-evidence path creates tenant-scoped vendor, policy, treasury, invoice, PO, and delivery records; uploads three hashed source files; evaluates them; and can produce a reconciled simulation receipt from one screen
+- A bring-your-own-evidence path validates three JSON files locally, previews the extracted financial fields for human confirmation, then persists the original bytes and runs the same policy pipeline
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
 - Real-HTTP synthetic multi-tenant load harness with latency, isolation, and duplicate-payment metrics
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics
@@ -72,7 +73,7 @@ cd ..
 .\.venv\Scripts\python.exe -m tallyguard.api
 ```
 
-Open `http://127.0.0.1:8000`. Use **Control lab** for the seven adversarial judge cases or **Live evidence** to create and evaluate a new immutable three-document package through the public API. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
+Open `http://127.0.0.1:8000`. Use **Control lab** for the seven adversarial judge cases or **Live evidence** to create and evaluate a new immutable three-document package through the public API. Live evidence also accepts the sample files in `examples/evidence/` so a reviewer can inspect extracted values before committing them. The default public-safe mode uses the Arc simulator and clearly labels simulated receipts. Live Circle settlement is opt-in through environment variables documented in [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md).
 
 Run a local reliability baseline:
 

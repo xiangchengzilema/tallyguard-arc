@@ -1,0 +1,14 @@
+{
+  "invoice_id": "invoice-atlas-20260920-001",
+  "vendor_id": "vendor-atlas-compute",
+  "vendor_legal_name": "Atlas Compute Services Ltd",
+  "vendor_verification_reference": "signed-challenge-atlas-20260920",
+  "invoice_number": "ATLAS-2026-0920",
+  "currency": "USDC",
+  "amount": "1486.25",
+  "due_date": "2026-10-08",
+  "payment_wallet_address": "0x3333333333333333333333333333333333333333",
+  "treasury_available_usdc": "18437.29",
+  "treasury_spent_today_usdc": "913.48",
+  "maximum_autonomous_payment_usdc": "2000"
+}

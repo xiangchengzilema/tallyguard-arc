@@ -218,9 +218,32 @@ body {
 .empty-workbench { display: grid; place-items: start; align-content: center; min-height: 100%; max-width: 620px; margin: 0 auto; padding: 4rem; }
 .empty-workbench__icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 2rem; background: #d9fbf6; color: var(--tg-accent-dark); }
 .empty-workbench h2 { font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; }
-.empty-workbench--live { max-width: 760px; }
-.empty-workbench--live h2 { max-width: 13ch; text-wrap: balance; }
-.empty-workbench--live p { max-width: 62ch; text-wrap: pretty; }
+.live-workbench { max-width: 1040px; margin: 0 auto; padding: clamp(2rem, 5vw, 4rem); }
+.live-workbench__intro { display: grid; grid-template-columns: 64px 1fr; gap: 1.5rem; align-items: start; }
+.live-workbench__intro .empty-workbench__icon { margin: 0; }
+.live-workbench h2 { max-width: 16ch; margin: .35rem 0 .5rem; font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; letter-spacing: -.04em; line-height: 1; text-wrap: balance; }
+.live-workbench p { max-width: 65ch; margin: 0; color: var(--tg-muted); font-size: .875rem; line-height: 1.5; text-wrap: pretty; }
+.upload-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2rem; border-top: 1px solid var(--tg-line); border-left: 1px solid var(--tg-line); }
+.upload-slot { position: relative; display: grid; min-height: 148px; align-content: start; gap: .45rem; padding: 1.25rem; border-right: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); background: #f8faf9; cursor: pointer; transition: background-color 160ms ease; }
+.upload-slot:hover { background: #edf6f3; }
+.upload-slot:focus-within { outline: 2px solid var(--tg-accent); outline-offset: -2px; }
+.upload-slot > span { color: var(--tg-accent-dark); }
+.upload-slot strong { font-size: .875rem; }
+.upload-slot small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.upload-slot input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.upload-slot--ready { background: #eaf7f5; box-shadow: inset 0 3px 0 var(--tg-accent); }
+.live-workbench > .cds--inline-loading, .live-workbench > .cds--inline-notification { margin-top: 1rem; }
+.evidence-review { margin-top: 1.5rem; border: 1px solid var(--tg-line); }
+.evidence-review__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.25rem; border-bottom: 1px solid var(--tg-line); }
+.evidence-review__head h3 { margin: .3rem 0 0; font-size: 1.25rem; font-weight: 500; }
+.evidence-review__head .cds--tag { margin: 0; }
+.evidence-review__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.evidence-review__grid > div { display: grid; min-height: 80px; align-content: center; gap: .35rem; padding: 1rem 1.25rem; border-right: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); }
+.evidence-review__grid > div:nth-child(3n) { border-right: 0; }
+.evidence-review__grid span { color: var(--tg-muted); font-size: .625rem; text-transform: uppercase; letter-spacing: .06em; }
+.evidence-review__grid strong, .evidence-review__grid code { font-size: .75rem; overflow-wrap: anywhere; }
+.review-action { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1rem 1.25rem; }
+.review-action .cds--btn { flex: none; }
 .flow-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem; color: var(--tg-muted); font-size: .75rem; }
 .flow-preview span { display: flex; align-items: center; gap: .4rem; color: var(--tg-ink); }
 
@@ -333,6 +356,11 @@ body {
   .rule-table__row { grid-template-columns: 1fr; gap: .5rem; padding: 1rem 0; }
   .receipt-grid { grid-template-columns: 1fr; }
   .receipt-grid__wide { grid-column: auto; }
+  .live-workbench__intro { grid-template-columns: 1fr; }
+  .upload-grid, .evidence-review__grid { grid-template-columns: 1fr; }
+  .evidence-review__grid > div { border-right: 0; }
+  .review-action { align-items: stretch; flex-direction: column; }
+  .review-action .cds--btn { width: 100%; max-width: none; }
   .product-footer { flex-direction: column; }
 }
 

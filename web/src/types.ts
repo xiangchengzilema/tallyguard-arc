@@ -63,6 +63,24 @@ export interface RunResult {
   correlation_id: string;
 }
 
+export interface EvidenceFileBundle {
+  invoice: File;
+  purchaseOrder: File;
+  delivery: File;
+}
+
+export interface EvidenceFileReview {
+  invoiceNumber: string;
+  vendorId: string;
+  amount: string;
+  currency: string;
+  dueDate: string;
+  purchaseOrderNumber: string;
+  authorizedAmount: string;
+  deliveredValue: string;
+  walletAddress: string;
+}
+
 export interface Approval {
   id: string;
   decision_id: string;

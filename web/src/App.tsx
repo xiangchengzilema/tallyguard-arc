@@ -30,8 +30,10 @@ import {
   ApiError,
   bootstrap,
   requestApproval,
+  reviewEvidenceFiles,
   resolveApproval,
   runLiveEvidenceWorkflow,
+  runUploadedEvidenceWorkflow,
   runScenario,
   settleInvoice,
 } from './api';
@@ -39,6 +41,8 @@ import type {
   Approval,
   BootstrapData,
   DecisionAction,
+  EvidenceFileBundle,
+  EvidenceFileReview,
   Payment,
   RuleDisposition,
   RunResult,
@@ -225,17 +229,112 @@ function EmptyWorkbench({ scenario }: { scenario?: Scenario }) {
   );
 }
 
-function LiveEmptyWorkbench() {
+function LiveEvidenceWorkbench({
+  busy,
+  onEvaluate,
+}: {
+  busy: boolean;
+  onEvaluate: (files: EvidenceFileBundle) => void;
+}) {
+  const [files, setFiles] = useState<Partial<EvidenceFileBundle>>({});
+  const [review, setReview] = useState<EvidenceFileReview | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+
+  useEffect(() => {
+    if (!files.invoice || !files.purchaseOrder || !files.delivery) {
+      setReview(null);
+      setReviewError(null);
+      return;
+    }
+    const bundle: EvidenceFileBundle = {
+      invoice: files.invoice,
+      purchaseOrder: files.purchaseOrder,
+      delivery: files.delivery,
+    };
+    let cancelled = false;
+    setReviewing(true);
+    setReview(null);
+    setReviewError(null);
+    reviewEvidenceFiles(bundle)
+      .then((result) => { if (!cancelled) setReview(result); })
+      .catch((reason: unknown) => {
+        if (!cancelled) setReviewError(reason instanceof Error ? reason.message : 'Could not review these files.');
+      })
+      .finally(() => { if (!cancelled) setReviewing(false); });
+    return () => { cancelled = true; };
+  }, [files.delivery, files.invoice, files.purchaseOrder]);
+
+  const updateFile = (key: keyof EvidenceFileBundle, file?: File) => {
+    setFiles((current) => ({ ...current, [key]: file }));
+  };
+  const completeBundle = files.invoice && files.purchaseOrder && files.delivery
+    ? { invoice: files.invoice, purchaseOrder: files.purchaseOrder, delivery: files.delivery }
+    : null;
+
   return (
-    <section className="empty-workbench empty-workbench--live">
-      <div className="empty-workbench__icon"><Document size={32} /></div>
-      <span className="eyebrow">Fresh tenant-scoped records</span>
-      <h2>From raw documents to a payable decision.</h2>
-      <p>Create a verified vendor, policy, treasury snapshot, invoice, purchase order, and delivery proof. TallyGuard hashes every source before the agent and policy engine review it.</p>
+    <section className="live-workbench">
+      <div className="live-workbench__intro">
+        <div className="empty-workbench__icon"><Document size={32} /></div>
+        <div>
+          <span className="eyebrow">Bring your own evidence</span>
+          <h2>Review before the agent decides.</h2>
+          <p>Select three structured JSON documents. They stay in this workflow, are hashed before storage, and cannot be replaced after evaluation begins.</p>
+        </div>
+      </div>
+      <div className="upload-grid">
+        {([
+          ['invoice', 'Invoice JSON', 'invoice_id · vendor_id · amount · wallet'],
+          ['purchaseOrder', 'Purchase order JSON', 'purchase_order_id · vendor_id · authorized_amount'],
+          ['delivery', 'Delivery JSON', 'delivery_id · purchase_order_id · delivered_value'],
+        ] as const).map(([key, label, hint]) => (
+          <label className={files[key] ? 'upload-slot upload-slot--ready' : 'upload-slot'} key={key}>
+            <span>{files[key] ? <CheckmarkFilled size={18} /> : <Document size={18} />}</span>
+            <strong>{label}</strong>
+            <small>{files[key]?.name ?? hint}</small>
+            <input
+              aria-label={`Upload ${label}`}
+              accept="application/json,.json"
+              type="file"
+              onChange={(event) => updateFile(key, event.target.files?.[0])}
+            />
+          </label>
+        ))}
+      </div>
+      {reviewing ? <InlineLoading description="Reading and validating local evidence" status="active" /> : null}
+      {reviewError ? (
+        <InlineNotification kind="error" title="Evidence review stopped" subtitle={reviewError} lowContrast hideCloseButton />
+      ) : null}
+      {review ? (
+        <div className="evidence-review" aria-label="Extracted evidence review">
+          <div className="evidence-review__head">
+            <div><span className="eyebrow">Extraction review</span><h3>{review.invoiceNumber}</h3></div>
+            <Tag type="teal">Schema valid</Tag>
+          </div>
+          <div className="evidence-review__grid">
+            <div><span>Vendor</span><code>{review.vendorId}</code></div>
+            <div><span>Requested</span><strong>{formatMoney(review.amount)} {review.currency}</strong></div>
+            <div><span>PO authorized</span><strong>{formatMoney(review.authorizedAmount)} {review.currency}</strong></div>
+            <div><span>Delivered</span><strong>{formatMoney(review.deliveredValue)} {review.currency}</strong></div>
+            <div><span>Due</span><strong>{review.dueDate}</strong></div>
+            <div><span>Recipient</span><code>{shorten(review.walletAddress, 10, 8)}</code></div>
+          </div>
+          <div className="review-action">
+            <p>Confirm these extracted values before creating immutable tenant records.</p>
+            <Button
+              disabled={!completeBundle || busy}
+              renderIcon={busy ? Renew : ArrowRight}
+              onClick={() => { if (completeBundle) onEvaluate(completeBundle); }}
+            >
+              {busy ? 'Evaluating evidence' : 'Confirm and evaluate'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div className="flow-preview" aria-label="Live evidence flow">
-        <span><Document size={16} /> 3 documents</span>
+        <span><Document size={16} /> 3 source files</span>
         <ArrowRight size={16} />
-        <span><Rule size={16} /> 12 controls</span>
+        <span><Rule size={16} /> Deterministic controls</span>
         <ArrowRight size={16} />
         <span><Wallet size={16} /> Approval boundary</span>
       </div>
@@ -510,6 +609,21 @@ function App() {
     });
   }, [act, data]);
 
+  const handleUploadedEvidence = useCallback((files: EvidenceFileBundle) => {
+    if (!data) return;
+    void act('Persisting and evaluating your reviewed evidence', async () => {
+      const result = await runUploadedEvidenceWorkflow(
+        data.sessions.admin,
+        data.sessions.operator,
+        files,
+      );
+      setRun(result);
+      setHistory((items) => [result, ...items].slice(0, 12));
+      setApproval(null);
+      setPayment(null);
+    });
+  }, [act, data]);
+
   const handleApprove = useCallback(() => {
     if (!data || !approval) return;
     void act('Verifying and signing the approval record', async () => {
@@ -609,7 +723,9 @@ function App() {
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}
                 </>
-              ) : mode === 'live' ? <LiveEmptyWorkbench /> : <EmptyWorkbench scenario={selectedScenario} />}
+              ) : mode === 'live' ? (
+                <LiveEvidenceWorkbench busy={busy !== null} onEvaluate={handleUploadedEvidence} />
+              ) : <EmptyWorkbench scenario={selectedScenario} />}
             </main>
           </div>
         )}

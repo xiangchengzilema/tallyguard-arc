@@ -1,4 +1,11 @@
-import type { Approval, BootstrapData, Payment, RunResult } from './types';
+import type {
+  Approval,
+  BootstrapData,
+  EvidenceFileBundle,
+  EvidenceFileReview,
+  Payment,
+  RunResult,
+} from './types';
 
 type Role = keyof BootstrapData['sessions'];
 
@@ -66,6 +73,175 @@ const sha256 = async (content: ArrayBuffer) => {
   const buffer = await crypto.subtle.digest('SHA-256', content);
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
 };
+
+type JsonEvidence = Record<string, string>;
+
+interface ParsedEvidenceBundle {
+  invoice: JsonEvidence;
+  purchaseOrder: JsonEvidence;
+  delivery: JsonEvidence;
+  bytes: {
+    invoice: ArrayBuffer;
+    purchaseOrder: ArrayBuffer;
+    delivery: ArrayBuffer;
+  };
+}
+
+const requiredField = (record: JsonEvidence, field: string, documentName: string) => {
+  const value = record[field]?.trim();
+  if (!value) throw new Error(`${documentName} is missing required field "${field}".`);
+  return value;
+};
+
+const parseJsonEvidence = async (file: File, documentName: string): Promise<[JsonEvidence, ArrayBuffer]> => {
+  if (!file.name.toLowerCase().endsWith('.json')) {
+    throw new Error(`${documentName} must be a JSON file for the browser review workflow.`);
+  }
+  const bytes = await file.arrayBuffer();
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error(`${documentName} is not valid UTF-8 JSON.`);
+  }
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw new Error(`${documentName} must contain one top-level JSON object.`);
+  }
+  const normalized: JsonEvidence = {};
+  for (const [key, value] of Object.entries(decoded)) {
+    if (['string', 'number', 'boolean'].includes(typeof value)) normalized[key] = String(value);
+  }
+  return [normalized, bytes];
+};
+
+const parseEvidenceBundle = async (files: EvidenceFileBundle): Promise<ParsedEvidenceBundle> => {
+  const [[invoice, invoiceBytes], [purchaseOrder, purchaseOrderBytes], [delivery, deliveryBytes]] = await Promise.all([
+    parseJsonEvidence(files.invoice, 'Invoice'),
+    parseJsonEvidence(files.purchaseOrder, 'Purchase order'),
+    parseJsonEvidence(files.delivery, 'Delivery evidence'),
+  ]);
+  const invoiceId = requiredField(invoice, 'invoice_id', 'Invoice');
+  const vendorId = requiredField(invoice, 'vendor_id', 'Invoice');
+  const purchaseOrderId = requiredField(purchaseOrder, 'purchase_order_id', 'Purchase order');
+  if (requiredField(purchaseOrder, 'vendor_id', 'Purchase order') !== vendorId) {
+    throw new Error('Invoice and purchase order vendor_id values do not match.');
+  }
+  if (requiredField(delivery, 'purchase_order_id', 'Delivery evidence') !== purchaseOrderId) {
+    throw new Error('Purchase order and delivery purchase_order_id values do not match.');
+  }
+  const currency = requiredField(invoice, 'currency', 'Invoice').toUpperCase();
+  if (currency !== 'USDC' || requiredField(purchaseOrder, 'currency', 'Purchase order').toUpperCase() !== 'USDC') {
+    throw new Error('TallyGuard currently settles uploaded evidence in USDC only.');
+  }
+  const wallet = requiredField(invoice, 'payment_wallet_address', 'Invoice');
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Invoice payment_wallet_address must be a valid EVM address.');
+  for (const [value, label] of [
+    [requiredField(invoice, 'amount', 'Invoice'), 'Invoice amount'],
+    [requiredField(purchaseOrder, 'authorized_amount', 'Purchase order'), 'Authorized amount'],
+    [requiredField(delivery, 'delivered_value', 'Delivery evidence'), 'Delivered value'],
+  ]) {
+    if (!Number.isFinite(Number(value)) || Number(value) <= 0) throw new Error(`${label} must be greater than zero.`);
+  }
+  requiredField(invoice, 'invoice_number', 'Invoice');
+  requiredField(invoice, 'due_date', 'Invoice');
+  requiredField(purchaseOrder, 'po_number', 'Purchase order');
+  requiredField(delivery, 'delivery_id', 'Delivery evidence');
+  if (!invoiceId.trim()) throw new Error('Invoice ID must not be empty.');
+  return {
+    invoice,
+    purchaseOrder,
+    delivery,
+    bytes: { invoice: invoiceBytes, purchaseOrder: purchaseOrderBytes, delivery: deliveryBytes },
+  };
+};
+
+export async function reviewEvidenceFiles(files: EvidenceFileBundle): Promise<EvidenceFileReview> {
+  const parsed = await parseEvidenceBundle(files);
+  return {
+    invoiceNumber: parsed.invoice.invoice_number,
+    vendorId: parsed.invoice.vendor_id,
+    amount: parsed.invoice.amount,
+    currency: parsed.invoice.currency,
+    dueDate: parsed.invoice.due_date,
+    purchaseOrderNumber: parsed.purchaseOrder.po_number,
+    authorizedAmount: parsed.purchaseOrder.authorized_amount,
+    deliveredValue: parsed.delivery.delivered_value,
+    walletAddress: parsed.invoice.payment_wallet_address,
+  };
+}
+
+export async function runUploadedEvidenceWorkflow(
+  adminToken: string,
+  operatorToken: string,
+  files: EvidenceFileBundle,
+): Promise<RunResult> {
+  const parsed = await parseEvidenceBundle(files);
+  const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
+  const invoiceId = parsed.invoice.invoice_id;
+  const vendorId = parsed.invoice.vendor_id;
+  const wallet = parsed.invoice.payment_wallet_address;
+  const invoiceHash = await sha256(parsed.bytes.invoice);
+  await Promise.all([
+    request('/api/policies', {
+      method: 'POST',
+      body: JSON.stringify({
+        version: `upload-${suffix}`,
+        daily_payment_limit_usdc: parsed.invoice.daily_payment_limit_usdc ?? '8500',
+        minimum_cash_reserve_usdc: parsed.invoice.minimum_cash_reserve_usdc ?? '2500',
+        maximum_autonomous_payment_usdc: parsed.invoice.maximum_autonomous_payment_usdc ?? '2000',
+        po_amount_tolerance_usdc: parsed.invoice.po_amount_tolerance_usdc ?? '5',
+        allowed_asset: 'USDC',
+        allowed_network: 'ARC-TESTNET',
+        kill_switch_enabled: false,
+      }),
+    }, adminToken),
+    request('/api/treasury/snapshots', {
+      method: 'POST',
+      body: JSON.stringify({
+        available_usdc: parsed.invoice.treasury_available_usdc ?? '18437.29',
+        spent_today_usdc: parsed.invoice.treasury_spent_today_usdc ?? '913.48',
+        source_reference: `uploaded-evidence-${suffix}`,
+      }),
+    }, operatorToken),
+    request('/api/vendors', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: vendorId,
+        legal_name: parsed.invoice.vendor_legal_name ?? vendorId,
+        approved_wallet_address: wallet,
+        autopay_limit: parsed.invoice.vendor_autopay_limit_usdc ?? '2000',
+        risk_tier: parsed.invoice.vendor_risk_tier ?? 'low',
+        verification_method: 'SIGNED_CHALLENGE',
+        verification_reference: parsed.invoice.vendor_verification_reference ?? `uploaded-wallet-proof-${suffix}`,
+      }),
+    }, operatorToken),
+  ]);
+  await request('/api/invoices', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: invoiceId,
+      vendor_id: vendorId,
+      invoice_number: parsed.invoice.invoice_number,
+      currency: 'USDC',
+      amount: parsed.invoice.amount,
+      due_date: parsed.invoice.due_date,
+      payment_wallet_address: wallet,
+      source_document_hash: invoiceHash,
+    }),
+  }, operatorToken);
+  const uploads: Array<[string, File, ArrayBuffer]> = [
+    ['INVOICE', files.invoice, parsed.bytes.invoice],
+    ['PURCHASE_ORDER', files.purchaseOrder, parsed.bytes.purchaseOrder],
+    ['DELIVERY', files.delivery, parsed.bytes.delivery],
+  ];
+  await Promise.all(uploads.map(([evidenceType, file, bytes]) => {
+    const form = new FormData();
+    form.append('evidence_type', evidenceType);
+    form.append('file', new Blob([bytes], { type: 'application/json' }), file.name);
+    return request(`/api/invoices/${encodeURIComponent(invoiceId)}/evidence`, { method: 'POST', body: form }, operatorToken);
+  }));
+  return request<RunResult>(`/api/invoices/${encodeURIComponent(invoiceId)}/evaluate`, { method: 'POST' }, operatorToken);
+}
 
 export async function runLiveEvidenceWorkflow(
   adminToken: string,
