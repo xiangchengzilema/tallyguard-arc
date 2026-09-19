@@ -38,6 +38,7 @@ import {
   runUploadedEvidenceWorkflow,
   runScenario,
   settleInvoice,
+  settlePaymentBatch,
   verifyDecisionReplay,
 } from './api';
 import type {
@@ -49,6 +50,7 @@ import type {
   EvidenceFileReview,
   OperationsOverview,
   Payment,
+  PaymentBatch,
   ReplayVerification,
   RuleDisposition,
   RunResult,
@@ -122,22 +124,79 @@ function OperationsBand({ overview, sessionEvaluations }: { overview: Operations
   );
 }
 
-function OperationsQueue({ overview }: { overview: OperationsOverview }) {
+function OperationsQueue({
+  overview,
+  busy,
+  batch,
+  onSettleBatch,
+}: {
+  overview: OperationsOverview;
+  busy: boolean;
+  batch: PaymentBatch | null;
+  onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const payable = overview.work_queue.filter((invoice) => invoice.status === 'READY' && invoice.decision_id);
+  useEffect(() => {
+    const available = new Set(payable.map((invoice) => invoice.id));
+    setSelected((current) => new Set([...current].filter((invoiceId) => available.has(invoiceId))));
+  }, [overview]);
+  const selectedItems = payable
+    .filter((invoice) => selected.has(invoice.id))
+    .map((invoice) => ({ invoice_id: invoice.id, decision_id: invoice.decision_id! }));
+  const toggle = (invoiceId: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(invoiceId)) next.delete(invoiceId); else next.add(invoiceId);
+      return next;
+    });
+  };
   return (
     <section className="operations-queue" aria-label="Invoice work queue">
       <div className="operations-queue__head">
         <div><span className="eyebrow">Persistent operations</span><h2>Invoice work queue</h2></div>
-        <Tag type={overview.overdue_count > 0 ? 'red' : 'cool-gray'}>{overview.overdue_count} overdue</Tag>
+        <div className="operations-queue__actions">
+          <Tag type={overview.overdue_count > 0 ? 'red' : 'cool-gray'}>{overview.overdue_count} overdue</Tag>
+          {payable.length > 0 ? (
+            <Button
+              size="sm"
+              renderIcon={Money}
+              disabled={busy || selectedItems.length === 0}
+              onClick={() => onSettleBatch(selectedItems)}
+            >
+              Settle {selectedItems.length || ''} selected
+            </Button>
+          ) : null}
+        </div>
       </div>
+      {batch ? (
+        <InlineNotification
+          className="batch-result"
+          kind={batch.failed > 0 ? 'warning' : 'success'}
+          title={`${batch.succeeded}/${batch.requested} batch payments reconciled`}
+          subtitle={batch.failed > 0 ? `${batch.failed} item failed independently; successful receipts remain final and retry-safe.` : 'Every selected invoice produced or reused one durable receipt.'}
+          lowContrast
+          hideCloseButton
+        />
+      ) : null}
       {overview.work_queue.length === 0 ? (
         <div className="operations-queue__empty"><CheckmarkFilled size={20} /><span>No open invoices. Run a control case or upload evidence to populate the durable queue.</span></div>
       ) : (
         <div className="operations-table" role="table" aria-label="Open invoices sorted by due date">
           <div className="operations-table__head" role="row">
-            <span role="columnheader">Invoice</span><span role="columnheader">Vendor</span><span role="columnheader">Due</span><span role="columnheader">Exposure</span><span role="columnheader">State</span>
+            <span role="columnheader">Select</span><span role="columnheader">Invoice</span><span role="columnheader">Vendor</span><span role="columnheader">Due</span><span role="columnheader">Exposure</span><span role="columnheader">State</span>
           </div>
           {overview.work_queue.map((invoice) => (
             <div className="operations-table__row" role="row" key={invoice.id}>
+              <label className="batch-select" title={invoice.status === 'READY' ? 'Select for batch settlement' : 'Only READY invoices can be settled'}>
+                <input
+                  aria-label={`Select ${invoice.invoice_number} for batch settlement`}
+                  type="checkbox"
+                  checked={selected.has(invoice.id)}
+                  disabled={busy || invoice.status !== 'READY' || !invoice.decision_id}
+                  onChange={() => toggle(invoice.id)}
+                />
+              </label>
               <div role="cell"><strong>{invoice.invoice_number}</strong><code>{shorten(invoice.id, 12, 6)}</code></div>
               <code role="cell">{shorten(invoice.vendor_id, 13, 6)}</code>
               <span role="cell">{invoice.due_date}</span>
@@ -679,6 +738,7 @@ function App() {
   const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
   const [replay, setReplay] = useState<ReplayVerification | null>(null);
   const [operations, setOperations] = useState<OperationsOverview | null>(null);
+  const [batch, setBatch] = useState<PaymentBatch | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -791,6 +851,14 @@ function App() {
     });
   }, [act, data, run]);
 
+  const handleSettleBatch = useCallback((items: Array<{ invoice_id: string; decision_id: string }>) => {
+    if (!data || items.length === 0) return;
+    void act(`Reconciling ${items.length} selected Arc payments`, async () => {
+      setBatch(await settlePaymentBatch(items, data.sessions.approver));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+    });
+  }, [act, data]);
+
   const selectedScenario = useMemo(
     () => data?.scenarios.find((item) => item.key === selectedKey),
     [data, selectedKey],
@@ -890,7 +958,14 @@ function App() {
           </div>
         )}
 
-        {operations ? <OperationsQueue overview={operations} /> : null}
+        {operations ? (
+          <OperationsQueue
+            overview={operations}
+            busy={busy !== null}
+            batch={batch}
+            onSettleBatch={handleSettleBatch}
+          />
+        ) : null}
 
         <footer className="product-footer">
           <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>

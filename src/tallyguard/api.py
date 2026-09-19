@@ -1319,6 +1319,24 @@ def create_app(
         def optional_money(value: Decimal | None) -> str | None:
             return format(value, "f") if value is not None else None
 
+        work_queue: list[dict[str, Any]] = []
+        for item in overview.work_queue:
+            item_json = _invoice_json(item)
+            try:
+                decision = repository.latest_decision_for_invoice(
+                    organization_id=g.principal.organization_id,
+                    invoice_id=item.invoice.id,
+                )
+                item_json.update(
+                    {
+                        "decision_id": decision.id,
+                        "decision_action": decision.final_action.value,
+                    }
+                )
+            except PersistenceError:
+                item_json.update({"decision_id": None, "decision_action": None})
+            work_queue.append(item_json)
+
         return jsonify(
             {
                 "overview": {
@@ -1342,7 +1360,7 @@ def create_app(
                     "projected_after_open_usdc": optional_money(
                         overview.projected_after_open_usdc
                     ),
-                    "work_queue": [_invoice_json(item) for item in overview.work_queue],
+                    "work_queue": work_queue,
                 },
                 "correlation_id": _correlation_id(),
             }
@@ -1357,10 +1375,13 @@ def create_app(
         )
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()})
 
-    @app.post("/api/invoices/<invoice_id>/settle")
-    @require(Permission.SETTLEMENT_EXECUTE)
-    def settle_invoice(invoice_id: str):
-        payload = request.get_json(silent=True) or {}
+    def execute_settlement(
+        *,
+        invoice_id: str,
+        payload: dict[str, Any],
+        actor_user_id: str,
+        correlation_id: str,
+    ) -> PaymentOutcome:
         decision_id = str(payload.get("decision_id", "")).strip()
         if not decision_id:
             raise ValueError("Settlement requires a decision_id.")
@@ -1392,8 +1413,8 @@ def create_app(
             invoice=stored,
             decision_id=decision_id,
             decision=decision,
-            actor_user_id=g.principal.user_id,
-            correlation_id=_correlation_id(),
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
         )
         repository.append(
             aggregate_type="payment",
@@ -1411,12 +1432,93 @@ def create_app(
             },
             created_at=outcome.receipt.confirmed_at,
         )
+        return outcome
+
+    @app.post("/api/invoices/<invoice_id>/settle")
+    @require(Permission.SETTLEMENT_EXECUTE)
+    def settle_invoice(invoice_id: str):
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValueError("Settlement body must be a JSON object.")
+        outcome = execute_settlement(
+            invoice_id=invoice_id,
+            payload=payload,
+            actor_user_id=g.principal.user_id,
+            correlation_id=_correlation_id(),
+        )
         return jsonify(
             {
                 "payment": _payment_json(outcome, network_config),
                 "correlation_id": _correlation_id(),
             }
         )
+
+    @app.post("/api/payment-batches/settle")
+    @require(Permission.SETTLEMENT_EXECUTE)
+    def settle_payment_batch():
+        payload = request.get_json(silent=False)
+        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+            raise ValueError("Batch settlement requires an items array.")
+        items = payload["items"]
+        if not 1 <= len(items) <= 25:
+            raise ValueError("Batch settlement requires between 1 and 25 items.")
+        if any(not isinstance(item, dict) for item in items):
+            raise ValueError("Every batch item must be a JSON object.")
+        invoice_ids = [str(item.get("invoice_id", "")).strip() for item in items]
+        if any(not invoice_id for invoice_id in invoice_ids):
+            raise ValueError("Every batch item requires an invoice_id.")
+        if len(invoice_ids) != len(set(invoice_ids)):
+            raise ValueError("A batch cannot contain the same invoice more than once.")
+
+        results: list[dict[str, Any]] = []
+        succeeded = 0
+        for index, item in enumerate(items):
+            invoice_id = invoice_ids[index]
+            try:
+                outcome = execute_settlement(
+                    invoice_id=invoice_id,
+                    payload=item,
+                    actor_user_id=g.principal.user_id,
+                    correlation_id=f"{_correlation_id()}:{index + 1}",
+                )
+                succeeded += 1
+                results.append(
+                    {
+                        "invoice_id": invoice_id,
+                        "status": "SETTLED",
+                        "payment": _payment_json(outcome, network_config),
+                    }
+                )
+            except (
+                ApprovalError,
+                KeyError,
+                PersistenceError,
+                SettlementDenied,
+                ValueError,
+                WorkflowError,
+            ) as exc:
+                results.append(
+                    {
+                        "invoice_id": invoice_id,
+                        "status": "FAILED",
+                        "error": {
+                            "code": type(exc).__name__.upper(),
+                            "message": str(exc).strip("'"),
+                        },
+                    }
+                )
+        response_status = 200 if succeeded == len(items) else 207
+        return jsonify(
+            {
+                "batch": {
+                    "requested": len(items),
+                    "succeeded": succeeded,
+                    "failed": len(items) - succeeded,
+                    "results": results,
+                },
+                "correlation_id": _correlation_id(),
+            }
+        ), response_status
 
     @app.get("/api/payments/<payment_intent_id>")
     @require(Permission.INVOICE_READ)

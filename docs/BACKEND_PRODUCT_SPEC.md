@@ -166,6 +166,7 @@ POST   /api/invoices/{id}/evidence
 POST   /api/invoices/{id}/evaluate
 POST   /api/invoices/{id}/approve
 POST   /api/invoices/{id}/settle
+POST   /api/payment-batches/settle
 GET    /api/invoices/{id}/receipt
 GET    /api/decisions/{id}
 GET    /api/decisions/{id}/replay
@@ -178,6 +179,11 @@ GET    /api/health
 verified vendor record, active policy content hash, latest source-referenced treasury snapshot,
 and current Arc route. Repeating an already completed evaluation returns its original decision;
 activating a newer policy cannot silently rewrite that historical authorization.
+
+`POST /api/payment-batches/settle` accepts 1-25 distinct invoice IDs. It does not create a
+shared authorization or transaction: every item traverses the same single-invoice decision,
+approval, intent, provider, reconciliation, and receipt boundary. A rejected item is reported
+independently, while successful items remain committed and become receipt-reusing no-ops on retry.
 
 ## 7. Demo scenarios
 

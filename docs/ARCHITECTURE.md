@@ -101,6 +101,8 @@ sequenceDiagram
 6. Arc RPC must independently prove the expected chain, successful receipt, canonical USDC
    contract call, recipient topic, and six-decimal atomic amount.
 7. A mismatch at any boundary fails closed and creates no confirmed receipt.
+8. A batch is only an orchestration envelope. It cannot share authorization or idempotency across
+   invoices, and one failed item cannot alter another item's durable intent or receipt.
 
 ## Historical decision replay
 

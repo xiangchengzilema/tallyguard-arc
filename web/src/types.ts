@@ -171,7 +171,26 @@ export interface OperationsOverview {
   treasury_available_usdc: string | null;
   minimum_reserve_usdc: string | null;
   projected_after_open_usdc: string | null;
-  work_queue: Invoice[];
+  work_queue: OperationsInvoice[];
+}
+
+export interface OperationsInvoice extends Invoice {
+  decision_id: string | null;
+  decision_action: DecisionAction | null;
+}
+
+export interface PaymentBatchResult {
+  invoice_id: string;
+  status: 'SETTLED' | 'FAILED';
+  payment?: Payment;
+  error?: { code: string; message: string };
+}
+
+export interface PaymentBatch {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  results: PaymentBatchResult[];
 }
 
 export interface BootstrapData {

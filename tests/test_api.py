@@ -526,6 +526,76 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert overview["treasury_available_usdc"] is None
 
 
+def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
+    app = create_app(database_path=tmp_path / "batch.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+    approver = client.post(
+        "/api/demo/session", json={"role": "approver"}
+    ).get_json()["access_token"]
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+    runs = []
+    for index, key in enumerate(("clean-payment", "clean-payment", "wallet-change")):
+        response = client.post(
+            f"/api/demo/scenarios/{key}/run",
+            headers=headers(operator, f"batch-seed-{index}"),
+        )
+        assert response.status_code == 200
+        runs.append(response.get_json())
+    batch_items = [
+        {
+            "invoice_id": run["invoice"]["id"],
+            "decision_id": run["decision"]["id"],
+        }
+        for run in runs
+    ]
+
+    first = client.post(
+        "/api/payment-batches/settle",
+        json={"items": batch_items},
+        headers=headers(approver, "batch-first"),
+    )
+    assert first.status_code == 207
+    first_batch = first.get_json()["batch"]
+    assert first_batch["requested"] == 3
+    assert first_batch["succeeded"] == 2
+    assert first_batch["failed"] == 1
+    assert [item["status"] for item in first_batch["results"]] == [
+        "SETTLED",
+        "SETTLED",
+        "FAILED",
+    ]
+    assert all(
+        item["payment"]["reused_receipt"] is False
+        for item in first_batch["results"][:2]
+    )
+
+    repeated = client.post(
+        "/api/payment-batches/settle",
+        json={"items": batch_items},
+        headers=headers(approver, "batch-retry"),
+    )
+    assert repeated.status_code == 207
+    repeated_batch = repeated.get_json()["batch"]
+    assert repeated_batch["succeeded"] == 2
+    assert all(
+        item["payment"]["reused_receipt"] is True
+        for item in repeated_batch["results"][:2]
+    )
+
+    overview = client.get(
+        "/api/operations/overview",
+        headers=headers(auditor, "batch-overview"),
+    ).get_json()["overview"]
+    assert overview["status_counts"]["RECONCILED"] == 2
+    assert overview["status_counts"]["HOLD"] == 1
+    assert len(overview["work_queue"]) == 1
+
+
 def test_vendor_wallet_verification_history_is_durable_tenant_scoped_and_audited(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()

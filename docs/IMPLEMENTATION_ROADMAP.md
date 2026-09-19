@@ -139,6 +139,7 @@ Implemented foundation:
 - Durable payment intents retain the original UUID v4 across process restarts and retries
 - Durable settlement receipts prevent provider resubmission after a completed payment
 - Invoice settlement advances through submitting, submitted, confirmed, and reconciled states
+- Batch settlement keeps authorization, submission, reconciliation, and retry state isolated per invoice; partial failures return item-level remediation while completed items remain exactly-once
 - Public demo remains credential-free through the deterministic simulator
 
 - Circle wallet adapter behind the settlement protocol
@@ -179,6 +180,7 @@ Implemented foundation:
 - Approver-only settlement endpoint binds invoice, decision, approval, payment intent, and receipt
 - Auditor-readable receipt endpoint includes the corresponding Arc Explorer URL
 - Repeated settlement requests return the persisted receipt without another provider submission
+- Authenticated batch settlement accepts at most 25 distinct invoices, isolates item failures, and reuses every completed item's durable receipt on retry
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
@@ -217,9 +219,10 @@ Implemented foundation:
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
+- The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
-- Invoice work queue with fast filters (durable queue complete; interactive filters optional)
+- Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)
 - Evidence match view modeled after mature AP review tools
 - Decision timeline showing evidence, rules, and agent explanation separately
 - Approval inbox for exceptions

@@ -6,6 +6,7 @@ import type {
   EvidenceFileBundle,
   EvidenceFileReview,
   OperationsOverview,
+  PaymentBatch,
   Payment,
   ReplayVerification,
   RunResult,
@@ -406,6 +407,18 @@ export async function settleInvoice(
     approverToken,
   );
   return payload.payment;
+}
+
+export async function settlePaymentBatch(
+  items: Array<{ invoice_id: string; decision_id: string }>,
+  approverToken: string,
+): Promise<PaymentBatch> {
+  const payload = await request<{ batch: PaymentBatch }>(
+    '/api/payment-batches/settle',
+    { method: 'POST', body: JSON.stringify({ items }) },
+    approverToken,
+  );
+  return payload.batch;
 }
 
 export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string): Promise<AuditTrail> {
