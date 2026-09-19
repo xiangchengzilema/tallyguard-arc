@@ -212,6 +212,7 @@ Implemented foundation:
 - Browser acceptance confirms the live path reaches a 12/12 deterministic `PAY` decision and a reconciled Arc-simulator receipt with no console errors
 - Reviewers can select their own invoice, purchase-order, and delivery JSON files; client-side schema and relationship validation previews the extracted amounts, IDs, due date, and recipient before any record is persisted
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
+- The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve
 - Invoice work queue with fast filters
@@ -220,7 +221,7 @@ Implemented foundation:
 - Approval inbox for exceptions
 - Settlement drawer with Arc transaction proof
 - Vendor risk and wallet-change history
-- Audit explorer with chain verification
+- Audit explorer with chain verification (active-invoice timeline complete; global search remains optional)
 - Seeded scenario switcher for fast judging
 - User-supplied document picker and extraction review before evaluation (structured JSON complete; PDF/image OCR adapter remains optional)
 

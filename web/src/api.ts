@@ -1,5 +1,7 @@
 import type {
   Approval,
+  AuditEvent,
+  AuditTrail,
   BootstrapData,
   EvidenceFileBundle,
   EvidenceFileReview,
@@ -391,6 +393,18 @@ export async function settleInvoice(
     approverToken,
   );
   return payload.payment;
+}
+
+export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string): Promise<AuditTrail> {
+  const payload = await request<{ chain_valid: boolean; items: AuditEvent[] }>(
+    '/api/audit/events',
+    { method: 'GET' },
+    auditorToken,
+  );
+  const events = payload.items.filter((event) => (
+    event.aggregate_id === invoiceId || event.payload.invoice_id === invoiceId
+  ));
+  return { chainValid: payload.chain_valid, events };
 }
 
 export { ApiError };

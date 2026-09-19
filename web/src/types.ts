@@ -81,6 +81,22 @@ export interface EvidenceFileReview {
   walletAddress: string;
 }
 
+export interface AuditEvent {
+  sequence: number;
+  aggregate_type: string;
+  aggregate_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  previous_hash: string;
+  event_hash: string;
+  created_at: string;
+}
+
+export interface AuditTrail {
+  chainValid: boolean;
+  events: AuditEvent[];
+}
+
 export interface Approval {
   id: string;
   decision_id: string;

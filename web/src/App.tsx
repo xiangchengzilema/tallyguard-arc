@@ -29,6 +29,7 @@ import {
 import {
   ApiError,
   bootstrap,
+  fetchInvoiceAudit,
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
@@ -39,6 +40,7 @@ import {
 } from './api';
 import type {
   Approval,
+  AuditTrail,
   BootstrapData,
   DecisionAction,
   EvidenceFileBundle,
@@ -538,6 +540,39 @@ function ReceiptPanel({ payment }: { payment: Payment }) {
   );
 }
 
+function AuditTimeline({ trail }: { trail: AuditTrail }) {
+  const items = [...trail.events].reverse().slice(0, 10);
+  return (
+    <section className="audit-panel" aria-label="Tamper-evident audit trail">
+      <div className="audit-panel__head">
+        <div>
+          <span className="eyebrow">Independent audit view</span>
+          <h2>Every mutation leaves a linked proof.</h2>
+        </div>
+        <Tag type={trail.chainValid ? 'green' : 'red'}>
+          {trail.chainValid ? 'Chain verified' : 'Chain invalid'}
+        </Tag>
+      </div>
+      <div className="audit-list">
+        {items.map((event) => (
+          <div className="audit-event" key={`${event.sequence}-${event.event_hash}`}>
+            <span className="audit-event__sequence">#{String(event.sequence).padStart(3, '0')}</span>
+            <div>
+              <strong>{event.event_type.replaceAll('_', ' ')}</strong>
+              <small>{event.aggregate_type} · {new Date(event.created_at).toLocaleString()}</small>
+            </div>
+            <code>{shorten(event.event_hash, 10, 8)}</code>
+          </div>
+        ))}
+      </div>
+      <div className="audit-panel__foot">
+        <Locked size={16} />
+        <span>Each SHA-256 event hash commits to the prior hash, timestamp, aggregate, and payload.</span>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [data, setData] = useState<BootstrapData | null>(null);
   const [selectedKey, setSelectedKey] = useState('clean-payment');
@@ -548,6 +583,7 @@ function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'scenario' | 'live'>('scenario');
+  const [auditTrail, setAuditTrail] = useState<AuditTrail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -585,6 +621,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -592,6 +629,7 @@ function App() {
     if (!data || !run) return;
     void act('Creating a role-separated approval request', async () => {
       setApproval(await requestApproval(run.decision.id, data.sessions.operator));
+      setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
     });
   }, [act, data, run]);
 
@@ -606,6 +644,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -621,6 +660,7 @@ function App() {
       setHistory((items) => [result, ...items].slice(0, 12));
       setApproval(null);
       setPayment(null);
+      setAuditTrail(await fetchInvoiceAudit(result.invoice.id, data.sessions.auditor));
     });
   }, [act, data]);
 
@@ -628,13 +668,15 @@ function App() {
     if (!data || !approval) return;
     void act('Verifying and signing the approval record', async () => {
       setApproval(await resolveApproval(approval, data.sessions.approver));
+      if (run) setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
     });
-  }, [act, approval, data]);
+  }, [act, approval, data, run]);
 
   const handleSettle = useCallback(() => {
     if (!data || !run) return;
     void act('Persisting intent, settling USDC, and reconciling Arc proof', async () => {
       setPayment(await settleInvoice(run, data.sessions.approver, approval?.status === 'APPROVED' ? approval.id : undefined));
+      setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
     });
   }, [act, approval, data, run]);
 
@@ -696,10 +738,10 @@ function App() {
               scenarios={data.scenarios}
               activeKey={selectedKey}
               busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); }}
+              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setAuditTrail(null); }}
               onRun={handleRun}
               mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); }}
+              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setAuditTrail(null); }}
               onRunLive={handleRunLive}
             />
             <main className="workbench">
@@ -722,6 +764,7 @@ function App() {
                     />
                   </div>
                   {payment ? <ReceiptPanel payment={payment} /> : null}
+                  {auditTrail ? <AuditTimeline trail={auditTrail} /> : null}
                 </>
               ) : mode === 'live' ? (
                 <LiveEvidenceWorkbench busy={busy !== null} onEvaluate={handleUploadedEvidence} />

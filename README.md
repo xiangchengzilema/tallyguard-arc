@@ -59,6 +59,7 @@ Every payment answers four questions:
 - Responsive React judge console built on Carbon, with seven deterministic risk scenarios and a fresh-evidence workflow
 - The fresh-evidence path creates tenant-scoped vendor, policy, treasury, invoice, PO, and delivery records; uploads three hashed source files; evaluates them; and can produce a reconciled simulation receipt from one screen
 - A bring-your-own-evidence path validates three JSON files locally, previews the extracted financial fields for human confirmation, then persists the original bytes and runs the same policy pipeline
+- An auditor-only timeline filters the tenant hash chain to the active invoice and refreshes after evaluation, approval, and settlement so the judge can verify each state mutation on screen
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
 - Real-HTTP synthetic multi-tenant load harness with latency, isolation, and duplicate-payment metrics
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics

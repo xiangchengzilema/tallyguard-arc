@@ -328,6 +328,19 @@ body {
 .receipt-grid__wide { grid-column: 1 / -1; }
 .receipt-grid code { overflow-wrap: anywhere; font-size: .75rem; }
 
+.audit-panel { padding: 2rem; border-top: 1px solid var(--tg-line); background: #fff; }
+.audit-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.audit-panel__head h2 { max-width: 18ch; margin: .35rem 0 0; font-size: 1.5rem; font-weight: 500; letter-spacing: -.03em; text-wrap: balance; }
+.audit-panel__head .cds--tag { margin: 0; }
+.audit-list { margin-top: 1.5rem; border-top: 1px solid var(--tg-line); }
+.audit-event { display: grid; grid-template-columns: 4rem minmax(0, 1fr) minmax(130px, auto); align-items: center; gap: 1rem; min-height: 70px; border-bottom: 1px solid var(--tg-line); }
+.audit-event__sequence { color: var(--tg-accent-dark); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
+.audit-event > div { display: grid; gap: .2rem; }
+.audit-event strong { font-size: .75rem; font-weight: 600; }
+.audit-event small { color: var(--tg-muted); font-size: .6875rem; }
+.audit-event code { justify-self: end; padding: .3rem .45rem; border: 1px solid var(--tg-line); background: #f8faf9; font-size: .625rem; }
+.audit-panel__foot { display: flex; align-items: flex-start; gap: .55rem; margin-top: 1rem; color: var(--tg-muted); font-size: .6875rem; line-height: 1.45; }
+
 .loading-layout { max-width: 1680px; min-height: 640px; margin: 0 auto; padding: 3rem; border: 1px solid var(--tg-line); background: #fff; }
 .product-footer { display: flex; justify-content: space-between; gap: 1rem; max-width: 1680px; margin: 1.5rem auto 0; color: var(--tg-muted); font-size: .6875rem; }
 .product-footer div { display: flex; align-items: center; gap: .45rem; }
@@ -356,6 +369,8 @@ body {
   .rule-table__row { grid-template-columns: 1fr; gap: .5rem; padding: 1rem 0; }
   .receipt-grid { grid-template-columns: 1fr; }
   .receipt-grid__wide { grid-column: auto; }
+  .audit-event { grid-template-columns: 3rem minmax(0, 1fr); gap: .65rem; padding: .75rem 0; }
+  .audit-event code { grid-column: 2; justify-self: start; }
   .live-workbench__intro { grid-template-columns: 1fr; }
   .upload-grid, .evidence-review__grid { grid-template-columns: 1fr; }
   .evidence-review__grid > div { border-right: 0; }

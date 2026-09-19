@@ -61,6 +61,7 @@ Strongly encouraged:
 - The React judge console now includes a fresh-evidence mode that creates and uploads a new three-way-match package through the authenticated API instead of relying only on seeded scenarios
 - Playwright browser acceptance verified the fresh package, 12/12 policy trace, cited agent recommendation, and reconciled simulation receipt without console errors
 - The live console now supports user-selected three-way-match JSON, validates cross-document IDs and USDC fields locally, previews extracted financial values, and persists only after explicit confirmation
+- A role-separated auditor timeline exposes linked event hashes and verified-chain status, including the settlement reconciliation event after payment
 - A real local HTTP smoke test created and retrieved an invoice through the public API surface
 - Seven judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter
