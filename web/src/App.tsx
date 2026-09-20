@@ -1748,6 +1748,20 @@ function App() {
     });
   }, [act, auditSearch, data]);
 
+  const refreshAuditLedger = useCallback(async () => {
+    if (!data) return;
+    const filters = auditSearch?.filters;
+    setAuditSearch(await fetchAuditEvents(data.sessions.auditor, {
+      query: filters?.query ?? undefined,
+      eventType: filters?.event_type ?? undefined,
+      aggregateType: filters?.aggregate_type ?? undefined,
+      aggregateId: filters?.aggregate_id ?? undefined,
+      createdAfter: filters?.created_after ?? undefined,
+      createdBefore: filters?.created_before ?? undefined,
+      limit: auditSearch?.page.limit ?? 12,
+    }));
+  }, [auditSearch, data]);
+
   const handleRun = useCallback((key: string, focusResult = false) => {
     if (!data) return;
     void act('Evaluating immutable evidence and policy rules', async () => {
@@ -1764,6 +1778,7 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      await refreshAuditLedger();
       if (focusResult) {
         window.requestAnimationFrame(() => {
           const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -1773,7 +1788,7 @@ function App() {
         });
       }
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleRequestApproval = useCallback(() => {
     if (!data || !run) return;
@@ -1782,8 +1797,9 @@ function App() {
       setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      await refreshAuditLedger();
     });
-  }, [act, data, run]);
+  }, [act, data, refreshAuditLedger, run]);
 
   const handleRunLive = useCallback(() => {
     if (!data) return;
@@ -1804,8 +1820,9 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleUploadedEvidence = useCallback((files: EvidenceFileBundle) => {
     if (!data) return;
@@ -1827,8 +1844,9 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleApprove = useCallback(() => {
     if (!data || !approval) return;
@@ -1837,8 +1855,9 @@ function App() {
       if (run) setAuditTrail(await fetchInvoiceAudit(run.invoice.id, data.sessions.auditor));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      await refreshAuditLedger();
     });
-  }, [act, approval, data, run]);
+  }, [act, approval, data, refreshAuditLedger, run]);
 
   const handleResolveInboxApproval = useCallback((item: GovernanceOverview['pendingApprovals'][number], approve: boolean) => {
     if (!data) return;
@@ -1857,8 +1876,9 @@ function App() {
       if (run?.invoice.id === item.invoice.id) {
         setAuditTrail(await fetchInvoiceAudit(item.invoice.id, data.sessions.auditor));
       }
+      await refreshAuditLedger();
     });
-  }, [act, approval, data, run]);
+  }, [act, approval, data, refreshAuditLedger, run]);
 
   const handleActivatePolicy = useCallback((draft: PolicyDraft) => {
     if (!data || !governance) return;
@@ -1870,8 +1890,9 @@ function App() {
       );
       setPolicyActivation(activation);
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      await refreshAuditLedger();
     });
-  }, [act, data, governance]);
+  }, [act, data, governance, refreshAuditLedger]);
 
   const handleSettle = useCallback(() => {
     if (!data || !run) return;
@@ -1887,9 +1908,10 @@ function App() {
         setOperations(await fetchOperationsOverview(data.sessions.auditor));
         setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
         setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+        await refreshAuditLedger();
       }
     });
-  }, [act, approval, data, run]);
+  }, [act, approval, data, refreshAuditLedger, run]);
 
   const handleVerifyReplay = useCallback(() => {
     if (!data || !run) return;
@@ -1912,16 +1934,18 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handlePlanAgentRun = useCallback(() => {
     if (!data) return;
     void act('Planning a bounded autonomous accounts-payable run', async () => {
       setAgentRun(await createAgentRun(data.sessions.operator));
       setAgentProofHash(null);
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleSeedAgentShowcase = useCallback(() => {
     if (!data) return;
@@ -1932,8 +1956,9 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleExecuteAgentRun = useCallback(() => {
     if (!data || !agentRun) return;
@@ -1942,8 +1967,9 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setIncidents(await fetchSettlementIncidents(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      await refreshAuditLedger();
     });
-  }, [act, agentRun, data]);
+  }, [act, agentRun, data, refreshAuditLedger]);
 
   const handleDownloadAgentProof = useCallback(() => {
     if (!data || !agentRun) return;
@@ -1958,8 +1984,9 @@ function App() {
       setScheduleRun(await runDueSchedules(data.sessions.approver));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      await refreshAuditLedger();
     });
-  }, [act, data]);
+  }, [act, data, refreshAuditLedger]);
 
   const handleExportLedger = useCallback(() => {
     if (!data) return;
