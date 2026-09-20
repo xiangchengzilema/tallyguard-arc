@@ -72,8 +72,9 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Presentation and video
 
-- [ ] Open `TallyGuard_Tameion_Pitch_v8.pptx` and confirm all ten slides.
-- [x] Keep only the current v8 deck in the public submission package; obsolete
+- [x] Render and inspect all ten slides in `TallyGuard_Tameion_Pitch_v9.pptx`;
+  package, layout, font, editable-table, and first-party import validation passed.
+- [x] Keep only the current v9 deck in the public submission package; obsolete
   deck binaries remain recoverable from Git history but are not exposed to judges.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.

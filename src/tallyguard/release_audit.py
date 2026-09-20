@@ -641,8 +641,8 @@ def audit_release(
         _check_file(root, "docs/ARCHITECTURE.md"),
         _check_file(root, "docs/SECURITY_MODEL.md"),
         _check_file(root, "web/dist/index.html"),
-        _check_file(root, "submission/TallyGuard_Tameion_Pitch_v8.pptx"),
-        _check_single_pitch_deck(root, "TallyGuard_Tameion_Pitch_v8.pptx"),
+        _check_file(root, "submission/TallyGuard_Tameion_Pitch_v9.pptx"),
+        _check_single_pitch_deck(root, "TallyGuard_Tameion_Pitch_v9.pptx"),
         _check_png_dimensions(
             root,
             "submission/assets/responsive-desktop.png",

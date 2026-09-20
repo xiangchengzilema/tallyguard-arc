@@ -105,19 +105,19 @@ def test_readme_local_link_check_rejects_untracked_target(tmp_path):
 def test_pitch_deck_check_rejects_stale_versions(tmp_path):
     submission = tmp_path / "submission"
     submission.mkdir()
-    final = submission / "TallyGuard_Tameion_Pitch_v8.pptx"
+    final = submission / "TallyGuard_Tameion_Pitch_v9.pptx"
     final.write_bytes(b"final-deck")
 
     assert _check_single_pitch_deck(
-        tmp_path, "TallyGuard_Tameion_Pitch_v8.pptx"
+        tmp_path, "TallyGuard_Tameion_Pitch_v9.pptx"
     ).status == "passed"
 
-    (submission / "TallyGuard_Tameion_Pitch_v7.pptx").write_bytes(b"stale-deck")
+    (submission / "TallyGuard_Tameion_Pitch_v8.pptx").write_bytes(b"stale-deck")
     failed = _check_single_pitch_deck(
-        tmp_path, "TallyGuard_Tameion_Pitch_v8.pptx"
+        tmp_path, "TallyGuard_Tameion_Pitch_v9.pptx"
     )
     assert failed.status == "failed"
-    assert "Pitch_v7.pptx" in failed.detail
+    assert "Pitch_v8.pptx" in failed.detail
 
 
 def test_deployment_report_validation_requires_safe_session_cleanup():

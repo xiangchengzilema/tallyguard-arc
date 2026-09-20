@@ -6,7 +6,7 @@ import { Presentation, PresentationFile } from "@oai/artifact-tool";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_DIR = "C:/Users/55246/.codex/plugins/cache/openai-primary-runtime/presentations/26.909.12148/skills/presentations";
 const BUILD_DIR = path.join(ROOT, ".codex-deck");
-const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v8.pptx");
+const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v9.pptx");
 const RUNTIME_PYTHON = "C:/Users/55246/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe";
 
 const { resolvePresentationFont, finalizePresentation } = await import(
@@ -328,7 +328,7 @@ function setNotes(slide, text) {
   addText(slide, "10,000 / 10,000 workflows", 70, 626, 270, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "200 retries · 500 ms → 1 submit", 352, 626, 270, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "100 / 100 tenant breaches denied", 616, 626, 282, 22, { fontSize: 15, bold: true, color: C.aqua });
-  addText(slide, "7 / 7 deployment checks", 920, 626, 280, 22, { fontSize: 15, bold: true, color: C.aqua });
+  addText(slide, "8 / 8 deployment checks", 920, 626, 280, 22, { fontSize: 15, bold: true, color: C.aqua });
   addFooter(slide, 8, true);
   setNotes(slide, "Sources: docs/reports/load-test-10000.json, docs/reports/agent-run-load-50.json, and docs/reports/deployment-smoke.json. The workflow run injected a 500 ms provider delay while 200 duplicate calls competed; all converged on one provider submission and one transaction hash. These are synthetic engineering tests, not customer traction. Settlement used the deterministic Arc simulator and moved no funds.");
 }
@@ -387,7 +387,7 @@ function setNotes(slide, text) {
   setNotes(slide, "The desktop and 390 px captures show the same responsive React application and governed-payment path, not separate clients. Captured locally from the current product. Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
 }
 
-const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v8.candidate.pptx");
+const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v9.candidate.pptx");
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 
 const requirements = {
@@ -415,7 +415,7 @@ const result = await finalizePresentation({
   requiredNativeTableOwnerSlides: requirements.requiredNativeTableOwnerSlides,
   fontPolicy,
   verifyArtifactToolImport: true,
-  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v8.validation.json"),
+  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v9.validation.json"),
 });
 
 console.log(JSON.stringify({ fontFamily, monoFamily, finalPath: FINAL_PPTX, result }, null, 2));
