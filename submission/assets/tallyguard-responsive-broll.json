@@ -6,28 +6,28 @@
     "container": "webm",
     "width": 1440,
     "height": 900,
-    "duration_seconds": 9.24,
-    "bytes": 1116328,
-    "sha256": "a9548665337d0ef6870e9568fab68d5901ee9fd3a0600e2e92984cd877845d9e"
+    "duration_seconds": 9.27,
+    "bytes": 465963,
+    "sha256": "4bfc9fdb33ff929cf4b22986dc94feb84f2ca738c572082aa52c3db4434758f9"
   },
   "sequence": [
     {
       "state": "desktop",
       "viewport": "1440x900",
       "source": "submission/assets/responsive-desktop.png",
-      "source_sha256": "874c35a653459b19d1f3518fafffd5d5a908571b4134ba0db2ad093f665cd118"
+      "source_sha256": "6d4c1a2822eee68ba084a53ad792a06babdf6951f1037d1da0e4f3e40d900f10"
     },
     {
       "state": "tablet",
       "viewport": "768x1024",
       "source": "submission/assets/responsive-tablet.png",
-      "source_sha256": "ec879f3d3612f5cb2656e726cda8a3b38542d75da7f18078968a47e55f0aa71a"
+      "source_sha256": "a25e428ddf45bb3b69293b2735327d4828e085e0fbbae30dc0bfe4ae4ab7c920"
     },
     {
       "state": "mobile",
       "viewport": "390x844",
       "source": "submission/assets/responsive-mobile.png",
-      "source_sha256": "beb293676a0e34f4722144d66fa03d0885f00af2eb4a845744d95149e5cfaf96"
+      "source_sha256": "57098307842d0470d9ce315c63af35bc9783352b36bfad421681594ab340988b"
     },
     {
       "state": "all",
@@ -42,6 +42,6 @@
   "review": {
     "console_errors": 0,
     "console_warnings": 0,
-    "inspected_frame_seconds": [1.4, 3.4, 5.4, 8.2]
+    "inspected_frame_seconds": [1.4, 4.5, 7.5]
   }
 }
