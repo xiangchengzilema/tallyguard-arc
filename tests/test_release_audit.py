@@ -1,12 +1,22 @@
 from hashlib import sha256
 import json
+from pathlib import Path
 
 from tallyguard.audit import canonical_json
 from tallyguard.release_audit import (
     _acceptance_check,
+    _git_commit_check,
     _pilot_check,
     _url_check,
 )
+
+
+def test_release_audit_binds_the_current_git_commit():
+    check = _git_commit_check(Path(__file__).resolve().parents[1])
+
+    assert check.status == "passed"
+    assert len(check.detail) == 40
+    assert check.evidence_sha256 == sha256(check.detail.encode("ascii")).hexdigest()
 
 
 def test_external_url_check_distinguishes_pending_invalid_and_public_urls():

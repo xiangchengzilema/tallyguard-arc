@@ -205,6 +205,31 @@ def _git_check(root: Path) -> ReleaseCheck:
     return ReleaseCheck("repository", "Clean worktree", "passed", "No uncommitted files.")
 
 
+def _git_commit_check(root: Path) -> ReleaseCheck:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    commit = result.stdout.strip().lower()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        return ReleaseCheck(
+            "repository",
+            "Release commit",
+            "failed",
+            result.stderr.strip() or "HEAD is not a full Git commit.",
+        )
+    return ReleaseCheck(
+        "repository",
+        "Release commit",
+        "passed",
+        commit,
+        sha256(commit.encode("ascii")).hexdigest(),
+    )
+
+
 def _secret_check(root: Path) -> ReleaseCheck:
     listed = subprocess.run(
         ["git", "ls-files", "*.py"],
@@ -264,7 +289,7 @@ def audit_release(
         ),
     ]
     if include_git:
-        checks.extend((_git_check(root), _secret_check(root)))
+        checks.extend((_git_commit_check(root), _git_check(root), _secret_check(root)))
     submission_copy = root / "submission/FINAL_SUBMISSION_COPY.md"
     pending_placeholders = (
         submission_copy.read_text(encoding="utf-8").count("PENDING_EXTERNAL")
