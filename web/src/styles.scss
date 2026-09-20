@@ -248,6 +248,7 @@ body {
 .live-workbench__intro .empty-workbench__icon { margin: 0; }
 .live-workbench h2 { max-width: 16ch; margin: .35rem 0 .5rem; font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; letter-spacing: -.04em; line-height: 1; text-wrap: balance; }
 .live-workbench p { max-width: 65ch; margin: 0; color: var(--tg-muted); font-size: .875rem; line-height: 1.5; text-wrap: pretty; }
+.sample-evidence-button { margin-top: 1rem; }
 .upload-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2rem; border-top: 1px solid var(--tg-line); border-left: 1px solid var(--tg-line); }
 .upload-slot { position: relative; display: grid; min-height: 148px; align-content: start; gap: .45rem; padding: 1.25rem; border-right: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); background: #f8faf9; cursor: pointer; transition: background-color 160ms ease; }
 .upload-slot:hover { background: #edf6f3; }

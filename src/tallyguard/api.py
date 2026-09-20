@@ -3266,6 +3266,10 @@ def create_app(
     def frontend_favicon():
         return send_from_directory(frontend_dist, "favicon.svg")
 
+    @app.get("/samples/<path:filename>")
+    def frontend_samples(filename: str):
+        return send_from_directory(frontend_dist / "samples", filename)
+
     return app
 
 

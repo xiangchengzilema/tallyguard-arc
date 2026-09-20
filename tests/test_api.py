@@ -49,6 +49,16 @@ def test_health_and_readiness_are_public(tmp_path):
     assert readiness["demo_sessions_enabled"] is True
 
 
+def test_public_pdf_judge_sample_is_served_from_built_frontend(tmp_path):
+    app = create_app(database_path=tmp_path / "sample.sqlite3", testing=True)
+
+    response = app.test_client().get("/samples/evidence/invoice.pdf")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.data.startswith(b"%PDF-")
+
+
 def test_request_log_is_structured_and_omits_sensitive_request_data(tmp_path, caplog):
     app = create_app(
         database_path=tmp_path / "request-logs.sqlite3",

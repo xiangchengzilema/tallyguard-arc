@@ -88,7 +88,7 @@ Exit criteria:
 
 ### Milestone 3 — Agent decision service
 
-Status: in progress.
+Status: complete (2026-09-20).
 
 Implemented foundation:
 
@@ -177,7 +177,7 @@ stored credentials are available.
 
 ### Milestone 5 — Multi-tenant finance API
 
-Status: in progress.
+Status: complete (2026-09-20).
 
 Implemented foundation:
 
@@ -186,7 +186,7 @@ Implemented foundation:
 - Tenant-scoped invoice create/read/list endpoints with opaque bearer authentication
 - Stable status filtering and cursor pagination
 - Correlation IDs and fail-closed JSON errors
-- Seven deterministic judge scenarios exercise the real policy engine and persisted workflow
+- Eight deterministic judge scenarios exercise the real policy engine and persisted workflow
 - Large-invoice scenario supports role-separated request and approval through the API
 - Approver-only settlement endpoint binds invoice, decision, approval, payment intent, and receipt
 - Auditor-readable receipt endpoint includes the corresponding Arc Explorer URL
@@ -218,7 +218,7 @@ Exit criteria:
 
 ### Milestone 6 — Judge-ready finance dashboard
 
-Status: in progress.
+Status: complete (2026-09-20).
 
 Implemented foundation:
 
@@ -230,9 +230,10 @@ Implemented foundation:
 - Settlement receipt with provider, network, block, transaction hash, and idempotency state
 - Honest visual distinction between public simulation and live Arc proof
 - Loading, empty, error, desktop, and mobile states
-- A judge-facing live-evidence mode now creates a fresh tenant dataset, uploads invoice/PO/delivery JSON as immutable multipart evidence, invokes the production-shaped evaluation endpoint, shows the agent's exact evidence citations, and completes the same idempotent settlement flow used by the API
+- A judge-facing live-evidence mode now creates a fresh tenant dataset, uploads invoice/PO/delivery JSON or labelled text-layer PDFs as immutable multipart evidence, invokes the production-shaped evaluation endpoint, shows the agent's exact evidence citations, and completes the same idempotent settlement flow used by the API
 - Browser acceptance confirms the live path reaches a complete deterministic `PAY` rule trace and a reconciled Arc-simulator receipt with no console errors
-- Reviewers can select their own invoice, purchase-order, and delivery JSON files; client-side schema and relationship validation previews the extracted amounts, IDs, due date, and recipient before any record is persisted
+- Reviewers can select their own invoice, purchase-order, and delivery JSON or labelled text-layer PDF files; non-persisting extraction and relationship validation preview the normalized amounts, IDs, due date, recipient, source pages, confidence, and hashes before any record is persisted
+- A one-click public-safe sample loads three checked-in PDFs directly in the browser, then exercises the same authenticated extraction and immutable upload path without requiring a local checkout
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
 - The global audit explorer now performs tenant-scoped server-side search by literal text, event type, aggregate type, and timezone-aware date window, with newest-first cursor pagination and full-chain verification kept separate from the filtered result page

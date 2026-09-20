@@ -60,7 +60,8 @@ Strongly encouraged:
 - Every real evaluation now records a non-authoritative agent recommendation with confidence, reason codes, and immutable evidence-package citations beside the deterministic policy result
 - The React judge console now includes a fresh-evidence mode that creates and uploads a new three-way-match package through the authenticated API instead of relying only on seeded scenarios
 - Playwright browser acceptance verified the fresh package, complete deterministic policy trace, cited agent recommendation, and reconciled simulation receipt without console errors
-- The live console now supports user-selected three-way-match JSON, validates cross-document IDs and USDC fields locally, previews extracted financial values, and persists only after explicit confirmation
+- The live console now supports user-selected three-way-match JSON and labelled text-layer PDFs, validates cross-document IDs and USDC fields, previews normalized values plus page/confidence/hash provenance, and persists only after explicit confirmation
+- A one-click browser sample loads three reproducible PDFs and runs the real authenticated extraction path, so a public reviewer does not need repository fixtures
 - A role-separated auditor timeline exposes linked event hashes and verified-chain status, including the settlement reconciliation event after payment
 - An optional hosted-model analyst is now available behind environment-only credentials; its output cannot include payment parameters and cannot override deterministic authorization
 - A reproducible real-HTTP deployment smoke now verifies the built console, probes, three separate roles, deterministic decision, simulation settlement, reconciliation, and hashed accounting export; its checked-in report is explicitly synthetic and CI reruns all seven checks
@@ -82,7 +83,9 @@ Strongly encouraged:
 - A one-click autonomy showcase creates and plans a mixed four-invoice queue so judges and the demo video can show payment, approval routing, wallet-risk remediation, and due-date waiting without repetitive setup
 - Desktop and 390px mobile browser acceptance completed the autonomous plan-to-settlement path with no console errors or warnings
 
-Milestone 2 is complete. Milestones 3, 4, and 5 are in progress. SQLite persistence now retains
+Milestones 1, 2, 3, 5, and 6 are complete. Milestone 4 awaits the external Circle
+Testnet acceptance transfer; Milestone 7 awaits genuine operator evidence; Milestone 8 awaits
+publication, deployment, and video. SQLite persistence now retains
 tenant-scoped evidence, provenance, vendor wallet verification history, invoice state, optimistic versions, and transition history
 across process restarts. A real Arc Testnet transfer is the next external acceptance gate; no
 mainnet credential or balance is needed yet.

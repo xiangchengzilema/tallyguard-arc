@@ -1,6 +1,7 @@
 from decimal import Decimal
 from hashlib import sha256
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from pypdf import PdfWriter
@@ -190,3 +191,61 @@ def test_authenticated_pdf_preview_returns_hash_without_persisting(tmp_path):
         organization_id="demo-org",
         invoice_id="invoice-pdf-1",
     ) == ()
+
+
+@pytest.mark.parametrize(
+    ("filename", "evidence_type", "expected_fields"),
+    (
+        (
+            "invoice.pdf",
+            EvidenceType.INVOICE,
+            {
+                "invoice_id",
+                "vendor_id",
+                "invoice_number",
+                "currency",
+                "amount",
+                "due_date",
+                "payment_wallet_address",
+            },
+        ),
+        (
+            "purchase-order.pdf",
+            EvidenceType.PURCHASE_ORDER,
+            {
+                "purchase_order_id",
+                "vendor_id",
+                "po_number",
+                "currency",
+                "authorized_amount",
+            },
+        ),
+        (
+            "delivery.pdf",
+            EvidenceType.DELIVERY,
+            {"delivery_id", "purchase_order_id", "delivered_value"},
+        ),
+    ),
+)
+def test_public_judge_pdf_samples_remain_extractable(
+    filename: str,
+    evidence_type: EvidenceType,
+    expected_fields: set[str],
+):
+    sample = (
+        Path(__file__).resolve().parents[1]
+        / "web"
+        / "public"
+        / "samples"
+        / "evidence"
+        / filename
+    )
+
+    fields = extract_pdf_text_fields(
+        document_id=f"sample-{filename}",
+        evidence_type=evidence_type,
+        content=sample.read_bytes(),
+    )
+
+    assert {field.name for field in fields} == expected_fields
+    assert all(field.method == ExtractionMethod.PDF_TEXT for field in fields)

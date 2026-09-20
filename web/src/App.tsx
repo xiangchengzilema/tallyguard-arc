@@ -47,6 +47,7 @@ import {
   fetchOperationsOverview,
   fetchSettlementIncidents,
   fetchVendorDirectory,
+  loadSamplePdfEvidence,
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
@@ -907,6 +908,7 @@ function LiveEvidenceWorkbench({
   const [review, setReview] = useState<EvidenceFileReview | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [loadingSample, setLoadingSample] = useState(false);
 
   useEffect(() => {
     if (!files.invoice || !files.purchaseOrder || !files.delivery) {
@@ -935,6 +937,16 @@ function LiveEvidenceWorkbench({
   const updateFile = (key: keyof EvidenceFileBundle, file?: File) => {
     setFiles((current) => ({ ...current, [key]: file }));
   };
+  const loadSample = () => {
+    setLoadingSample(true);
+    setReviewError(null);
+    loadSamplePdfEvidence()
+      .then(setFiles)
+      .catch((reason: unknown) => {
+        setReviewError(reason instanceof Error ? reason.message : 'Could not load the sample PDFs.');
+      })
+      .finally(() => setLoadingSample(false));
+  };
   const completeBundle = files.invoice && files.purchaseOrder && files.delivery
     ? { invoice: files.invoice, purchaseOrder: files.purchaseOrder, delivery: files.delivery }
     : null;
@@ -947,6 +959,16 @@ function LiveEvidenceWorkbench({
           <span className="eyebrow">Bring your own evidence</span>
           <h2>Review before the agent decides.</h2>
           <p>Select JSON or labelled text-layer PDF documents. Preview extraction persists nothing; confirmed source bytes are hashed and become immutable when evaluation begins.</p>
+          <Button
+            className="sample-evidence-button"
+            disabled={busy || loadingSample}
+            kind="tertiary"
+            size="sm"
+            renderIcon={loadingSample ? Renew : Download}
+            onClick={loadSample}
+          >
+            {loadingSample ? 'Loading sample PDFs' : 'Use three sample PDFs'}
+          </Button>
         </div>
       </div>
       <div className="upload-grid">

@@ -478,6 +478,27 @@ export async function reviewEvidenceFiles(
   };
 }
 
+export async function loadSamplePdfEvidence(): Promise<EvidenceFileBundle> {
+  const sampleFiles = [
+    ['invoice', 'invoice.pdf'],
+    ['purchaseOrder', 'purchase-order.pdf'],
+    ['delivery', 'delivery.pdf'],
+  ] as const;
+  const loaded = await Promise.all(sampleFiles.map(async ([, filename]) => {
+    const response = await fetch(`/samples/evidence/${filename}`);
+    if (!response.ok) {
+      throw new ApiError(`Could not load the ${filename} judge sample.`, response.status);
+    }
+    const bytes = await response.arrayBuffer();
+    return new File([bytes], filename, { type: 'application/pdf' });
+  }));
+  return {
+    invoice: loaded[0],
+    purchaseOrder: loaded[1],
+    delivery: loaded[2],
+  };
+}
+
 export async function runUploadedEvidenceWorkflow(
   adminToken: string,
   operatorToken: string,
