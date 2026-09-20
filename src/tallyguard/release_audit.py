@@ -108,6 +108,26 @@ def _check_text_fragments(
     )
 
 
+def _check_single_pitch_deck(root: Path, expected_name: str) -> ReleaseCheck:
+    submission = root / "submission"
+    decks = sorted(path.name for path in submission.glob("TallyGuard_Tameion_Pitch_v*.pptx"))
+    if decks != [expected_name]:
+        found = ", ".join(decks) if decks else "none"
+        return ReleaseCheck(
+            "local",
+            "Final pitch deck selection",
+            "failed",
+            f"Expected only {expected_name}; found {found}.",
+        )
+    return ReleaseCheck(
+        "local",
+        "Final pitch deck selection",
+        "passed",
+        f"Only {expected_name} is present for reviewer use.",
+        _hash_file(submission / expected_name),
+    )
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -390,30 +410,151 @@ def _git_commit_check(root: Path) -> ReleaseCheck:
     )
 
 
+_TEXT_SUFFIXES = frozenset(
+    {
+        ".css",
+        ".csv",
+        ".example",
+        ".html",
+        ".js",
+        ".json",
+        ".md",
+        ".mjs",
+        ".py",
+        ".scss",
+        ".svg",
+        ".toml",
+        ".ts",
+        ".tsx",
+        ".txt",
+        ".yaml",
+        ".yml",
+    }
+)
+_TEXT_FILENAMES = frozenset({".dockerignore", ".gitattributes", ".gitignore"})
+_SENSITIVE_FILENAMES = frozenset(
+    {".env", "id_rsa", "id_ed25519", "credentials.json"}
+)
+
+
+def _secret_patterns() -> tuple[re.Pattern[str], ...]:
+    return (
+        re.compile("gh" + r"[pousr]_[A-Za-z0-9]{20,}"),
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+        re.compile(
+            r"(?:api[_-]?key|auth[_-]?token|entity[_-]?secret|private[_-]?key|"
+            r"mnemonic|password|seed[_-]?phrase)[ \t]*[:=][ \t]*['\"]?"
+            r"(?:0x)?[A-Za-z0-9+/=_-]{20,}",
+            re.IGNORECASE,
+        ),
+    )
+
+
+def _sensitive_path(relative: str) -> bool:
+    path = Path(relative)
+    lower_name = path.name.lower()
+    return bool(
+        lower_name in _SENSITIVE_FILENAMES
+        or lower_name.endswith((".key", ".keystore", ".p12", ".pem"))
+    )
+
+
 def _secret_check(root: Path) -> ReleaseCheck:
     listed = subprocess.run(
-        ["git", "ls-files", "*.py"],
+        ["git", "ls-files", "-z"],
         cwd=root,
         capture_output=True,
-        text=True,
         check=False,
     )
     if listed.returncode != 0:
-        return ReleaseCheck("repository", "Python secret scan", "failed", listed.stderr.strip())
-    pattern = re.compile("ghp" + r"_|API" + r"_KEY=.{10}")
+        detail = listed.stderr.decode("utf-8", errors="replace").strip()
+        return ReleaseCheck("repository", "Tracked-tree secret scan", "failed", detail)
+    patterns = _secret_patterns()
     matches: list[str] = []
-    for relative in listed.stdout.splitlines():
-        content = (root / relative).read_text(encoding="utf-8", errors="replace")
-        if pattern.search(content):
+    for raw_relative in listed.stdout.split(b"\0"):
+        if not raw_relative:
+            continue
+        relative = raw_relative.decode("utf-8", errors="replace")
+        path = root / relative
+        if _sensitive_path(relative):
+            matches.append(relative)
+            continue
+        if path.suffix.lower() not in _TEXT_SUFFIXES and path.name not in _TEXT_FILENAMES:
+            continue
+        content = path.read_text(encoding="utf-8", errors="replace")
+        if any(pattern.search(content) for pattern in patterns):
             matches.append(relative)
     if matches:
         return ReleaseCheck(
             "repository",
-            "Python secret scan",
+            "Tracked-tree secret scan",
             "failed",
-            "Potential secret pattern in: " + ", ".join(matches),
+            "Potential secret or sensitive file in: " + ", ".join(sorted(set(matches))),
         )
-    return ReleaseCheck("repository", "Python secret scan", "passed", "No token pattern found.")
+    return ReleaseCheck(
+        "repository",
+        "Tracked-tree secret scan",
+        "passed",
+        "No credential pattern or sensitive filename found in tracked files.",
+    )
+
+
+def _git_history_secret_check(root: Path) -> ReleaseCheck:
+    history = subprocess.run(
+        [
+            "git",
+            "log",
+            "--all",
+            "--format=commit:%H",
+            "--patch",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            "--",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if history.returncode != 0:
+        return ReleaseCheck(
+            "repository",
+            "Git history secret scan",
+            "failed",
+            history.stderr.strip(),
+        )
+    patterns = _secret_patterns()
+    commit = "unknown"
+    relative = "unknown"
+    findings: set[str] = set()
+    for line in history.stdout.splitlines():
+        if line.startswith("commit:"):
+            commit = line.removeprefix("commit:").strip()[:12]
+        elif line.startswith("--- a/"):
+            relative = line.removeprefix("--- a/").strip()
+        elif line.startswith("+++ b/"):
+            relative = line.removeprefix("+++ b/").strip()
+        elif line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+            if _sensitive_path(relative) or any(
+                pattern.search(line[1:]) for pattern in patterns
+            ):
+                findings.add(f"{commit}:{relative}")
+    if findings:
+        return ReleaseCheck(
+            "repository",
+            "Git history secret scan",
+            "failed",
+            "Potential historical secret in: " + ", ".join(sorted(findings)),
+        )
+    return ReleaseCheck(
+        "repository",
+        "Git history secret scan",
+        "passed",
+        "No credential pattern or sensitive filename found in reachable history.",
+    )
 
 
 def audit_release(
@@ -436,6 +577,7 @@ def audit_release(
         _check_file(root, "docs/SECURITY_MODEL.md"),
         _check_file(root, "web/dist/index.html"),
         _check_file(root, "submission/TallyGuard_Tameion_Pitch_v8.pptx"),
+        _check_single_pitch_deck(root, "TallyGuard_Tameion_Pitch_v8.pptx"),
         _check_png_dimensions(
             root,
             "submission/assets/responsive-desktop.png",
@@ -476,7 +618,14 @@ def audit_release(
         ),
     ]
     if include_git:
-        checks.extend((_git_commit_check(root), _git_check(root), _secret_check(root)))
+        checks.extend(
+            (
+                _git_commit_check(root),
+                _git_check(root),
+                _secret_check(root),
+                _git_history_secret_check(root),
+            )
+        )
     submission_copy = root / "submission/FINAL_SUBMISSION_COPY.md"
     pending_placeholders = (
         submission_copy.read_text(encoding="utf-8").count("PENDING_EXTERNAL")

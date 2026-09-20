@@ -350,7 +350,7 @@ Implemented foundation:
   values only in page memory; a one-click lock clears finance state and revokes
   all four server sessions
 - Canonical submission copy, a timed product-first video runbook, and a release checklist now separate complete evidence from explicit external gates so pending URLs or transactions cannot be mistaken for finished proof
-- A content-addressed release-audit command verifies local artifacts and reliability assertions, rejects malformed Testnet or pilot evidence, and reports missing repository, deployment, video, Explorer, and usage proof as pending rather than complete
+- A content-addressed release-audit command verifies local artifacts, responsive media, the single final deck, reliability assertions, the complete tracked tree, and every reachable Git patch for sensitive material; it rejects malformed Testnet or pilot evidence and reports missing repository, deployment, video, Explorer, and usage proof as pending rather than complete
 
 - Public GitHub repository and reproducible setup
 - Architecture and trust-boundary diagrams

@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -45,12 +47,5 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q src tests
 
-      - name: Scan tracked files for committed secrets
-        shell: bash
-        run: |
-          token_prefix="ghp"_
-          api_assignment="API"_"KEY=.{10}"
-          if git grep -n -E "${token_prefix}|${api_assignment}" -- ':!AGENTS.md'; then
-            echo "Potential committed secret detected."
-            exit 1
-          fi
+      - name: Audit release artifacts and full Git history
+        run: tallyguard-release-audit --output /tmp/tallyguard-release-audit.json

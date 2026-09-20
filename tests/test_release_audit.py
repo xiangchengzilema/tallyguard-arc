@@ -1,16 +1,20 @@
 from hashlib import sha256
 import json
 from pathlib import Path
+import subprocess
 
 from tallyguard.audit import canonical_json
 from tallyguard.release_audit import (
     _acceptance_check,
     _check_png_dimensions,
+    _check_single_pitch_deck,
     _check_text_fragments,
     _deployment_report_valid,
     _git_commit_check,
+    _git_history_secret_check,
     _mainnet_acceptance_check,
     _pilot_check,
+    _secret_check,
     _url_check,
 )
 
@@ -61,6 +65,24 @@ def test_video_runbook_check_requires_all_three_widths_and_single_product_claim(
     assert "768px" in failed.detail
 
 
+def test_pitch_deck_check_rejects_stale_versions(tmp_path):
+    submission = tmp_path / "submission"
+    submission.mkdir()
+    final = submission / "TallyGuard_Tameion_Pitch_v8.pptx"
+    final.write_bytes(b"final-deck")
+
+    assert _check_single_pitch_deck(
+        tmp_path, "TallyGuard_Tameion_Pitch_v8.pptx"
+    ).status == "passed"
+
+    (submission / "TallyGuard_Tameion_Pitch_v7.pptx").write_bytes(b"stale-deck")
+    failed = _check_single_pitch_deck(
+        tmp_path, "TallyGuard_Tameion_Pitch_v8.pptx"
+    )
+    assert failed.status == "failed"
+    assert "Pitch_v7.pptx" in failed.detail
+
+
 def test_deployment_report_validation_requires_safe_session_cleanup():
     required = (
         "judge_console",
@@ -90,6 +112,76 @@ def test_deployment_report_validation_requires_safe_session_cleanup():
     assert _deployment_report_valid(report) is True
     report["checks"][-1]["status"] = "failed"
     assert _deployment_report_valid(report) is False
+
+
+def test_secret_scan_covers_tracked_tree_without_echoing_secret(tmp_path):
+    _initialize_git_repository(tmp_path)
+    secret = "gh" + "p_" + "A" * 36
+    (tmp_path / "credentials.txt").write_text(
+        f"release_token={secret}\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path, "add credential")
+
+    check = _secret_check(tmp_path)
+
+    assert check.status == "failed"
+    assert "credentials.txt" in check.detail
+    assert secret not in check.detail
+
+
+def test_secret_scan_allows_empty_example_but_rejects_tracked_env(tmp_path):
+    _initialize_git_repository(tmp_path)
+    placeholder = "CIRCLE_WEB3_" + "API_KEY=\n"
+    (tmp_path / ".env.example").write_text(placeholder, encoding="utf-8")
+    _commit_all(tmp_path, "add safe environment template")
+    assert _secret_check(tmp_path).status == "passed"
+
+    (tmp_path / ".env").write_text(placeholder, encoding="utf-8")
+    _commit_all(tmp_path, "track unsafe environment file")
+    failed = _secret_check(tmp_path)
+    assert failed.status == "failed"
+    assert ".env" in failed.detail
+
+
+def test_history_scan_detects_removed_secret_without_echoing_it(tmp_path):
+    _initialize_git_repository(tmp_path)
+    secret = "gh" + "p_" + "B" * 36
+    leaked = tmp_path / "temporary.txt"
+    leaked.write_text(f"token={secret}\n", encoding="utf-8")
+    _commit_all(tmp_path, "add temporary credential")
+    leaked.unlink()
+    _commit_all(tmp_path, "remove temporary credential")
+
+    check = _git_history_secret_check(tmp_path)
+
+    assert check.status == "failed"
+    assert "temporary.txt" in check.detail
+    assert secret not in check.detail
+
+
+def _initialize_git_repository(path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "tests@example.com"],
+        cwd=path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "TallyGuard Tests"],
+        cwd=path,
+        check=True,
+    )
+
+
+def _commit_all(path: Path, message: str) -> None:
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
 
 
 def test_acceptance_check_requires_capped_arc_testnet_proof(tmp_path):

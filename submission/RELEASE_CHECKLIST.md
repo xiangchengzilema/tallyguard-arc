@@ -9,7 +9,8 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Run `python -m compileall -q src tests`.
 - [ ] Run `npm ci && npm run build` inside `web/`.
 - [ ] Run `tallyguard-deployment-smoke` against the built frontend.
-- [ ] Run the required secret scan before the release commit.
+- [ ] Run the required current-tree scan and the full reachable-history secret
+  scan before the release commit; inspect paths only and never print a matched value.
 - [ ] Confirm no `.env`, database, credential, wallet secret, or temporary pilot
   document is tracked.
 - [ ] Confirm README links resolve from a clean checkout.
@@ -68,6 +69,8 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 ## Presentation and video
 
 - [ ] Open `TallyGuard_Tameion_Pitch_v8.pptx` and confirm all ten slides.
+- [x] Keep only the current v8 deck in the public submission package; obsolete
+  deck binaries remain recoverable from Git history but are not exposed to judges.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.
 - [ ] Keep the final video under three minutes.
