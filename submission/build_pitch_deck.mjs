@@ -6,7 +6,7 @@ import { Presentation, PresentationFile } from "@oai/artifact-tool";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_DIR = "C:/Users/55246/.codex/plugins/cache/openai-primary-runtime/presentations/26.909.12148/skills/presentations";
 const BUILD_DIR = path.join(ROOT, ".codex-deck");
-const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v4.pptx");
+const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v5.pptx");
 const RUNTIME_PYTHON = "C:/Users/55246/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe";
 
 const { resolvePresentationFont, finalizePresentation } = await import(
@@ -143,7 +143,7 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.paper;
   addEyebrow(slide, "The control gap");
-  addTitle(slide, "Agents can move faster than finance can verify.", "Accounts payable needs machine speed without surrendering financial authority.");
+  addTitle(slide, "Agents can move faster than finance can verify", "Accounts payable needs machine speed without surrendering financial authority.");
   const bandY = 244;
   const widths = [364, 364, 364];
   const lefts = [56, 458, 860];
@@ -172,7 +172,7 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.ink;
   addEyebrow(slide, "One bounded workflow", true);
-  addTitle(slide, "From source evidence to independently verified settlement.", "Every step produces an immutable record. Every fund-moving action is revalidated.", true);
+  addTitle(slide, "From source evidence to independently verified settlement", "Every step produces an immutable record. Every fund-moving action is revalidated.", true);
 
   const nodes = [
     { x: 58, w: 190, n: "01", t: "Seal evidence", d: "PDF, image, or JSON\nwith field provenance" },
@@ -201,9 +201,9 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.paper;
   addEyebrow(slide, "Deterministic decision");
-  addTitle(slide, "The judge can inspect why an invoice is payable.", "The result is replayable from sealed evidence, policy version, and treasury state.");
+  addTitle(slide, "The judge can inspect why an invoice is payable", "The result is replayable from sealed evidence, policy version, and treasury state.");
   addShape(slide, "roundRect", 56, 214, 706, 420, C.white, C.line, 1, "rounded-xl");
-  await addImage(slide, "decision-evidence.png", { left: 70, top: 228, width: 678, height: 392 }, { alt: "Evidence package and deterministic payment decision", fit: "cover", crop: { left: 0, top: 0.03, right: 0, bottom: 0.25 } });
+  await addImage(slide, "decision-evidence-v5.png", { left: 70, top: 228, width: 678, height: 392 }, { alt: "Evidence package and deterministic payment decision with thirteen controls", fit: "cover", crop: { left: 0, top: 0.03, right: 0, bottom: 0.25 } });
   const claims = [
     ["13 / 13", "controls clear", "Vendor, wallet, PO, delivery, route, limits, reserve, wallet-change cooldown, and timing."],
     ["SHA-256", "source binding", "The decision carries the evidence manifest, policy hash, and replay snapshot."],
@@ -292,7 +292,7 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.paper;
   addEyebrow(slide, "Circle and Arc");
-  addText(slide, "Settlement is accepted only after independent Arc\nverification.", 56, 72, 1160, 98, { fontSize: 40, color: C.ink, lineSpacing: 0.92 });
+  addText(slide, "Settlement is accepted only after independent Arc\nverification", 56, 72, 1160, 98, { fontSize: 40, color: C.ink, lineSpacing: 0.92 });
   addText(slide, "Provider completion is necessary, then TallyGuard verifies the exact onchain result.", 58, 180, 1120, 32, { fontSize: 17, color: C.muted });
   const y = 278;
   const specs = [
@@ -312,7 +312,7 @@ function setNotes(slide, text) {
   for (const x of [300, 572, 844]) addShape(slide, "rightArrow", x, y + 98, 32, 18, C.teal, "none", 0);
   addShape(slide, "roundRect", 70, 536, 1140, 70, "#E9F7F4", "#A9DAD3", 1, "rounded-xl");
   addText(slide, "CURRENT GATE", 92, 556, 130, 18, { fontSize: 11, bold: true, color: "#007E76" });
-  addText(slide, "Adapter and verifier are implemented. A real Arc Testnet USDC transfer remains the next external acceptance test.", 226, 550, 954, 34, { fontSize: 18, color: C.ink });
+  addText(slide, "Adapter, offline verifier, and isolated wallet-pair setup are ready. Credentials and funded Testnet USDC remain the external gate.", 226, 550, 954, 34, { fontSize: 18, color: C.ink });
   addFooter(slide, 7);
   setNotes(slide, "Implementation: src/tallyguard/circle_arc.py and src/tallyguard/settlement.py. Technical reference: docs/CIRCLE_ARC_SETTLEMENT.md. The slide intentionally labels the real Testnet transfer as pending.");
 }
@@ -322,15 +322,15 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.ink;
   addEyebrow(slide, "Checked-in engineering evidence", true);
-  addTitle(slide, "The safety invariants survive concurrency.", "Two reproducible HTTP stress suites ship with immutable JSON reports.", true);
+  addTitle(slide, "The safety invariants survive concurrency", "Two stress suites plus a production-shaped HTTP gate ship as content-addressed reports.", true);
   addShape(slide, "roundRect", 56, 200, 1168, 414, C.ink2, "#28514D", 1, "rounded-xl");
   await addImage(slide, "reliability.png", { left: 72, top: 216, width: 1136, height: 382 }, { alt: "TallyGuard reliability report", fit: "contain" });
   addText(slide, "10,000 / 10,000 workflows", 70, 626, 270, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "0 duplicate payments", 368, 626, 220, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "100 / 100 tenant breaches denied", 616, 626, 282, 22, { fontSize: 15, bold: true, color: C.aqua });
-  addText(slide, "100 contenders → 1 execution", 920, 626, 280, 22, { fontSize: 15, bold: true, color: C.aqua });
+  addText(slide, "7 / 7 deployment checks", 920, 626, 280, 22, { fontSize: 15, bold: true, color: C.aqua });
   addFooter(slide, 8, true);
-  setNotes(slide, "Sources: docs/reports/load-test-10000.json and docs/reports/agent-run-load-50.json. These are synthetic engineering tests, not customer traction. Settlement used the deterministic Arc simulator and moved no funds.");
+  setNotes(slide, "Sources: docs/reports/load-test-10000.json, docs/reports/agent-run-load-50.json, and docs/reports/deployment-smoke.json. These are synthetic engineering tests, not customer traction. Settlement used the deterministic Arc simulator and moved no funds.");
 }
 
 // 9. Genuine traction plan
@@ -338,11 +338,11 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.paper;
   addEyebrow(slide, "Traction without theater");
-  addTitle(slide, "Turn one real AP workflow into judge-verifiable evidence.", "We will not label generated traffic as users. The pilot records real operator behavior and real acceptance criteria.");
+  addTitle(slide, "Turn one real AP workflow into judge-verifiable evidence", "The pilot binds real operator behavior to a verified Payment Evidence Packet.");
   const stages = [
-    [56, "NOW", "Self-operated pilot", "Run a genuine invoice, PO, delivery record, wallet, and treasury snapshot through the product.", "Evidence completion · decision replay · operator time"],
-    [446, "NEXT", "External review", "Ask 2–3 finance or crypto operators to complete the judge path and record structured feedback.", "Completion rate · time-to-decision · blocked-risk recall"],
-    [836, "BEFORE SUBMISSION", "Real Arc proof", "Execute a capped Testnet transfer, reconcile the receipt, and publish the proof packet and demo clip.", "Circle status · Arc tx hash · exact Transfer match"],
+    [56, "READY", "Self-operated pilot", "Run an actual invoice, PO, delivery record, wallet, and treasury snapshot through the product.", "Attestation hash, packet hash, operator time"],
+    [446, "NEXT", "External review", "Ask 2–3 finance or crypto operators to complete the judge path and record structured feedback.", "Completion rate, time to decision, risk recall"],
+    [836, "BEFORE SUBMISSION", "Real Arc proof", "Execute a capped Testnet transfer, reconcile the receipt, and publish the proof packet and demo clip.", "Circle status, Arc transaction, exact Transfer match"],
   ];
   for (let i = 0; i < stages.length; i += 1) {
     const [x, phase, title, desc, metric] = stages[i];
@@ -367,16 +367,16 @@ function setNotes(slide, text) {
   addText(slide, "A finance control plane for AI-operated businesses, built for Circle USDC on Arc.", 62, 290, 660, 60, { fontSize: 22, color: "#B8CFCC" });
   addRule(slide, 62, 402, 1128, "#28514D", 1);
   addText(slide, "READY", 62, 434, 100, 18, { fontSize: 11, bold: true, color: C.aqua });
-  addText(slide, "Multi-tenant product · deterministic controls · bounded agent runs · proof packets · stress evidence", 62, 464, 1100, 30, { fontSize: 20, color: C.white });
+  addText(slide, "Multi-tenant product, deterministic controls, bounded agent runs, offline verifier, stress evidence", 62, 464, 1100, 30, { fontSize: 20, color: C.white });
   addText(slide, "NEXT PROOF", 62, 528, 120, 18, { fontSize: 11, bold: true, color: C.amber });
-  addText(slide, "Capped Arc Testnet USDC transfer · external operator feedback · final under-3-minute walkthrough", 62, 558, 1100, 30, { fontSize: 20, color: C.white });
+  addText(slide, "Capped Arc Testnet USDC transfer, external operator feedback, final three-minute walkthrough", 62, 558, 1100, 30, { fontSize: 20, color: C.white });
   addPill(slide, "TAMEION AGENTS HACKATHON", 62, 626, 236, C.aqua, C.ink);
   addText(slide, "Submission deadline  ·  October 10, 2026 11:59 PM ET", 328, 630, 600, 22, { fontSize: 14, color: "#7EA09D" });
   addFooter(slide, 10, true);
   setNotes(slide, "Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
 }
 
-const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v4.candidate.pptx");
+const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v5.candidate.pptx");
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 
 const requirements = {
@@ -404,7 +404,7 @@ const result = await finalizePresentation({
   requiredNativeTableOwnerSlides: requirements.requiredNativeTableOwnerSlides,
   fontPolicy,
   verifyArtifactToolImport: true,
-  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v4.validation.json"),
+  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v5.validation.json"),
 });
 
 console.log(JSON.stringify({ fontFamily, monoFamily, finalPath: FINAL_PPTX, result }, null, 2));

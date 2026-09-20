@@ -72,6 +72,7 @@ Strongly encouraged:
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - The locked Testnet acceptance command uses the just-observed Circle wallet balance and will emit both JSON and reviewer-friendly Explorer proof artifacts after the first real transfer
 - A genuine-pilot protocol and content-addressed report command bind operator-attested timing and predeclared acceptance criteria to a verified Payment Evidence Packet without calling self-operated usage a customer or simulation an onchain transfer
+- The current ten-slide pitch deck is `submission/TallyGuard_Tameion_Pitch_v5.pptx`; it uses the current thirteen-control product capture and accurately labels the remaining Testnet, pilot, deployment, and video gates
 - Automated test suite passing
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
 - Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations
