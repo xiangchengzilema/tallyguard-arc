@@ -9,6 +9,7 @@ from enum import StrEnum
 import hashlib
 import re
 from threading import Lock
+from time import sleep
 from typing import Protocol
 
 from .network import ArcNetwork, ArcNetworkConfig, require_mainnet_authorization
@@ -229,6 +230,8 @@ class SimulatedArcAdapter:
         self.submission_count = 0
         self.failed_attempt_count = 0
         self._transient_failures: set[tuple[str, str]] = set()
+        self._delays: dict[tuple[str, str], float] = {}
+        self.delayed_attempt_count = 0
 
     def arm_transient_failure(self, *, organization_id: str, invoice_id: str) -> None:
         """Fail the next matching attempt before a provider submission is accepted."""
@@ -236,7 +239,22 @@ class SimulatedArcAdapter:
         with self._guard:
             self._transient_failures.add((organization_id, invoice_id))
 
+    def arm_delay(
+        self,
+        *,
+        organization_id: str,
+        invoice_id: str,
+        delay_seconds: float,
+    ) -> None:
+        """Delay the next matching provider call without changing its result."""
+
+        if delay_seconds < 0:
+            raise ValueError("Simulated provider delay cannot be negative.")
+        with self._guard:
+            self._delays[(organization_id, invoice_id)] = delay_seconds
+
     def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+        delay_seconds = 0.0
         with self._guard:
             scope = (intent.organization_id, intent.invoice_id)
             if scope in self._transient_failures:
@@ -245,8 +263,13 @@ class SimulatedArcAdapter:
                 raise SettlementUnavailable(
                     "Simulated provider timeout; the durable intent is safe to retry with the same idempotency key."
                 )
+            delay_seconds = self._delays.pop(scope, 0.0)
+            if delay_seconds > 0:
+                self.delayed_attempt_count += 1
             self.submission_count += 1
             block_number = 1_000_000 + self.submission_count
+        if delay_seconds > 0:
+            sleep(delay_seconds)
         digest = hashlib.sha256(
             f"{intent.organization_id}:{intent.idempotency_key}:{intent.recipient}:{intent.amount_usdc}:{intent.network}".encode()
         ).hexdigest()

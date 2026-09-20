@@ -275,13 +275,13 @@ Implemented foundation:
 - Distinct operator and approver identities for every synthetic organization
 - Mixed clean, hold, reject, schedule, escalation, approval, and settlement workflows
 - Cross-tenant identifier attack probes
-- Concurrent duplicate settlement storm with provider-submission accounting
+- Concurrent duplicate settlement storm with an in-flight slow-provider delay and provider-submission accounting
 - Concurrent independent payments contending for one immutable treasury snapshot and daily limit
 - JSON output with throughput, p50/p95/p99, error rate, and duplicate-payment count
 - 100-organization baseline: 200/200 workflows succeeded, 100/100 isolation probes denied, and 100 duplicate requests produced one provider submission
-- Full 10,000-workflow run: 10,000/10,000 succeeded across 19,503 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission
+- Full 10,000-workflow run: 10,000/10,000 succeeded across 19,503 HTTP requests, 100/100 isolation probes denied, and 200 duplicate requests produced one provider submission and one transaction hash while the provider was delayed 500 ms
 - One hundred independent 1,200 USDC payments raced for a shared 5,000 USDC daily limit: exactly four reservations reached the provider, 96 failed closed, and the atomic limit was preserved
-- Current full-run throughput reached 15.347 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.587 seconds under SQLite contention
+- Current full-run throughput reached 14.320 workflows/second with 0.00% workflow errors while durably writing sessions, decisions, approvals, payments, and audit events; settlement P95 was 3.658 seconds under SQLite contention and a separate duplicate storm included the 500 ms provider delay
 - The baseline discovered and verified a fix for a stale-version settlement race
 - A provider-timeout recovery drill proves a transient 503 leaves the invoice retryable, preserves the original durable intent and idempotency key, rechecks current controls, and produces exactly one accepted provider submission after recovery
 - A tenant-scoped settlement-attempt ledger classifies every provider call; the exception center exposes safe retries, locked mismatches, and resolved incidents while returning only a hash fingerprint of the idempotency key
@@ -304,7 +304,7 @@ Synthetic load suite:
 - Duplicate submission storms against the same idempotency key
 - Independent payment attempts racing for the same daily-limit and reserve headroom
 - Cross-tenant identifier attacks
-- Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection (timeout/retry, durable attempt history, malformed receipt, and wrong-recipient lockout complete; slow-provider load injection remains optional)
+- Slow provider, timeout, retry, malformed receipt, and wrong-recipient fault injection are complete; the duplicate-settlement storm now keeps the accepted provider call in flight while concurrent retries arrive and proves a single provider submission and transaction hash
 - Database contention and worker restart recovery (complete)
 - Measured throughput, p50/p95/p99 latency, error rate, and duplicate-payment count
 

@@ -35,6 +35,7 @@ class LoadConfiguration:
     concurrency: int = 16
     duplicate_storm: int = 50
     treasury_contention: int = 20
+    slow_provider_delay_ms: int = 250
     timeout_seconds: float = 15
 
     def __post_init__(self) -> None:
@@ -48,8 +49,12 @@ class LoadConfiguration:
             raise ValueError("Duplicate storm size must be at least two.")
         if self.treasury_contention < 2:
             raise ValueError("Treasury contention size must be at least two.")
+        if self.slow_provider_delay_ms < 0:
+            raise ValueError("Slow-provider delay cannot be negative.")
         if self.timeout_seconds <= 0:
             raise ValueError("HTTP timeout must be positive.")
+        if self.slow_provider_delay_ms >= self.timeout_seconds * 1_000:
+            raise ValueError("Slow-provider delay must remain below the HTTP timeout.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,7 +394,13 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
             )
             storm_invoice_id = str(storm_run.payload["invoice"]["id"])
             storm_decision_id = str(storm_run.payload["decision"]["id"])
+            adapter.arm_delay(
+                organization_id=storm_org,
+                invoice_id=storm_invoice_id,
+                delay_seconds=configuration.slow_provider_delay_ms / 1_000,
+            )
             submissions_before_storm = adapter.submission_count
+            delayed_attempts_before_storm = adapter.delayed_attempt_count
             storm_results: list[HttpResult] = []
             with ThreadPoolExecutor(max_workers=configuration.concurrency) as pool:
                 storm_futures = [
@@ -411,6 +422,9 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 if result.status == 200
             }
             storm_provider_submissions = adapter.submission_count - submissions_before_storm
+            storm_delayed_attempts = (
+                adapter.delayed_attempt_count - delayed_attempts_before_storm
+            )
 
             # Prepare independent PAY decisions, then make every worker contend for
             # the same immutable treasury snapshot and policy headroom. The final
@@ -543,6 +557,7 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 "transport": "real loopback HTTP against the Flask API",
                 "settlement": "deterministic Arc simulator; no funds moved",
                 "identity": "isolated organizations with distinct operator, approver, and administrator sessions",
+                "slow_provider_injection": "the duplicate-settlement storm holds the accepted provider call open for the configured delay while concurrent retries arrive",
                 "treasury_contention": "concurrent payments share one immutable treasury snapshot; policy permits exactly four 1,200 USDC reservations",
                 "note": "This report measures reliability and is not customer traction.",
             },
@@ -570,6 +585,18 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 "duplicate_storm_successes": sum(result.status == 200 for result in storm_results),
                 "duplicate_storm_unique_transaction_hashes": len(storm_hashes),
                 "duplicate_storm_provider_submissions": storm_provider_submissions,
+                "duplicate_storm_delayed_provider_attempts": storm_delayed_attempts,
+                "slow_provider_idempotency_preserved": (
+                    sum(result.status == 200 for result in storm_results)
+                    == configuration.duplicate_storm
+                    and len(storm_hashes) == 1
+                    and storm_provider_submissions == 1
+                    and (
+                        storm_delayed_attempts == 1
+                        if configuration.slow_provider_delay_ms > 0
+                        else storm_delayed_attempts == 0
+                    )
+                ),
                 "treasury_contention_requests": len(contention_results),
                 "treasury_contention_successes": sum(
                     result.status == 200 for result in contention_results
@@ -613,6 +640,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--concurrency", type=int, default=16)
     parser.add_argument("--duplicate-storm", type=int, default=50)
     parser.add_argument("--treasury-contention", type=int, default=20)
+    parser.add_argument("--slow-provider-delay-ms", type=int, default=250)
     parser.add_argument("--timeout-seconds", type=float, default=15)
     parser.add_argument("--output", type=Path)
     return parser
@@ -627,6 +655,7 @@ def main() -> None:
             concurrency=arguments.concurrency,
             duplicate_storm=arguments.duplicate_storm,
             treasury_contention=arguments.treasury_contention,
+            slow_provider_delay_ms=arguments.slow_provider_delay_ms,
             timeout_seconds=arguments.timeout_seconds,
         )
     )

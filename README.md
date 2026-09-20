@@ -112,13 +112,15 @@ Run a local reliability baseline:
 .\.venv\Scripts\python.exe -m tallyguard.loadtest `
   --organizations 10 --invoices 200 --concurrency 16 `
   --duplicate-storm 100 --treasury-contention 50 `
+  --slow-provider-delay-ms 250 `
   --output docs\reports\load-test-baseline.json
 ```
 
 The checked-in [10,000-workflow report](docs/reports/LOAD_TEST_10000.md) records
 zero failed workflows, zero duplicate payments, 100/100 denied cross-tenant
 reads, and 96/100 over-limit payments blocked while exactly four safe
-reservations reached the provider. The smaller
+reservations reached the provider. Its duplicate-settlement storm also holds
+the accepted provider call open while concurrent retries arrive. The smaller
 [development baseline](docs/reports/LOAD_TEST_BASELINE.md) remains available for
 fast regression checks.
 

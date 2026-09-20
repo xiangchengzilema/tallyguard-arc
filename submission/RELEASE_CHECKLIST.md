@@ -57,7 +57,7 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Presentation and video
 
-- [ ] Open `TallyGuard_Tameion_Pitch_v5.pptx` and confirm all ten slides.
+- [ ] Open `TallyGuard_Tameion_Pitch_v7.pptx` and confirm all ten slides.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.
 - [ ] Keep the final video under three minutes.

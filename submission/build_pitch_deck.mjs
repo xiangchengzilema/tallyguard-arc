@@ -6,7 +6,7 @@ import { Presentation, PresentationFile } from "@oai/artifact-tool";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_DIR = "C:/Users/55246/.codex/plugins/cache/openai-primary-runtime/presentations/26.909.12148/skills/presentations";
 const BUILD_DIR = path.join(ROOT, ".codex-deck");
-const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v5.pptx");
+const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v7.pptx");
 const RUNTIME_PYTHON = "C:/Users/55246/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe";
 
 const { resolvePresentationFont, finalizePresentation } = await import(
@@ -324,13 +324,13 @@ function setNotes(slide, text) {
   addEyebrow(slide, "Checked-in engineering evidence", true);
   addTitle(slide, "The safety invariants survive concurrency", "Two stress suites plus a production-shaped HTTP gate ship as content-addressed reports.", true);
   addShape(slide, "roundRect", 56, 200, 1168, 414, C.ink2, "#28514D", 1, "rounded-xl");
-  await addImage(slide, "reliability.png", { left: 72, top: 216, width: 1136, height: 382 }, { alt: "TallyGuard reliability report", fit: "contain" });
+  await addImage(slide, "reliability-v6.png", { left: 72, top: 216, width: 1136, height: 382 }, { alt: "TallyGuard reliability report", fit: "contain" });
   addText(slide, "10,000 / 10,000 workflows", 70, 626, 270, 22, { fontSize: 15, bold: true, color: C.aqua });
-  addText(slide, "0 duplicate payments", 368, 626, 220, 22, { fontSize: 15, bold: true, color: C.aqua });
+  addText(slide, "200 retries · 500 ms → 1 submit", 352, 626, 270, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "100 / 100 tenant breaches denied", 616, 626, 282, 22, { fontSize: 15, bold: true, color: C.aqua });
   addText(slide, "7 / 7 deployment checks", 920, 626, 280, 22, { fontSize: 15, bold: true, color: C.aqua });
   addFooter(slide, 8, true);
-  setNotes(slide, "Sources: docs/reports/load-test-10000.json, docs/reports/agent-run-load-50.json, and docs/reports/deployment-smoke.json. These are synthetic engineering tests, not customer traction. Settlement used the deterministic Arc simulator and moved no funds.");
+  setNotes(slide, "Sources: docs/reports/load-test-10000.json, docs/reports/agent-run-load-50.json, and docs/reports/deployment-smoke.json. The workflow run injected a 500 ms provider delay while 200 duplicate calls competed; all converged on one provider submission and one transaction hash. These are synthetic engineering tests, not customer traction. Settlement used the deterministic Arc simulator and moved no funds.");
 }
 
 // 9. Genuine traction plan
@@ -376,7 +376,7 @@ function setNotes(slide, text) {
   setNotes(slide, "Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
 }
 
-const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v5.candidate.pptx");
+const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v7.candidate.pptx");
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 
 const requirements = {
@@ -404,7 +404,7 @@ const result = await finalizePresentation({
   requiredNativeTableOwnerSlides: requirements.requiredNativeTableOwnerSlides,
   fontPolicy,
   verifyArtifactToolImport: true,
-  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v5.validation.json"),
+  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v7.validation.json"),
 });
 
 console.log(JSON.stringify({ fontFamily, monoFamily, finalPath: FINAL_PPTX, result }, null, 2));

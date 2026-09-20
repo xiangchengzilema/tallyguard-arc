@@ -548,6 +548,9 @@ def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):
     payload = response.get_json()
     assert payload["report"]["summary"]["successful_workflows"] == 10_000
     assert payload["report"]["summary"]["duplicate_payment_count"] == 0
+    assert payload["report"]["configuration"]["slow_provider_delay_ms"] == 500
+    assert payload["report"]["summary"]["duplicate_storm_delayed_provider_attempts"] == 1
+    assert payload["report"]["summary"]["slow_provider_idempotency_preserved"] is True
     assert payload["report"]["methodology"]["classification"] == (
         "synthetic multi-tenant engineering load test"
     )

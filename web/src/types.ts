@@ -431,6 +431,7 @@ export interface ReliabilityReport {
     duplicate_storm: number;
     invoices: number;
     organizations: number;
+    slow_provider_delay_ms: number;
     treasury_contention: number;
     timeout_seconds: number;
   };
@@ -439,17 +440,22 @@ export interface ReliabilityReport {
     identity: string;
     note: string;
     settlement: string;
+    slow_provider_injection: string;
     transport: string;
+    treasury_contention: string;
   };
   summary: {
     cross_tenant_attempts: number;
     cross_tenant_attempts_denied: number;
     duplicate_payment_count: number;
+    duplicate_storm_delayed_provider_attempts: number;
     duplicate_storm_provider_submissions: number;
     duplicate_storm_requests: number;
+    duplicate_storm_unique_transaction_hashes: number;
     failed_workflows: number;
     http_requests: number;
     successful_workflows: number;
+    slow_provider_idempotency_preserved: boolean;
     treasury_atomic_limit_preserved: boolean;
     treasury_contention_denied: number;
     treasury_contention_expected_successes: number;

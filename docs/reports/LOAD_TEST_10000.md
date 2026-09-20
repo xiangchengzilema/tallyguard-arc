@@ -10,15 +10,17 @@ Generated on September 20, 2026 from the checked-in raw result
 | Organizations | 100 |
 | Invoice workflows | 10,000 |
 | Concurrent workers | 64 |
+| Injected provider delay | 500 ms |
 | HTTP requests | 19,503 |
 | Successful workflows | 10,000 |
 | Failed workflows | 0 |
 | Workflow error rate | 0.00% |
-| Throughput | 15.347 workflows/second |
+| Throughput | 14.320 workflows/second |
 | Cross-tenant probes denied | 100 / 100 |
 | Duplicate-settlement requests | 200 |
 | Provider submissions for duplicate storm | 1 |
 | Unique transaction hashes for duplicate storm | 1 |
+| Slow-provider idempotency preserved | Yes |
 | Shared-treasury contention requests | 100 |
 | Shared-treasury reservations admitted | 4 |
 | Over-limit payments blocked | 96 |
@@ -30,19 +32,21 @@ Generated on September 20, 2026 from the checked-in raw result
 
 | Operation | P50 | P95 | P99 |
 | --- | ---: | ---: | ---: |
-| Overall | 1,754 ms | 3,436 ms | 3,693 ms |
-| Scenario evaluation | 1,673 ms | 2,004 ms | 2,293 ms |
-| Settlement | 3,195 ms | 3,587 ms | 3,885 ms |
-| Approval request | 588 ms | 778 ms | 965 ms |
-| Approval resolution | 1,070 ms | 1,319 ms | 1,501 ms |
-| Cross-tenant denial | 5 ms | 16 ms | 24 ms |
-| Duplicate-settlement storm | 400 ms | 533 ms | 604 ms |
-| Atomic treasury reservation | 472 ms | 589 ms | 1,035 ms |
+| Overall | 2,031 ms | 3,499 ms | 3,742 ms |
+| Scenario evaluation | 1,937 ms | 2,256 ms | 2,467 ms |
+| Settlement | 3,246 ms | 3,658 ms | 3,870 ms |
+| Approval request | 641 ms | 859 ms | 979 ms |
+| Approval resolution | 964 ms | 1,188 ms | 1,311 ms |
+| Cross-tenant denial | 5 ms | 22 ms | 28 ms |
+| Duplicate-settlement storm | 434 ms | 1,057 ms | 1,219 ms |
+| Atomic treasury reservation | 514 ms | 622 ms | 1,123 ms |
 
 ## What this proves
 
 - Tenant boundaries held under concurrent, mixed-organization traffic.
-- Idempotency converged 200 simultaneous retries onto one provider submission.
+- Idempotency converged 200 simultaneous retries onto one provider submission and
+  one transaction hash while the accepted provider call remained in flight for
+  an injected 500 ms delay.
 - One hundred independent payments contended for the same 5,000 USDC daily
   limit and treasury snapshot. Exactly four 1,200 USDC reservations reached
   the provider; all 96 excess attempts failed closed before funds could move.

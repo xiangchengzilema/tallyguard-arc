@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from decimal import Decimal
+from time import perf_counter
 
 import pytest
 
@@ -62,6 +63,43 @@ def test_duplicate_concurrent_requests_submit_only_once():
         receipts = list(executor.map(lambda _: service.execute(intent=payment, decision=decision()), range(100)))
     assert adapter.submission_count == 1
     assert len({receipt.transaction_hash for receipt in receipts}) == 1
+
+
+def test_slow_provider_duplicate_storm_still_submits_only_once():
+    adapter = SimulatedArcAdapter()
+    adapter.arm_delay(
+        organization_id="org-1",
+        invoice_id="invoice-1",
+        delay_seconds=0.05,
+    )
+    service = SettlementService(
+        config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+        adapter=adapter,
+    )
+    payment = intent()
+    started = perf_counter()
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        receipts = list(
+            executor.map(
+                lambda _: service.execute(intent=payment, decision=decision()),
+                range(100),
+            )
+        )
+
+    assert perf_counter() - started >= 0.04
+    assert adapter.delayed_attempt_count == 1
+    assert adapter.submission_count == 1
+    assert len({receipt.transaction_hash for receipt in receipts}) == 1
+
+
+def test_simulated_provider_delay_must_be_non_negative():
+    adapter = SimulatedArcAdapter()
+    with pytest.raises(ValueError, match="cannot be negative"):
+        adapter.arm_delay(
+            organization_id="org-1",
+            invoice_id="invoice-1",
+            delay_seconds=-0.001,
+        )
 
 
 def test_idempotency_key_cannot_be_reused_for_different_amount():

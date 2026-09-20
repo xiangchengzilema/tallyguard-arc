@@ -85,8 +85,9 @@ audit-event hashes offline.
 
 Synthetic engineering tests completed 10,000 of 10,000 mixed workflows across
 100 isolated organizations. The run denied 100 of 100 cross-tenant reads, kept a
-200-request duplicate storm to one provider submission, and admitted only four
-of 100 simultaneous payments competing for a 5,000 USDC daily limit. A separate
+200-request duplicate storm to one provider submission and one transaction hash
+while the accepted provider call was delayed 500 ms, and admitted only four of
+100 simultaneous payments competing for a 5,000 USDC daily limit. A separate
 50-tenant agent test verified every proof packet and reduced 100 concurrent
 execute calls to one durable claim and one provider submission. These results
 measure engineering reliability; they are not customer traction and moved no
@@ -127,7 +128,7 @@ unless payment and permission to make that claim are separately documented.
 - Public repository: `PENDING_EXTERNAL`
 - Live judge console: `PENDING_EXTERNAL`
 - Demo video under three minutes: `PENDING_EXTERNAL`
-- Pitch deck: `submission/TallyGuard_Tameion_Pitch_v5.pptx`
+- Pitch deck: `submission/TallyGuard_Tameion_Pitch_v7.pptx`
 - Arc Testnet transaction: `PENDING_EXTERNAL`
 - Verified Testnet artifact: `PENDING_EXTERNAL`
 - Pilot evidence: `PENDING_EXTERNAL`
