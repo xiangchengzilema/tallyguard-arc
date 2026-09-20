@@ -5,6 +5,8 @@ from pathlib import Path
 from tallyguard.audit import canonical_json
 from tallyguard.release_audit import (
     _acceptance_check,
+    _check_png_dimensions,
+    _check_text_fragments,
     _git_commit_check,
     _mainnet_acceptance_check,
     _pilot_check,
@@ -24,6 +26,38 @@ def test_external_url_check_distinguishes_pending_invalid_and_public_urls():
     assert _url_check("Live", None).status == "pending"
     assert _url_check("Live", "http://localhost:8000").status == "failed"
     assert _url_check("Live", "https://demo.example.com").status == "passed"
+
+
+def test_responsive_capture_check_verifies_png_dimensions(tmp_path):
+    capture = tmp_path / "capture.png"
+    capture.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\x0dIHDR"
+        + (768).to_bytes(4, "big")
+        + (1024).to_bytes(4, "big")
+    )
+
+    assert (
+        _check_png_dimensions(tmp_path, "capture.png", (768, 1024)).status
+        == "passed"
+    )
+    assert _check_png_dimensions(tmp_path, "capture.png", (390, 844)).status == "failed"
+
+
+def test_video_runbook_check_requires_all_three_widths_and_single_product_claim(tmp_path):
+    runbook = tmp_path / "runbook.md"
+    runbook.write_text(
+        "Show 1440px, 768px, and 390px as one responsive web product.",
+        encoding="utf-8",
+    )
+
+    required = ("1440px", "768px", "390px", "one responsive web product")
+    assert _check_text_fragments(tmp_path, "runbook.md", required).status == "passed"
+
+    runbook.write_text("Show 1440px and 390px.", encoding="utf-8")
+    failed = _check_text_fragments(tmp_path, "runbook.md", required)
+    assert failed.status == "failed"
+    assert "768px" in failed.detail
 
 
 def test_acceptance_check_requires_capped_arc_testnet_proof(tmp_path):

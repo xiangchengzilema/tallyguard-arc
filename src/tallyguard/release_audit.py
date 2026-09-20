@@ -9,6 +9,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+import struct
 import subprocess
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -38,6 +39,71 @@ def _check_file(root: Path, relative_path: str) -> ReleaseCheck:
         relative_path,
         "passed",
         f"Present ({path.stat().st_size} bytes).",
+        _hash_file(path),
+    )
+
+
+def _check_png_dimensions(
+    root: Path,
+    relative_path: str,
+    expected_dimensions: tuple[int, int],
+) -> ReleaseCheck:
+    path = root / relative_path
+    try:
+        payload = path.read_bytes()
+        if len(payload) < 24 or payload[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("not a PNG file")
+        dimensions = struct.unpack(">II", payload[16:24])
+    except (OSError, ValueError, struct.error) as exc:
+        return ReleaseCheck(
+            "local",
+            relative_path,
+            "failed",
+            f"Cannot verify responsive capture: {exc}",
+        )
+    if dimensions != expected_dimensions:
+        expected = f"{expected_dimensions[0]}x{expected_dimensions[1]}"
+        actual = f"{dimensions[0]}x{dimensions[1]}"
+        return ReleaseCheck(
+            "local",
+            relative_path,
+            "failed",
+            f"Expected {expected} PNG; found {actual}.",
+        )
+    return ReleaseCheck(
+        "local",
+        relative_path,
+        "passed",
+        f"Verified responsive capture at {dimensions[0]}x{dimensions[1]}.",
+        _hash_file(path),
+    )
+
+
+def _check_text_fragments(
+    root: Path,
+    relative_path: str,
+    required_fragments: tuple[str, ...],
+) -> ReleaseCheck:
+    path = root / relative_path
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ReleaseCheck(
+            "local", relative_path, "failed", f"Cannot read file: {exc}"
+        )
+    missing = [fragment for fragment in required_fragments if fragment not in content]
+    if missing:
+        return ReleaseCheck(
+            "local",
+            relative_path,
+            "failed",
+            "Missing required release language: " + ", ".join(missing),
+        )
+    return ReleaseCheck(
+        "local",
+        relative_path,
+        "passed",
+        "Responsive recording sequence is explicitly scripted.",
         _hash_file(path),
     )
 
@@ -335,6 +401,26 @@ def audit_release(
         _check_file(root, "docs/SECURITY_MODEL.md"),
         _check_file(root, "web/dist/index.html"),
         _check_file(root, "submission/TallyGuard_Tameion_Pitch_v8.pptx"),
+        _check_png_dimensions(
+            root,
+            "submission/assets/responsive-desktop.png",
+            (1440, 900),
+        ),
+        _check_png_dimensions(
+            root,
+            "submission/assets/responsive-tablet.png",
+            (768, 1024),
+        ),
+        _check_png_dimensions(
+            root,
+            "submission/assets/responsive-mobile.png",
+            (390, 844),
+        ),
+        _check_text_fragments(
+            root,
+            "submission/DEMO_RUNBOOK.md",
+            ("1440px", "768px", "390px", "one responsive web product"),
+        ),
         _check_report(
             root,
             "docs/reports/load-test-10000.json",
