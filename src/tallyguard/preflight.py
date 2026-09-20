@@ -22,6 +22,7 @@ from .circle_arc import (
     CircleWalletSnapshot,
 )
 from .network import ArcNetworkConfig
+from .environment import load_local_environment
 
 
 MAX_MAINNET_TRANSFER_CAP_USDC = Decimal("5")
@@ -199,6 +200,7 @@ def _decimal_env(name: str, default: str) -> Decimal:
 
 
 def main() -> None:
+    load_local_environment()
     parser = argparse.ArgumentParser(description="Read-only Circle/Arc settlement preflight")
     parser.add_argument(
         "--network-only",

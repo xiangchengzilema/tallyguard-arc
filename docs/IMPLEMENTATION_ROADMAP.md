@@ -146,6 +146,7 @@ Implemented foundation:
 - Read-only settlement preflight checks Arc RPC health, canonical USDC code, Circle wallet state/network/balance, explicit mainnet enablement, and an independent maximum transfer cap without signing or submitting a transaction
 - The explicit low-value Testnet acceptance runner binds its treasury snapshot to the just-observed Circle balance and emits machine-readable plus reviewer-facing, SHA-256-addressed proof artifacts
 - The guarded wallet provisioner can create a dedicated two-wallet Arc Testnet acceptance pair, keeping the funded treasury identity distinct from the controlled recipient and printing no credentials
+- Operator commands automatically load the Git-ignored local `.env` without overriding explicitly exported process values, so Circle credentials never need to enter chat, source files, or command history
 - Durable payment intents retain the original UUID v4 across process restarts and retries
 - Durable settlement receipts prevent provider resubmission after a completed payment
 - Invoice settlement advances through submitting, submitted, confirmed, and reconciled states

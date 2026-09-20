@@ -19,6 +19,7 @@ from .api import create_app
 from .circle_arc import ArcRpcClient, CircleArcAdapter, CircleSdkGateway
 from .network import ArcNetwork, ArcNetworkConfig
 from .preflight import run_preflight
+from .environment import load_local_environment
 from .settlement import SettlementAdapter
 
 
@@ -294,6 +295,7 @@ def _decimal(value: str, *, field: str) -> Decimal:
 
 
 def main() -> None:
+    load_local_environment()
     parser = argparse.ArgumentParser(
         description="Run an explicit low-value end-to-end Arc Testnet USDC acceptance transfer"
     )

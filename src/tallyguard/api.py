@@ -67,6 +67,7 @@ from .evidence import (
     SourceLocation,
 )
 from .extraction import extract_pdf_text_fields
+from .environment import load_local_environment
 from .normalization import EvidenceNormalizer
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
@@ -3347,6 +3348,7 @@ def _seed_demo_identity(repository: SqliteRepository) -> None:
 
 
 def main() -> None:
+    load_local_environment()
     app = create_app()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
 

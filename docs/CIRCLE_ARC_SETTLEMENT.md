@@ -58,6 +58,8 @@ python -m pip install -e ".[circle,dev]"
 Copy `.env.example` to a local, ignored `.env`. Select Circle mode and Arc Testnet,
 keep mainnet disabled, set a deliberately small maximum transfer amount, and provide
 `CIRCLE_WEB3_API_KEY`, `CIRCLE_ENTITY_SECRET`, and `CIRCLE_WALLET_ID` only in that local file.
+The API, preflight, wallet setup, and Testnet acceptance commands load that file
+automatically without overriding values that you explicitly exported in the terminal.
 
 Do not paste the entity secret, API key, private key, or recovery material into chat, issues, logs, screenshots, or committed files.
 

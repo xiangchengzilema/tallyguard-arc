@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from .circle_arc import CircleConfigurationError, _enum_value
 from .network import ArcNetwork
+from .environment import load_local_environment
 
 
 CONFIRMATION_PHRASE = "CREATE-ARC-TESTNET-WALLET"
@@ -196,6 +197,7 @@ def _is_evm_address(value: str) -> bool:
 
 
 def main() -> None:
+    load_local_environment()
     parser = argparse.ArgumentParser(
         description="Create one dedicated Circle developer-controlled EOA wallet on Arc Testnet"
     )
