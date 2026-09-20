@@ -24,6 +24,7 @@ TAG_DESCRIPTIONS = {
     "accounting": "Reconciled finance-system exports.",
     "agent-runs": "Bounded autonomous planning, execution, and proof packets.",
     "approvals": "Segregated human approval workflows.",
+    "auth": "Opaque role-scoped session inspection.",
     "audit": "Tenant-scoped tamper-evident audit evidence.",
     "decisions": "Evidence-bound deterministic decisions and replay.",
     "demo": "Credential-free judge identities and deterministic scenarios.",

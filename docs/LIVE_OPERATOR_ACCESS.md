@@ -44,6 +44,15 @@ $headers = @{ Authorization = "Bearer $operator" }
 Invoke-RestMethod http://127.0.0.1:8000/api/operations/overview -Headers $headers
 ```
 
+When the API reports that public demo sessions are disabled, the web console
+shows a private access gate. Paste the matching administrator, operator,
+approver, and auditor tokens there. The console validates each token's role and
+requires all four to belong to the same organization before loading finance
+data. TallyGuard keeps the tokens only in React memory: it does not write them
+to the URL, persistent browser storage, source bundle, or server logs, and a
+reload clears them. Use a trusted browser profile and disable any extension or
+password manager that would capture form fields.
+
 Run the setup command again with the exact same organization identity to issue
 fresh sessions. Existing names, roles, and active state are verified rather
 than overwritten; any drift fails closed. Old sessions remain bounded by the
@@ -53,6 +62,8 @@ global per-principal retention policy and expire normally.
 
 - Use the public judge console only in labelled simulation mode.
 - Use these sessions for a trusted local or private operator workflow.
+- `/api/auth/session` returns only the authenticated principal identity and
+  roles so the private console can fail fast on a swapped or mistyped token.
 - The operator may prepare evidence and decisions but cannot approve or execute
   settlement.
 - The approver may approve and execute, but cannot be the operator who requested

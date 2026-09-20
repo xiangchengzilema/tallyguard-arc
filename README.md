@@ -50,6 +50,7 @@ Every payment answers four questions:
 - Canonical Arc Mainnet/Testnet configuration
 - Mainnet settlement locked behind an explicit runtime flag and a durable, decision-bound approval requested by an operator and resolved by a different approver
 - A local operator-access command creates or verifies four single-role identities in the live database and prints short-lived opaque sessions once; live Circle mode never needs the public demo-session endpoint
+- The same responsive console presents a private live-access gate when demo identities are disabled, verifies each role and one shared tenant, and keeps supplied bearer sessions in page memory only
 - The currently active policy kill switch is rechecked immediately before every new settlement; it blocks already-`READY` invoices without creating an intent, while completed receipt replays remain readable and never resubmit
 - Payment-intent creation atomically rechecks the active route, autonomy cap, snapshot freshness, daily limit, and reserve floor while reserving every amount committed since the latest treasury snapshot; concurrent workers cannot spend the same headroom twice
 - Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation

@@ -194,6 +194,39 @@ def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, m
     assert response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
 
 
+def test_authenticated_session_inspection_returns_only_principal_identity(tmp_path):
+    app = create_app(database_path=tmp_path / "session-inspection.sqlite3", testing=True)
+    client = app.test_client()
+    issued = client.post("/api/demo/session", json={"role": "operator"}).get_json()
+
+    response = client.get(
+        "/api/auth/session",
+        headers=headers(issued["access_token"]),
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "principal": {
+            "user_id": "demo-operator",
+            "organization_id": "demo-org",
+            "roles": ["FINANCE_OPERATOR"],
+        }
+    }
+    assert issued["access_token"] not in response.get_data(as_text=True)
+
+
+def test_session_inspection_rejects_invalid_bearer(tmp_path):
+    app = create_app(database_path=tmp_path / "session-inspection.sqlite3", testing=True)
+
+    response = app.test_client().get(
+        "/api/auth/session",
+        headers=headers("not-a-valid-session"),
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"]["code"] == "AUTHENTICATION_DENIED"
+
+
 def test_metrics_report_aggregate_requests_without_financial_labels(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()

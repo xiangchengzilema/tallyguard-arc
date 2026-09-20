@@ -34,8 +34,10 @@ import {
 } from '@carbon/icons-react';
 import {
   ApiError,
+  OperatorAccessRequired,
   activatePolicyVersion,
   bootstrap,
+  bootstrapWithSessions,
   createAgentRun,
   downloadAccountingLedger,
   downloadAgentRunProof,
@@ -68,6 +70,7 @@ import type {
   AuditSearchRequest,
   AuditSearchResult,
   AuditTrail,
+  BootstrapContext,
   BootstrapData,
   DecisionAction,
   EvidenceFileBundle,
@@ -766,6 +769,93 @@ function RuntimeBoundary({ readiness }: { readiness: BootstrapData['readiness'] 
         <small>{readiness.network} · mainnet {readiness.mainnet_enabled ? 'enabled' : 'locked'}</small>
       </div>
       <Tag type={simulated ? 'cool-gray' : 'green'}>{simulated ? 'SIMULATION' : 'LIVE USDC'}</Tag>
+    </section>
+  );
+}
+
+function OperatorAccessGate({
+  context,
+  busy,
+  onConnect,
+}: {
+  context: BootstrapContext;
+  busy: boolean;
+  onConnect: (sessions: BootstrapData['sessions']) => void;
+}) {
+  const [sessions, setSessions] = useState<BootstrapData['sessions']>({
+    admin: '',
+    operator: '',
+    approver: '',
+    auditor: '',
+  });
+  const complete = Object.values(sessions).every((token) => token.trim().length > 0);
+  const update = (role: keyof BootstrapData['sessions'], value: string) => {
+    setSessions((current) => ({ ...current, [role]: value.trim() }));
+  };
+
+  return (
+    <section className="operator-access" aria-labelledby="operator-access-title">
+      <div className="operator-access__intro">
+        <span className="operator-access__marker" aria-hidden="true"><Locked size={24} /></span>
+        <div>
+          <span className="eyebrow">Private live operations</span>
+          <h2 id="operator-access-title">Connect the role-separated finance team.</h2>
+          <p>
+            Live Circle mode disables public demo identities. Paste the four short-lived sessions
+            generated locally for this database. TallyGuard keeps them only in this page's memory
+            and clears them on reload.
+          </p>
+        </div>
+      </div>
+      <form
+        className="operator-access__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (complete) onConnect(sessions);
+        }}
+      >
+        <TextInput
+          id="operator-access-admin"
+          type="password"
+          labelText="Policy administrator session"
+          autoComplete="new-password"
+          value={sessions.admin}
+          onChange={(event) => update('admin', event.currentTarget.value)}
+        />
+        <TextInput
+          id="operator-access-operator"
+          type="password"
+          labelText="Finance operator session"
+          autoComplete="new-password"
+          value={sessions.operator}
+          onChange={(event) => update('operator', event.currentTarget.value)}
+        />
+        <TextInput
+          id="operator-access-approver"
+          type="password"
+          labelText="Payment approver session"
+          autoComplete="new-password"
+          value={sessions.approver}
+          onChange={(event) => update('approver', event.currentTarget.value)}
+        />
+        <TextInput
+          id="operator-access-auditor"
+          type="password"
+          labelText="Audit reviewer session"
+          autoComplete="new-password"
+          value={sessions.auditor}
+          onChange={(event) => update('auditor', event.currentTarget.value)}
+        />
+        <div className="operator-access__action">
+          <div>
+            <strong>{context.readiness.network} · Circle live</strong>
+            <small>TallyGuard never places tokens in a URL, persistent browser storage, or frontend bundle.</small>
+          </div>
+          <Button type="submit" renderIcon={ArrowRight} disabled={!complete || busy}>
+            {busy ? 'Verifying access' : 'Open private operations'}
+          </Button>
+        </div>
+      </form>
     </section>
   );
 }
@@ -1493,6 +1583,7 @@ function AuditExplorer({
 
 function App() {
   const [data, setData] = useState<BootstrapData | null>(null);
+  const [accessContext, setAccessContext] = useState<BootstrapContext | null>(null);
   const [selectedKey, setSelectedKey] = useState('clean-payment');
   const [run, setRun] = useState<RunResult | null>(null);
   const [history, setHistory] = useState<RunResult[]>([]);
@@ -1518,26 +1609,34 @@ function App() {
   const [ledgerExport, setLedgerExport] = useState<{ hash: string; rows: number } | null>(null);
   const [auditSearch, setAuditSearch] = useState<AuditSearchResult | null>(null);
 
+  const installBootstrap = useCallback((result: BootstrapData) => {
+    setData(result);
+    setOperations(result.operations);
+    setIncidents(result.incidents);
+    setAgentRun(result.agentRun);
+    setGovernance(result.governance);
+    setVendorDirectory(result.vendorDirectory);
+    setAuditSearch(result.auditSearch);
+    setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     bootstrap()
       .then((result) => {
-        if (!cancelled) {
-          setData(result);
-          setOperations(result.operations);
-          setIncidents(result.incidents);
-          setAgentRun(result.agentRun);
-          setGovernance(result.governance);
-          setVendorDirectory(result.vendorDirectory);
-          setAuditSearch(result.auditSearch);
-          setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
-        }
+        if (!cancelled) installBootstrap(result);
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not initialize TallyGuard.');
+        if (cancelled) return;
+        if (reason instanceof OperatorAccessRequired) {
+          setAccessContext(reason.context);
+          setError(null);
+          return;
+        }
+        setError(reason instanceof Error ? reason.message : 'Could not initialize TallyGuard.');
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [installBootstrap]);
 
   const act = useCallback(async (label: string, operation: () => Promise<void>) => {
     setBusy(label);
@@ -1551,6 +1650,15 @@ function App() {
       setBusy(null);
     }
   }, []);
+
+  const handleOperatorConnect = useCallback((sessions: BootstrapData['sessions']) => {
+    if (!accessContext) return;
+    void act('Verifying role-separated operator access', async () => {
+      const result = await bootstrapWithSessions(sessions, accessContext);
+      installBootstrap(result);
+      setAccessContext(null);
+    });
+  }, [accessContext, act, installBootstrap]);
 
   const handleAuditSearch = useCallback((filters: AuditSearchRequest) => {
     if (!data) return;
@@ -1807,6 +1915,7 @@ function App() {
     () => data?.scenarios.find((item) => item.key === selectedKey),
     [data, selectedKey],
   );
+  const visibleReadiness = data?.readiness ?? accessContext?.readiness;
   return (
     <Theme theme="g10">
       <a className="skip-link" href="#main-content">Skip to main content</a>
@@ -1823,7 +1932,7 @@ function App() {
           <div>
             <span className="eyebrow">Finance control plane / Judge workspace</span>
             <h1>Approve the evidence. Automate the payment.</h1>
-            <div className="judge-quickstart">
+            {!accessContext ? <div className="judge-quickstart">
               <Button
                 size="lg"
                 renderIcon={PlayFilled}
@@ -1840,13 +1949,13 @@ function App() {
                 <ArrowRight size={14} aria-hidden="true" />
                 <span>Arc receipt</span>
               </div>
-            </div>
+            </div> : null}
           </div>
           <div className="system-state">
             <span className="live-dot" aria-hidden="true" />
             <div>
-              <strong>{data?.readiness.status === 'ready' ? 'Controls online' : 'Connecting'}</strong>
-              <small>{data?.readiness.network ?? 'ARC-TESTNET'} · {data?.readiness.settlement_adapter ?? 'checking adapter'} · {data?.readiness.evidence_analyst ?? 'checking analyst'}</small>
+              <strong>{visibleReadiness?.status === 'ready' ? 'Controls online' : 'Connecting'}</strong>
+              <small>{visibleReadiness?.network ?? 'ARC-TESTNET'} · {visibleReadiness?.settlement_adapter ?? 'checking adapter'} · {visibleReadiness?.evidence_analyst ?? 'checking analyst'}</small>
             </div>
           </div>
         </div>
@@ -1862,9 +1971,9 @@ function App() {
           />
         ) : null}
 
-        {data ? <RuntimeBoundary readiness={data.readiness} /> : null}
+        {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} /> : null}
 
-        {operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : (
+        {accessContext ? null : operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : (
           <div className="metrics-band" aria-label="Loading finance operations summary">
             <Metric label="Open exposure" value="—" detail="Loading durable invoices" />
             <Metric label="Blocked value" value="—" detail="Loading control outcomes" />
@@ -1873,7 +1982,13 @@ function App() {
           </div>
         )}
 
-        {!data ? (
+        {accessContext ? (
+          <OperatorAccessGate
+            context={accessContext}
+            busy={busy !== null}
+            onConnect={handleOperatorConnect}
+          />
+        ) : !data ? (
           <div className="loading-layout" aria-label="Loading judge console">
             <SkeletonText heading width="32%" /><SkeletonText paragraph lineCount={8} />
           </div>
@@ -1974,7 +2089,7 @@ function App() {
           />
         ) : null}
 
-        <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} />
+        {data ? <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} /> : null}
 
         {auditSearch ? (
           <AuditExplorer

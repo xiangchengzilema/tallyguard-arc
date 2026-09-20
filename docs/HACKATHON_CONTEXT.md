@@ -81,6 +81,9 @@ Strongly encouraged:
 - Live Circle operation no longer depends on public demo-session issuance: an
   explicit local command provisions four durable single-role identities and
   emits short-lived bearer sessions only to the trusted invoking terminal
+- The live web console accepts that bundle through a private memory-only gate,
+  verifies each expected role plus one shared tenant, and fails before loading
+  finance data if a token is stale, swapped, or cross-tenant
 - A durable bounded-autonomy runner plans a mixed tenant AP queue, hashes both observed state and proposed actions, routes policy escalations, releases due schedules through current-policy revalidation, and settles only a current `PAY`, an exactly bound independent approval, or an explicitly retryable attempt under the approver role
 - The judge can export a content-addressed Agent Run Proof Packet with plan-hash verification, execution outcomes, approval bindings, related audit events, and tenant-chain verification
 - A one-click autonomy showcase creates and plans a mixed four-invoice queue so judges and the demo video can show payment, approval routing, wallet-risk remediation, and due-date waiting without repetitive setup

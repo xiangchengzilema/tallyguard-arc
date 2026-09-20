@@ -5,6 +5,7 @@ import type {
   AuditSearchRequest,
   AuditSearchResult,
   AuditTrail,
+  BootstrapContext,
   BootstrapData,
   EvidenceExtractionMethod,
   EvidenceFieldPreview,
@@ -29,6 +30,20 @@ import type {
 
 type Role = keyof BootstrapData['sessions'];
 
+const EXPECTED_LIVE_ROLES: Record<Role, string> = {
+  admin: 'ADMIN',
+  operator: 'FINANCE_OPERATOR',
+  approver: 'APPROVER',
+  auditor: 'AUDITOR',
+};
+
+const LIVE_ROLE_LABELS: Record<Role, string> = {
+  admin: 'Policy administrator',
+  operator: 'Finance operator',
+  approver: 'Payment approver',
+  auditor: 'Audit reviewer',
+};
+
 class ApiError extends Error {
   status: number;
   code: string;
@@ -38,6 +53,16 @@ class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+  }
+}
+
+export class OperatorAccessRequired extends Error {
+  context: BootstrapContext;
+
+  constructor(context: BootstrapContext) {
+    super('Role-separated operator sessions are required for live mode.');
+    this.name = 'OperatorAccessRequired';
+    this.context = context;
   }
 }
 
@@ -67,14 +92,19 @@ async function createSession(role: Role): Promise<[Role, string]> {
   return [role, payload.access_token];
 }
 
-export async function bootstrap(): Promise<BootstrapData> {
-  const sessionRoles: Role[] = ['admin', 'operator', 'approver', 'auditor'];
-  const [catalog, readiness, sessionEntries] = await Promise.all([
+export async function fetchBootstrapContext(): Promise<BootstrapContext> {
+  const [catalog, readiness] = await Promise.all([
     request<{ items: BootstrapData['scenarios'] }>('/api/demo/scenarios'),
     request<BootstrapData['readiness']>('/api/readiness'),
-    Promise.all(sessionRoles.map(createSession)),
   ]);
-  const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
+  return { scenarios: catalog.items, readiness };
+}
+
+async function hydrateBootstrap(
+  context: BootstrapContext,
+  sessions: BootstrapData['sessions'],
+): Promise<BootstrapData> {
+  const { scenarios, readiness } = context;
   const [operations, incidents, agentRun, reliability, governance, vendorDirectory, auditSearch] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchSettlementIncidents(sessions.auditor),
@@ -85,7 +115,7 @@ export async function bootstrap(): Promise<BootstrapData> {
     fetchAuditEvents(sessions.auditor, { limit: 12 }),
   ]);
   return {
-    scenarios: catalog.items,
+    scenarios,
     readiness,
     sessions,
     operations,
@@ -96,6 +126,56 @@ export async function bootstrap(): Promise<BootstrapData> {
     vendorDirectory,
     auditSearch,
   };
+}
+
+export async function bootstrapWithSessions(
+  sessions: BootstrapData['sessions'],
+  context?: BootstrapContext,
+): Promise<BootstrapData> {
+  const resolvedContext = context ?? await fetchBootstrapContext();
+  let organizationId: string | null = null;
+  for (const role of Object.keys(EXPECTED_LIVE_ROLES) as Role[]) {
+    let payload: { principal: { organization_id: string; roles: string[] } };
+    try {
+      payload = await request('/api/auth/session', { method: 'GET' }, sessions[role]);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new ApiError(
+          `${LIVE_ROLE_LABELS[role]} session was rejected. Generate a fresh operator bundle and paste the matching token.`,
+          error.status,
+          error.code,
+        );
+      }
+      throw error;
+    }
+    if (!payload.principal.roles.includes(EXPECTED_LIVE_ROLES[role])) {
+      throw new ApiError(
+        `${LIVE_ROLE_LABELS[role]} session does not carry the required ${EXPECTED_LIVE_ROLES[role]} role.`,
+        403,
+        'ROLE_SESSION_MISMATCH',
+      );
+    }
+    organizationId ??= payload.principal.organization_id;
+    if (payload.principal.organization_id !== organizationId) {
+      throw new ApiError(
+        `${LIVE_ROLE_LABELS[role]} session belongs to a different organization.`,
+        403,
+        'TENANT_SESSION_MISMATCH',
+      );
+    }
+  }
+  return hydrateBootstrap(resolvedContext, sessions);
+}
+
+export async function bootstrap(): Promise<BootstrapData> {
+  const sessionRoles: Role[] = ['admin', 'operator', 'approver', 'auditor'];
+  const context = await fetchBootstrapContext();
+  if (!context.readiness.demo_sessions_enabled) {
+    throw new OperatorAccessRequired(context);
+  }
+  const sessionEntries = await Promise.all(sessionRoles.map(createSession));
+  const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
+  return hydrateBootstrap(context, sessions);
 }
 
 export async function fetchVendorDirectory(auditorToken: string): Promise<VendorTrustRecord[]> {

@@ -344,6 +344,10 @@ Implemented foundation:
 - Live operator setup creates or verifies durable single-role admin, operator,
   approver, and auditor identities, stores only session-token hashes, caps
   sessions at 24 hours, and fails closed on identity or role drift
+- In Circle live mode the responsive console replaces public demo login with a
+  private four-token gate, validates the exact role and shared tenant before
+  fetching protected data, reports the first mismatched role, and keeps bearer
+  values only in page memory
 - Canonical submission copy, a timed product-first video runbook, and a release checklist now separate complete evidence from explicit external gates so pending URLs or transactions cannot be mistaken for finished proof
 - A content-addressed release-audit command verifies local artifacts and reliability assertions, rejects malformed Testnet or pilot evidence, and reports missing repository, deployment, video, Explorer, and usage proof as pending rather than complete
 

@@ -607,3 +607,8 @@ export interface BootstrapData {
     evidence_analyst: string;
   };
 }
+
+export interface BootstrapContext {
+  scenarios: Scenario[];
+  readiness: BootstrapData['readiness'];
+}

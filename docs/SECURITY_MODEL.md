@@ -31,6 +31,7 @@
 | Mainnet enabled accidentally | Off by default, explicit flag, operator-requested approval resolved by a different user, exact decision/invoice binding, adapter cap, read-only preflight |
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; demo-session issuance has a separate anonymous rate limit; expired and revoked sessions are pruned and active sessions are bounded per principal; no secrets are committed |
 | Live operator identity is silently changed | The local setup command verifies the existing organization name, display name, single role, and active state; any drift fails closed rather than overwriting authorization data |
+| Live browser receives a swapped or cross-tenant role token | The private access gate validates each token through `/api/auth/session`, checks the exact required role, and requires one organization before loading protected data; tokens stay in page memory and reload clears them |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
 | Audit history altered | Per-tenant append-only hash chain with verification endpoint and visible UI state |
 | Request metadata leaks financial or credential data | Structured logs record only the route endpoint name, method, status, duration, and a syntax-validated correlation ID; paths, query strings, bodies, authorization headers, tenant IDs, and record IDs are excluded |
@@ -50,6 +51,11 @@ terminal output: it emits newly generated opaque bearer tokens exactly once so
 a trusted local operator can use them. SQLite stores only their SHA-256 digests.
 The tokens expire within 24 hours and must not be redirected into a tracked
 file, browser URL, frontend bundle, chat, or analytics system.
+The private web console does not persist supplied bearer tokens in URLs,
+`localStorage`, `sessionStorage`, cookies, or its compiled bundle. This reduces
+residual exposure but does not defend against a compromised browser profile,
+extension, operating system, or active cross-site scripting, so live operation
+still requires a trusted browser and the short session lifetime.
 
 ## Safe live-testing protocol
 

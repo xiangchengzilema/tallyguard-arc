@@ -805,6 +805,20 @@ def create_app(
             }
         )
 
+    @app.get("/api/auth/session")
+    @require(Permission.AUDIT_READ)
+    def current_session():
+        principal: Principal = g.principal
+        return jsonify(
+            {
+                "principal": {
+                    "user_id": principal.user_id,
+                    "organization_id": principal.organization_id,
+                    "roles": [role.value for role in principal.roles],
+                }
+            }
+        )
+
     @app.get("/api/reliability/report")
     @require(Permission.AUDIT_READ)
     def reliability_report():

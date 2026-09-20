@@ -138,6 +138,37 @@ body {
 .runtime-boundary__fact small { color: var(--tg-muted); font-size: .6875rem; }
 .runtime-boundary > .cds--tag { justify-self: end; margin: 0 1.25rem; }
 
+.operator-access {
+  display: grid;
+  grid-template-columns: minmax(280px, .8fr) minmax(480px, 1.2fr);
+  max-width: 1180px;
+  margin: 1.5rem auto 0;
+  border: 1px solid var(--tg-line);
+  background: #fff;
+}
+
+.operator-access__intro {
+  display: grid;
+  align-content: start;
+  gap: 1.5rem;
+  min-height: 420px;
+  padding: 2rem;
+  background: #102724;
+  color: #f4f7f6;
+}
+
+.operator-access__marker { display: grid; place-items: center; width: 52px; height: 52px; background: #70dbc5; color: #102724; }
+.operator-access__intro .eyebrow { color: #70dbc5; }
+.operator-access__intro h2 { max-width: 13ch; margin: .55rem 0 1rem; font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; letter-spacing: -.045em; line-height: .98; }
+.operator-access__intro p { max-width: 48ch; margin: 0; color: #c3d2cf; font-size: .8125rem; line-height: 1.55; }
+.operator-access__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 1.25rem; padding: 2rem; }
+.operator-access__form .cds--text-input-wrapper { min-width: 0; }
+.operator-access__action { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: .5rem; padding-top: 1.5rem; border-top: 1px solid var(--tg-line); }
+.operator-access__action > div { display: grid; gap: .25rem; }
+.operator-access__action strong { font-size: .8125rem; }
+.operator-access__action small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
+.operator-access__action .cds--btn { flex: none; }
+
 .metrics-band {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -650,6 +681,11 @@ body {
   .runtime-boundary__lead { grid-column: auto; }
   .runtime-boundary__fact { min-height: 74px; border-top: 1px solid #c8d6d2; border-left: 0; }
   .runtime-boundary > .cds--tag { position: static; justify-self: start; margin: 1rem 1.25rem; }
+  .operator-access { grid-template-columns: 1fr; }
+  .operator-access__intro { min-height: 0; }
+  .operator-access__form { grid-template-columns: 1fr; }
+  .operator-access__action { align-items: stretch; flex-direction: column; }
+  .operator-access__action .cds--btn { width: 100%; max-width: none; }
   .metric:nth-child(2) { border-right: 0; }
   .metric:nth-child(-n+2) { border-bottom: 1px solid var(--tg-line); }
   .workspace-grid { grid-template-columns: 1fr; }
