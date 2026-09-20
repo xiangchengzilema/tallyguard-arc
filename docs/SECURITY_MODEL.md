@@ -28,7 +28,7 @@
 | Agent plan treats a recommendation as payment authority | The planner reads only persisted workflow and deterministic decision state; only `PAY` plus an allowed execution state can produce an executable action, and a settlement-authorized role must start execution |
 | Agent bypasses role separation or pays an early schedule | Approval routing does not move funds; approved settlement reloads the exact approval and decision binding, and schedule release requires the sealed date to be due before a fresh policy evaluation can produce `PAY` |
 | Agent-run evidence is edited after execution | Auditor export recomputes the plan hash, includes linked hash-chain events, and content-addresses the complete packet; foreign-tenant run IDs resolve as not found |
-| Mainnet enabled accidentally | Off by default, explicit flag, recorded approval reference, adapter cap, read-only preflight |
+| Mainnet enabled accidentally | Off by default, explicit flag, operator-requested approval resolved by a different user, exact decision/invoice binding, adapter cap, read-only preflight |
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; demo-session issuance has a separate anonymous rate limit; expired and revoked sessions are pruned and active sessions are bounded per principal; no secrets are committed |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
 | Audit history altered | Per-tenant append-only hash chain with verification endpoint and visible UI state |

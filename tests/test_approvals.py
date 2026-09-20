@@ -8,6 +8,7 @@ from tallyguard.approvals import (
     ApprovalError,
     ApprovalInbox,
     ApprovalStatus,
+    apply_approved_mainnet_payment,
     apply_approved_escalation,
 )
 from tallyguard.auth import Principal, Role
@@ -168,3 +169,55 @@ def test_optimistic_version_prevents_double_resolution():
             resolution_note="Stale competing response.",
             expected_version=1,
         )
+
+
+def test_mainnet_payment_approval_binds_clean_pay_decision():
+    escalated = escalated_decision()
+    clean = replace(
+        escalated,
+        final_action=DecisionAction.PAY,
+        policy_decision=replace(
+            escalated.policy_decision,
+            action=DecisionAction.PAY,
+        ),
+    )
+    inbox = ApprovalInbox()
+    requested = inbox.request_mainnet_payment(clean, requested_by=operator())
+    resolved = inbox.resolve(
+        organization_id="org-1",
+        approval_id=requested.id,
+        approver=approver(),
+        approve=True,
+        resolution_note="Mainnet recipient, amount, and evidence packet reviewed.",
+        expected_version=1,
+    )
+
+    authorized = apply_approved_mainnet_payment(clean, resolved)
+
+    assert authorized.action == DecisionAction.PAY
+    assert authorized.approval_reference == resolved.id
+    assert authorized.rule_results == clean.policy_decision.rule_results
+
+
+def test_mainnet_payment_approval_refuses_escalation_and_unapproved_release():
+    escalated = escalated_decision()
+    with pytest.raises(ApprovalError, match="Only a PAY"):
+        ApprovalInbox().request_mainnet_payment(
+            escalated,
+            requested_by=operator(),
+        )
+
+    clean = replace(
+        escalated,
+        final_action=DecisionAction.PAY,
+        policy_decision=replace(
+            escalated.policy_decision,
+            action=DecisionAction.PAY,
+        ),
+    )
+    pending = ApprovalInbox().request_mainnet_payment(
+        clean,
+        requested_by=operator(),
+    )
+    with pytest.raises(ApprovalError, match="not approved"):
+        apply_approved_mainnet_payment(clean, pending)

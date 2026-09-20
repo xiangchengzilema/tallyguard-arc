@@ -1,9 +1,12 @@
 from datetime import date
+import hashlib
+from io import BytesIO
+import json
 
 import pytest
 
 from tallyguard.api import create_app
-from tallyguard.network import ArcNetwork
+from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.persistence import PersistenceError
 from tallyguard.settlement import PaymentIntent, ProviderSubmission
 
@@ -25,6 +28,129 @@ class WrongRecipientAdapter:
 def auth(client, role):
     token = client.post("/api/demo/session", json={"role": role}).get_json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def _post_ok(client, path, *, headers, json_body):
+    response = client.post(path, headers=headers, json=json_body)
+    assert response.status_code in {200, 201}, response.get_json()
+    return response.get_json()
+
+
+def _seed_mainnet_pay_decision(client, *, admin_headers, operator_headers):
+    invoice_id = "mainnet-invoice-1"
+    vendor_id = "mainnet-vendor-1"
+    recipient = "0x1111111111111111111111111111111111111111"
+    invoice_document = json.dumps(
+        {
+            "invoice_id": invoice_id,
+            "vendor_id": vendor_id,
+            "invoice_number": "MAINNET-001",
+            "currency": "USDC",
+            "amount": "0.01",
+            "due_date": "2026-10-01",
+            "payment_wallet_address": recipient,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    purchase_order = json.dumps(
+        {
+            "purchase_order_id": "mainnet-po-1",
+            "vendor_id": vendor_id,
+            "po_number": "MAINNET-PO-001",
+            "currency": "USDC",
+            "authorized_amount": "0.01",
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    delivery = json.dumps(
+        {
+            "delivery_id": "mainnet-delivery-1",
+            "purchase_order_id": "mainnet-po-1",
+            "delivered_value": "0.01",
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+    _post_ok(
+        client,
+        "/api/policies",
+        headers=admin_headers,
+        json_body={
+            "version": "mainnet-policy-v1",
+            "daily_payment_limit_usdc": "1",
+            "minimum_cash_reserve_usdc": "0",
+            "maximum_autonomous_payment_usdc": "0.10",
+            "po_amount_tolerance_usdc": "0",
+            "allowed_asset": "USDC",
+            "allowed_network": "ARC-MAINNET",
+            "kill_switch_enabled": False,
+        },
+    )
+    _post_ok(
+        client,
+        "/api/treasury/snapshots",
+        headers=operator_headers,
+        json_body={
+            "available_usdc": "1",
+            "spent_today_usdc": "0",
+            "source_reference": "controlled-mainnet-wallet-check",
+        },
+    )
+    _post_ok(
+        client,
+        "/api/vendors",
+        headers=operator_headers,
+        json_body={
+            "id": vendor_id,
+            "legal_name": "Controlled Mainnet Recipient",
+            "approved_wallet_address": recipient,
+            "autopay_limit": "0.10",
+            "verification_method": "MANUAL_REVIEW",
+            "verification_reference": "mainnet-acceptance-review",
+        },
+    )
+    _post_ok(
+        client,
+        "/api/invoices",
+        headers=operator_headers,
+        json_body={
+            "id": invoice_id,
+            "vendor_id": vendor_id,
+            "invoice_number": "MAINNET-001",
+            "currency": "USDC",
+            "amount": "0.01",
+            "due_date": "2026-10-01",
+            "payment_wallet_address": recipient,
+            "source_document_hash": hashlib.sha256(invoice_document).hexdigest(),
+        },
+    )
+    for evidence_type, filename, content in (
+        ("INVOICE", "invoice.json", invoice_document),
+        ("PURCHASE_ORDER", "purchase-order.json", purchase_order),
+        ("DELIVERY", "delivery.json", delivery),
+    ):
+        uploaded = client.post(
+            f"/api/invoices/{invoice_id}/evidence",
+            headers=operator_headers,
+            data={
+                "evidence_type": evidence_type,
+                "file": (BytesIO(content), filename, "application/json"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201, uploaded.get_json()
+    evaluated = client.post(
+        f"/api/invoices/{invoice_id}/evaluate",
+        headers=operator_headers,
+        json={},
+    )
+    assert evaluated.status_code == 200, evaluated.get_json()
+    decision = evaluated.get_json()["decision"]
+    assert decision["final_action"] == "PAY"
+    return invoice_id, decision["id"]
 
 
 def test_all_judge_scenarios_run_through_real_policy_and_workflow(tmp_path):
@@ -372,6 +498,109 @@ def test_large_invoice_requires_role_separated_approval(tmp_path):
     assert payment["intent"]["approval_reference"] == approval["id"]
     assert payment["invoice"]["status"] == "RECONCILED"
     assert payment["receipt"]["status"] == "CONFIRMED"
+
+
+def test_mainnet_pay_requires_role_separated_decision_bound_approval(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("TALLYGUARD_ALLOW_MAINNET", "true")
+    app = create_app(
+        database_path=tmp_path / "mainnet-approval.sqlite3",
+        testing=True,
+        settlement_config=ArcNetworkConfig.for_network(ArcNetwork.MAINNET),
+    )
+    client = app.test_client()
+    admin_headers = auth(client, "admin")
+    operator_headers = auth(client, "operator")
+    approver_headers = auth(client, "approver")
+    auditor_headers = auth(client, "auditor")
+    invoice_id, decision_id = _seed_mainnet_pay_decision(
+        client,
+        admin_headers=admin_headers,
+        operator_headers=operator_headers,
+    )
+
+    blocked = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={"decision_id": decision_id},
+    )
+    assert blocked.status_code == 409
+    assert "mainnet payment reference" in blocked.get_json()["error"]["message"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+
+    requested = client.post(
+        f"/api/decisions/{decision_id}/request-mainnet-approval",
+        headers=operator_headers,
+    )
+    assert requested.status_code == 201, requested.get_json()
+    approval = requested.get_json()["approval"]
+    assert approval["purpose"] == "MAINNET_PAYMENT"
+
+    pending_attempt = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={
+            "decision_id": decision_id,
+            "approval_reference": approval["id"],
+        },
+    )
+    assert pending_attempt.status_code == 409
+    assert "not approved" in pending_attempt.get_json()["error"]["message"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+
+    resolved = client.post(
+        f"/api/approvals/{approval['id']}/resolve",
+        headers=approver_headers,
+        json={
+            "approve": True,
+            "note": "Recipient, amount, policy, and mainnet funding reviewed.",
+            "expected_version": approval["version"],
+        },
+    )
+    assert resolved.status_code == 200, resolved.get_json()
+    assert resolved.get_json()["approval"]["authorized_action"] == "PAY"
+
+    settled = client.post(
+        f"/api/invoices/{invoice_id}/settle",
+        headers=approver_headers,
+        json={
+            "decision_id": decision_id,
+            "approval_reference": approval["id"],
+        },
+    )
+    assert settled.status_code == 200, settled.get_json()
+    payment = settled.get_json()["payment"]
+    assert payment["intent"]["network"] == "ARC-MAINNET"
+    assert payment["intent"]["approval_reference"] == approval["id"]
+    assert payment["receipt"]["status"] == "CONFIRMED"
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+    audit = client.get("/api/audit/events", headers=auditor_headers).get_json()
+    assert audit["chain_valid"] is True
+    event_types = [item["event_type"] for item in audit["items"]]
+    assert "MAINNET_APPROVAL_REQUESTED" in event_types
+    assert "APPROVAL_RESOLVED" in event_types
+    assert "SETTLEMENT_RECONCILED" in event_types
+
+
+def test_mainnet_approval_endpoint_stays_locked_on_testnet(tmp_path):
+    app = create_app(database_path=tmp_path / "testnet-mainnet-lock.sqlite3", testing=True)
+    client = app.test_client()
+    operator_headers = auth(client, "operator")
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=operator_headers,
+    ).get_json()
+
+    response = client.post(
+        f"/api/decisions/{run['decision']['id']}/request-mainnet-approval",
+        headers=operator_headers,
+    )
+
+    assert response.status_code == 409
+    assert "explicitly enabled ARC-MAINNET" in response.get_json()["error"]["message"]
 
 
 def test_global_approval_inbox_is_role_scoped_and_rejection_closes_invoice(tmp_path):

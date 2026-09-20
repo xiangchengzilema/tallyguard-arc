@@ -8,7 +8,7 @@ TallyGuard uses Circle Developer-Controlled Wallets to originate an Arc USDC tra
 | --- | --- | --- | --- |
 | Simulation | Public judge scenarios and load tests | None | No |
 | Arc Testnet | End-to-end acceptance testing | Circle test credentials and a dedicated test wallet | Test USDC only |
-| Arc Mainnet | Low-value final proof | Dedicated low-balance wallet, explicit runtime flag, approval reference | Yes, under hard caps |
+| Arc Mainnet | Low-value final proof | Dedicated low-balance wallet, explicit runtime flag, role-separated decision-bound approval | Yes, under hard caps |
 
 Mainnet remains disabled by default. The live adapter also enforces an independent per-transfer cap from `TALLYGUARD_MAX_TRANSFER_USDC`; this is separate from the organization policy limit.
 
@@ -19,18 +19,19 @@ completed transaction against the mapped value. `ARC-TESTNET` is identical in bo
 ## Verification sequence
 
 1. The deterministic decision engine must return `PAY`.
-2. The payment intent must match the decision's organization, approval reference, recipient, amount, and network.
-3. The live adapter requires a stored UUID v4 idempotency key.
-4. Circle creates the transfer using the official SDK. The SDK generates a fresh entity-secret ciphertext for the request.
-5. TallyGuard polls Circle through `INITIATED`, `CLEARED`, `QUEUED`, `SENT`, and `CONFIRMED` until `COMPLETE`.
-6. `STUCK`, `FAILED`, `DENIED`, and `CANCELLED` fail closed. Polling exhaustion returns a retryable service-unavailable result, leaves the invoice in `SUBMISSION_FAILED`, and retains the original intent and provider idempotency key.
-7. Every provider call creates a tenant-scoped durable attempt record. Transient unavailability is the only automatic-retry class; ambiguous errors are locked.
-8. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
-9. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
-10. The transaction target must be Arc's canonical USDC ERC-20 interface.
-11. The transaction and receipt must agree on transaction hash, block number, and block hash, and the receipt block cannot be ahead of the RPC head.
-12. The receipt must contain exactly one non-removed USDC `Transfer` event whose sender equals the transaction sender and whose recipient and six-decimal atomic amount exactly match the authorization.
-13. If Circle supplies a block height, it must equal the Arc RPC receipt block. Any mismatch is terminal and moves the invoice to `RECONCILIATION_MISMATCH`.
+2. Every mainnet `PAY` decision must first enter `POST /api/decisions/<id>/request-mainnet-approval`; a different user with the approver role must resolve that durable request.
+3. The payment intent must match the decision's organization, approval reference, recipient, amount, and network.
+4. The live adapter requires a stored UUID v4 idempotency key.
+5. Circle creates the transfer using the official SDK. The SDK generates a fresh entity-secret ciphertext for the request.
+6. TallyGuard polls Circle through `INITIATED`, `CLEARED`, `QUEUED`, `SENT`, and `CONFIRMED` until `COMPLETE`.
+7. `STUCK`, `FAILED`, `DENIED`, and `CANCELLED` fail closed. Polling exhaustion returns a retryable service-unavailable result, leaves the invoice in `SUBMISSION_FAILED`, and retains the original intent and provider idempotency key.
+8. Every provider call creates a tenant-scoped durable attempt record. Transient unavailability is the only automatic-retry class; ambiguous errors are locked.
+9. The completed Circle record must match the authorized network, recipient, and exact decimal amount.
+10. Arc JSON-RPC must return the configured chain ID, a successful receipt, the same transaction hash, and a positive block number.
+11. The transaction target must be Arc's canonical USDC ERC-20 interface.
+12. The transaction and receipt must agree on transaction hash, block number, and block hash, and the receipt block cannot be ahead of the RPC head.
+13. The receipt must contain exactly one non-removed USDC `Transfer` event whose sender equals the transaction sender and whose recipient and six-decimal atomic amount exactly match the authorization.
+14. If Circle supplies a block height, it must equal the Arc RPC receipt block. Any mismatch is terminal and moves the invoice to `RECONCILIATION_MISMATCH`.
 
 Only after all checks pass does TallyGuard create a confirmed settlement receipt.
 
@@ -107,7 +108,9 @@ secrets are never printed. A full preflight returns a ready verdict only when ev
 
 For mainnet, the preflight additionally requires `TALLYGUARD_ALLOW_MAINNET=true` and refuses a
 hard adapter cap above 5 USDC. This does not bypass the product's separate recorded-approval
-requirement; it only establishes that the runtime configuration is internally consistent.
+requirement; it only establishes that the runtime configuration is internally consistent. A
+free-form request string is never accepted as authority: settlement reloads the approved record
+and verifies its tenant, decision, and invoice bindings before creating a payment intent.
 
 ## Testnet acceptance gate
 

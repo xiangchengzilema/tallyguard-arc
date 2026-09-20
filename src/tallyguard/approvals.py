@@ -144,6 +144,48 @@ class ApprovalInbox:
         )
         if decision.final_action != DecisionAction.ESCALATE:
             raise ApprovalError("Only an ESCALATE decision can enter the approval inbox.")
+        return self._create_request(
+            decision,
+            requested_by=requested_by,
+            requested_at=requested_at,
+        )
+
+    def request_mainnet_payment(
+        self,
+        decision: DecisionRecord,
+        *,
+        requested_by: Principal,
+        requested_at: datetime | None = None,
+    ) -> ApprovalRequest:
+        """Request role-separated release of a policy-approved mainnet payment.
+
+        Network/runtime checks deliberately live at the API boundary. This
+        domain method only permits an otherwise clean PAY decision and creates
+        the same durable, decision-bound approval record used by escalations.
+        """
+
+        authorize(
+            requested_by,
+            permission=Permission.DECISION_RUN,
+            resource_organization_id=decision.organization_id,
+        )
+        if decision.final_action != DecisionAction.PAY:
+            raise ApprovalError(
+                "Only a PAY decision can enter the mainnet approval inbox."
+            )
+        return self._create_request(
+            decision,
+            requested_by=requested_by,
+            requested_at=requested_at,
+        )
+
+    def _create_request(
+        self,
+        decision: DecisionRecord,
+        *,
+        requested_by: Principal,
+        requested_at: datetime | None,
+    ) -> ApprovalRequest:
         timestamp = requested_at or datetime.now(timezone.utc)
         identity = f"{decision.organization_id}:{decision.id}:{requested_by.user_id}:{timestamp.isoformat()}"
         approval_id = "approval_" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
@@ -236,3 +278,23 @@ def apply_approved_escalation(
         rule_results=approved_results,
         approval_reference=approval.id,
     )
+
+
+def apply_approved_mainnet_payment(
+    decision_record: DecisionRecord,
+    approval: ApprovalRequest,
+) -> Decision:
+    """Bind a second-person approval to an otherwise valid PAY decision."""
+
+    if approval.organization_id != decision_record.organization_id:
+        raise ApprovalError("Approval belongs to another organization.")
+    if approval.decision_id != decision_record.id:
+        raise ApprovalError("Approval is not bound to this decision.")
+    if approval.invoice_id != decision_record.invoice_id:
+        raise ApprovalError("Approval is not bound to this invoice.")
+    if approval.status != ApprovalStatus.APPROVED:
+        raise ApprovalError("Approval request is not approved.")
+    original = decision_record.policy_decision
+    if original.action != DecisionAction.PAY:
+        raise ApprovalError("Only a PAY decision can receive mainnet authorization.")
+    return replace(original, approval_reference=approval.id)

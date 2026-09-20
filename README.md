@@ -48,7 +48,7 @@ Every payment answers four questions:
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration
-- Mainnet settlement locked behind an explicit runtime flag and approval reference
+- Mainnet settlement locked behind an explicit runtime flag and a durable, decision-bound approval requested by an operator and resolved by a different approver
 - The currently active policy kill switch is rechecked immediately before every new settlement; it blocks already-`READY` invoices without creating an intent, while completed receipt replays remain readable and never resubmit
 - Payment-intent creation atomically rechecks the active route, autonomy cap, snapshot freshness, daily limit, and reserve floor while reserving every amount committed since the latest treasury snapshot; concurrent workers cannot spend the same headroom twice
 - Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation

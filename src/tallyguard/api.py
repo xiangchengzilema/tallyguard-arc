@@ -33,6 +33,7 @@ from .approvals import (
     ApprovalInbox,
     ApprovalRequest,
     ApprovalStatus,
+    apply_approved_mainnet_payment,
     apply_approved_escalation,
 )
 from .autonomy import (
@@ -1345,6 +1346,44 @@ def create_app(
             }
         ), 201
 
+    @app.post("/api/decisions/<decision_id>/request-mainnet-approval")
+    @require(Permission.DECISION_RUN)
+    def request_mainnet_approval(decision_id: str):
+        if not network_config.is_mainnet or not allow_mainnet:
+            raise ApprovalError(
+                "Mainnet approval requests require an explicitly enabled ARC-MAINNET runtime."
+            )
+        decision = decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        approval = approval_inbox.request_mainnet_payment(
+            decision,
+            requested_by=g.principal,
+        )
+        repository.append(
+            aggregate_type="approval",
+            aggregate_id=approval.id,
+            event_type="MAINNET_APPROVAL_REQUESTED",
+            payload={
+                "organization_id": approval.organization_id,
+                "invoice_id": approval.invoice_id,
+                "decision_id": approval.decision_id,
+                "requested_by_user_id": approval.requested_by_user_id,
+                "network": network_config.name.value,
+            },
+            created_at=approval.requested_at,
+        )
+        return jsonify(
+            {
+                "approval": {
+                    **_approval_json(approval),
+                    "purpose": "MAINNET_PAYMENT",
+                },
+                "correlation_id": _correlation_id(),
+            }
+        ), 201
+
     @app.get("/api/approvals/pending")
     @require(Permission.PAYMENT_APPROVE)
     def list_pending_approvals():
@@ -1592,6 +1631,22 @@ def create_app(
         payload = request.get_json(silent=True) or {}
         if "approve" not in payload or not isinstance(payload["approve"], bool):
             raise ValueError("Approval resolution requires a boolean approve field.")
+        pending = approval_inbox.get(
+            organization_id=g.principal.organization_id,
+            approval_id=approval_id,
+        )
+        decision = decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=pending.decision_id,
+        )
+        if decision.final_action.value == "PAY" and (
+            not network_config.is_mainnet or not allow_mainnet
+        ):
+            raise ApprovalError(
+                "A PAY approval can only be resolved on an explicitly enabled ARC-MAINNET runtime."
+            )
+        if decision.final_action.value not in {"ESCALATE", "PAY"}:
+            raise ApprovalError("This decision action cannot enter payment approval.")
         resolved = approval_inbox.resolve(
             organization_id=g.principal.organization_id,
             approval_id=approval_id,
@@ -1606,29 +1661,29 @@ def create_app(
             invoice_id=resolved.invoice_id,
         )
         if resolved.status.value == "APPROVED":
-            decision = decision_service.repository.get_decision(
-                organization_id=g.principal.organization_id,
-                decision_id=resolved.decision_id,
-            )
-            authorized = apply_approved_escalation(decision, resolved)
+            if decision.final_action.value == "ESCALATE":
+                authorized = apply_approved_escalation(decision, resolved)
+                repository.transition_invoice(
+                    organization_id=g.principal.organization_id,
+                    invoice_id=resolved.invoice_id,
+                    target_status=InvoiceStatus.READY,
+                    expected_version=invoice.version,
+                    actor_user_id=g.principal.user_id,
+                    correlation_id=_correlation_id(),
+                )
+            elif decision.final_action.value == "PAY":
+                authorized = apply_approved_mainnet_payment(decision, resolved)
             final_action = authorized.action.value
-            repository.transition_invoice(
-                organization_id=g.principal.organization_id,
-                invoice_id=resolved.invoice_id,
-                target_status=InvoiceStatus.READY,
-                expected_version=invoice.version,
-                actor_user_id=g.principal.user_id,
-                correlation_id=_correlation_id(),
-            )
         else:
-            repository.transition_invoice(
-                organization_id=g.principal.organization_id,
-                invoice_id=resolved.invoice_id,
-                target_status=InvoiceStatus.REJECTED,
-                expected_version=invoice.version,
-                actor_user_id=g.principal.user_id,
-                correlation_id=_correlation_id(),
-            )
+            if decision.final_action.value == "ESCALATE":
+                repository.transition_invoice(
+                    organization_id=g.principal.organization_id,
+                    invoice_id=resolved.invoice_id,
+                    target_status=InvoiceStatus.REJECTED,
+                    expected_version=invoice.version,
+                    actor_user_id=g.principal.user_id,
+                    correlation_id=_correlation_id(),
+                )
         repository.append(
             aggregate_type="approval",
             aggregate_id=resolved.id,
@@ -2338,6 +2393,23 @@ def create_app(
             if approval.decision_id != record.id or approval.invoice_id != invoice_id:
                 raise ApprovalError("Approval is not bound to this decision and invoice.")
             decision = apply_approved_escalation(record, approval)
+        elif network_config.is_mainnet:
+            if not allow_mainnet:
+                raise ApprovalError(
+                    "Arc mainnet settlement is disabled by runtime policy."
+                )
+            approval_reference = str(payload.get("approval_reference", "")).strip()
+            if not approval_reference:
+                raise ApprovalError(
+                    "An approved mainnet payment reference is required for settlement."
+                )
+            approval = approval_inbox.get(
+                organization_id=g.principal.organization_id,
+                approval_id=approval_reference,
+            )
+            if approval.decision_id != record.id or approval.invoice_id != invoice_id:
+                raise ApprovalError("Approval is not bound to this decision and invoice.")
+            decision = apply_approved_mainnet_payment(record, approval)
 
         stored = repository.get_invoice(
             organization_id=g.principal.organization_id,
