@@ -8,7 +8,7 @@ The judge console is no longer one continuous demo page. It now uses five produc
 
 | Workspace | Purpose | Implemented modules |
 | --- | --- | --- |
-| Overview | Explain the product, show live boundaries, and start the judge flow | Editorial value proposition, four-stage control flow, runtime boundary, finance metrics, workflow entry points, bounded autonomous run |
+| Overview | Explain the product and start the judge flow before entering the operating shell | Standalone marketing header, editorial two-column hero, animated evidence-to-settlement product walkthrough, verified load-test proof strip, workflow entry points |
 | Payables | Perform day-to-day invoice review and settlement | Scenario/live-evidence rail, document and control workbench, queue, batch actions, schedules, incident recovery |
 | Vendors | Review recipient identity before money moves | Vendor directory, verified Arc wallet, risk/autonomy facts, wallet history and change evidence |
 | Policies | Define agent authority and handle exceptions | Runtime boundary, active policy, capacity, versioned policy editor, independent approval inbox |
@@ -21,11 +21,11 @@ The desktop shell uses a persistent compact navigation rail. At phone widths it 
 The following observations were taken from current public product pages and then translated, not copied:
 
 - **Request Finance:** generous editorial spacing, a left application rail, and invoice/contact context presented together. TallyGuard uses this for the spacious overview and Vendors identity workspace.
-- **Ramp:** a high-contrast primary action, stacked AP work queues, and separate review/payment lifecycle states. TallyGuard uses this for Payables, batch operations, and the approval inbox.
+- **Ramp:** disciplined display typography, generous first-fold whitespace, a high-contrast primary action, and an animated product UI that explains the workflow without narration. TallyGuard uses that composition on the public overview and uses Ramp's stacked AP queues and lifecycle states inside Payables. The motion sequence is original to TallyGuard: evidence sealing, deterministic policy, separated authority, then Arc settlement proof.
 - **Safe:** an extremely restrained off-white shell with explicit transaction facts and minimal decoration. TallyGuard uses this for policy/settlement review and keeps chain details in receipts instead of the main queue.
 - **Squads:** sparse operational chrome and recipient-oriented views. TallyGuard uses this for its compact navigation and wallet-trust directory.
 
-Shared primitives observed across the references were neutral surfaces, one strong accent, thin separators, and an 8/16/24/32-style spacing rhythm. TallyGuard keeps its own teal evidence-control identity and Arc-specific proof model. Motion is limited to short workspace entry, active-navigation indication, and directional hover feedback; `prefers-reduced-motion` disables it.
+Shared primitives observed across the references were neutral surfaces, one strong accent, thin separators, and an 8/16/24/32-style spacing rhythm. TallyGuard keeps its own teal evidence-control identity and Arc-specific proof model. The public overview uses one slow, purposeful product walkthrough; operational motion stays limited to short workspace entry, active-navigation indication, and directional hover feedback. The walkthrough pauses off-screen and `prefers-reduced-motion` resolves to a stable final state.
 
 ## Visual direction
 

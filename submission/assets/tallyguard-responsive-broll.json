@@ -6,28 +6,28 @@
     "container": "webm",
     "width": 1440,
     "height": 900,
-    "duration_seconds": 9.27,
-    "bytes": 465963,
-    "sha256": "4bfc9fdb33ff929cf4b22986dc94feb84f2ca738c572082aa52c3db4434758f9"
+    "duration_seconds": 9.0,
+    "bytes": 824862,
+    "sha256": "8317061c49a7def3f90cf3ced41113b20fa862155c68f9a125428095ca8536cd"
   },
   "sequence": [
     {
       "state": "desktop",
       "viewport": "1440x900",
       "source": "submission/assets/responsive-desktop.png",
-      "source_sha256": "6d4c1a2822eee68ba084a53ad792a06babdf6951f1037d1da0e4f3e40d900f10"
+      "source_sha256": "b21a6be9846d03d9163537c927e5ef3357b04b73de0b5bc79bdbc8a2b162df74"
     },
     {
       "state": "tablet",
       "viewport": "768x1024",
       "source": "submission/assets/responsive-tablet.png",
-      "source_sha256": "a25e428ddf45bb3b69293b2735327d4828e085e0fbbae30dc0bfe4ae4ab7c920"
+      "source_sha256": "a78398396a95fcbbf10b7c7d7fa18fe288daae80a63a71e7e33dfd6ba56548cc"
     },
     {
       "state": "mobile",
       "viewport": "390x844",
       "source": "submission/assets/responsive-mobile.png",
-      "source_sha256": "57098307842d0470d9ce315c63af35bc9783352b36bfad421681594ab340988b"
+      "source_sha256": "df6f4e64c72d7ff8363a302463b3410728210edef02c7d6535ae27f019b103b8"
     },
     {
       "state": "all",

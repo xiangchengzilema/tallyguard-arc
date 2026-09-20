@@ -18,7 +18,7 @@ API credentials, wallet secrets, local environment files, or browser bookmarks.
 - Prepare clean 1440px, 768px, and 390px captures anchored on the same completed
   decision. They are three responsive widths of one web application, not
   separate desktop, tablet, and mobile clients.
-- Use the checked-in 9.2-second `assets/tallyguard-responsive-broll.webm` as
+- Use the checked-in 9-second `assets/tallyguard-responsive-broll.webm` as
   the responsive insert. It uses real product captures, ends with all three
   widths together, and keeps the main workflow footage focused on desktop.
 - Clear old demo data by redeploying or using a clean ephemeral instance so the

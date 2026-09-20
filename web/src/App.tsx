@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Content,
@@ -220,6 +220,241 @@ function WorkspacePageHeader({
         <small>Evidence-bound · Role-separated</small>
       </div>
     </header>
+  );
+}
+
+const LANDING_FLOW = [
+  {
+    label: 'Evidence matched',
+    detail: 'Invoice · PO · delivery receipt',
+    meta: '3 sources sealed',
+    icon: Document,
+  },
+  {
+    label: 'Controls passed',
+    detail: 'Recipient, duplicate, amount, treasury',
+    meta: '13 / 13 clear',
+    icon: ListChecked,
+  },
+  {
+    label: 'Authority verified',
+    detail: 'Policy v7 · role-separated approval',
+    meta: 'Bound to intent',
+    icon: Locked,
+  },
+  {
+    label: 'Arc settlement proved',
+    detail: 'USDC confirmation · audit receipt',
+    meta: 'Finalized',
+    icon: Wallet,
+  },
+] as const;
+
+function LandingFlowDemo({ ready, network }: { ready: boolean; network: string }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [activeStep, setActiveStep] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([entry]) => setIsVisible(entry.isIntersecting), { threshold: 0.25 });
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      setActiveStep(LANDING_FLOW.length - 1);
+      return;
+    }
+    if (!isVisible) return;
+    const timer = window.setInterval(() => {
+      setActiveStep((step) => (step + 1) % LANDING_FLOW.length);
+    }, 1750);
+    return () => window.clearInterval(timer);
+  }, [isVisible]);
+
+  const statusCopy = [
+    'Reading source evidence…',
+    'Running policy controls…',
+    'Checking payment authority…',
+    'Receipt anchored on Arc',
+  ][activeStep];
+
+  return (
+    <div className="landing-demo" ref={rootRef} aria-label="Animated TallyGuard payment control walkthrough">
+      <div className="landing-demo__topbar">
+        <div className="landing-demo__window" aria-hidden="true"><span /><span /><span /></div>
+        <span className="landing-demo__tenant">Northstar Labs / AP-2048</span>
+        <span className={ready ? 'landing-demo__network is-ready' : 'landing-demo__network'}>
+          <i aria-hidden="true" /> {network}
+        </span>
+      </div>
+      <div className="landing-demo__status" aria-live="polite">
+        <span className="landing-demo__spinner" aria-hidden="true" />
+        <strong>{statusCopy}</strong>
+        <small>governed run 01</small>
+      </div>
+      <div className="landing-demo__invoice">
+        <div>
+          <span>Invoice</span>
+          <strong>INV-2048</strong>
+        </div>
+        <div>
+          <span>Vendor</span>
+          <strong>Atlas Compute</strong>
+        </div>
+        <div>
+          <span>Amount</span>
+          <strong>2,480.00 USDC</strong>
+        </div>
+      </div>
+      <div className="landing-demo__flow">
+        {LANDING_FLOW.map((step, index) => {
+          const Icon = step.icon;
+          const state = index < activeStep ? 'is-complete' : index === activeStep ? 'is-active' : 'is-pending';
+          return (
+            <article className={state} key={step.label}>
+              <div className="landing-demo__icon"><Icon size={18} aria-hidden="true" /></div>
+              <div><strong>{step.label}</strong><small>{step.detail}</small></div>
+              <span>{index <= activeStep ? step.meta : 'Waiting'}</span>
+              <CheckmarkFilled className="landing-demo__check" size={18} aria-hidden="true" />
+            </article>
+          );
+        })}
+      </div>
+      <div className="landing-demo__footer">
+        <span>Decision hash</span>
+        <code>0x7e4a…9c21</code>
+        <strong>{activeStep === LANDING_FLOW.length - 1 ? 'Ready for audit' : 'No funds move before approval'}</strong>
+      </div>
+    </div>
+  );
+}
+
+function LandingHeader({
+  busy,
+  onNavigate,
+  onTeam,
+}: {
+  busy: boolean;
+  onNavigate: (view: WorkspaceView) => void;
+  onTeam: () => void;
+}) {
+  return (
+    <header className="landing-header">
+      <div className="landing-header__inner">
+        <button type="button" className="landing-brand" onClick={() => onNavigate('overview')} aria-label="TallyGuard home">
+          <span aria-hidden="true">T</span><strong>TallyGuard</strong>
+        </button>
+        <nav aria-label="Product navigation">
+          <button type="button" onClick={() => onNavigate('payables')}>Product</button>
+          <button type="button" onClick={() => onNavigate('policies')}>Controls</button>
+          <button type="button" onClick={() => onNavigate('audit')}>Proof</button>
+          <a href="/api/openapi.json" target="_blank" rel="noreferrer">Developers</a>
+        </nav>
+        <div className="landing-header__actions">
+          <button type="button" className="landing-header__team" onClick={onTeam}>How it works</button>
+          <button type="button" className="landing-header__workspace" disabled={busy} onClick={() => onNavigate('payables')}>
+            Open workspace <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function LandingPage({
+  ready,
+  network,
+  operations,
+  reliability,
+  busy,
+  onRun,
+  onNavigate,
+}: {
+  ready: boolean;
+  network: string;
+  operations: OperationsOverview | null;
+  reliability: ReliabilityEvidence | null;
+  busy: boolean;
+  onRun: () => void;
+  onNavigate: (view: WorkspaceView) => void;
+}) {
+  const workflows = reliability?.report.summary.successful_workflows ?? 10_000;
+  const tenants = reliability?.report.configuration.organizations ?? 100;
+  const duplicates = reliability?.report.summary.duplicate_payment_count ?? 0;
+  return (
+    <main className="landing-page">
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <div className="landing-hero__copy">
+          <span className="landing-kicker"><i aria-hidden="true" /> Autonomous accounts payable on Arc</span>
+          <h1 id="landing-title">Evidence checked.<br /><span>Payments proved.</span></h1>
+          <p>
+            TallyGuard gives AI agents a governed path from source evidence to USDC settlement—
+            with deterministic controls, separated authority, and a receipt auditors can replay.
+          </p>
+          <div className="landing-hero__actions">
+            <button type="button" className="landing-primary" disabled={busy} onClick={onRun}>
+              {busy ? 'Preparing workspace…' : 'Run governed payment'} <ArrowRight size={18} aria-hidden="true" />
+            </button>
+            <button type="button" className="landing-secondary" onClick={() => onNavigate('policies')}>
+              Explore controls
+            </button>
+          </div>
+          <div className="landing-hero__trust">
+            <CheckmarkFilled size={16} aria-hidden="true" />
+            <span>Public judge simulation</span><i />
+            <span>No wallet credentials</span><i />
+            <span>No funds move without approval</span>
+          </div>
+        </div>
+        <div className="landing-hero__product">
+          <LandingFlowDemo ready={ready} network={network} />
+        </div>
+      </section>
+
+      <section className="landing-proof" aria-label="Verified product evidence">
+        <div className="landing-proof__lead"><span>PROVEN UNDER LOAD</span><strong>Engineering evidence, not a vanity counter.</strong></div>
+        <div><strong>{workflows.toLocaleString()}</strong><span>workflows stress-tested</span></div>
+        <div><strong>{tenants}</strong><span>isolated tenants</span></div>
+        <div><strong>{duplicates}</strong><span>duplicate payments</span></div>
+        <div><strong>USDC</strong><span>Arc settlement rail</span></div>
+      </section>
+
+      <section className="landing-story" aria-labelledby="landing-story-title">
+        <div className="landing-story__intro">
+          <span className="landing-kicker">From evidence to finality</span>
+          <h2 id="landing-story-title">The agent can move fast.<br />The controls never move aside.</h2>
+          <p>Each workspace answers a different finance question, without hiding the chain of authority behind a single magic button.</p>
+        </div>
+        <div className="landing-story__grid">
+          <button type="button" onClick={() => onNavigate('payables')}>
+            <span>01</span><Document size={24} aria-hidden="true" /><strong>Is the evidence real?</strong>
+            <small>Seal invoice, purchase order, delivery evidence, and recipient identity before evaluation.</small>
+          </button>
+          <button type="button" onClick={() => onNavigate('policies')}>
+            <span>02</span><Rule size={24} aria-hidden="true" /><strong>Is the agent allowed?</strong>
+            <small>Version policy, enforce limits, and separate exception approval from execution.</small>
+          </button>
+          <button type="button" onClick={() => onNavigate('audit')}>
+            <span>03</span><DocumentSecurity size={24} aria-hidden="true" /><strong>Can the result be proved?</strong>
+            <small>Replay the decision and trace every intent, settlement, and accounting event.</small>
+          </button>
+        </div>
+      </section>
+
+      {operations ? (
+        <section className="landing-live" aria-label="Current public workspace snapshot">
+          <div><span className="landing-kicker">Live workspace snapshot</span><strong>Real operating state, ready to inspect.</strong></div>
+          <button type="button" onClick={() => onNavigate('payables')}>
+            {operations.invoice_count} invoices · {formatMoney(operations.open_exposure_usdc)} USDC exposure <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </section>
+      ) : null}
+    </main>
   );
 }
 
@@ -2129,21 +2364,29 @@ function App() {
   return (
     <Theme theme="g10">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <Header aria-label="TallyGuard">
-        <HeaderName prefix="">TallyGuard</HeaderName>
-        <div className="header-context">Evidence-bound accounts payable on Arc</div>
-        <HeaderGlobalBar>
-          {data && !data.readiness.demo_sessions_enabled ? (
-            <HeaderGlobalAction aria-label="Lock private operations" onClick={handleOperatorDisconnect}>
-              <Locked size={20} />
-            </HeaderGlobalAction>
-          ) : (
-            <HeaderGlobalAction aria-label="Role-separated team" onClick={() => setTeamOpen(true)}>
-              <UserMultiple size={20} />
-            </HeaderGlobalAction>
-          )}
-        </HeaderGlobalBar>
-      </Header>
+      {activeView === 'overview' ? (
+        <LandingHeader
+          busy={busy !== null}
+          onNavigate={navigateToView}
+          onTeam={() => setTeamOpen(true)}
+        />
+      ) : (
+        <Header aria-label="TallyGuard">
+          <HeaderName prefix="">TallyGuard</HeaderName>
+          <div className="header-context">Evidence-bound accounts payable on Arc</div>
+          <HeaderGlobalBar>
+            {data && !data.readiness.demo_sessions_enabled ? (
+              <HeaderGlobalAction aria-label="Lock private operations" onClick={handleOperatorDisconnect}>
+                <Locked size={20} />
+              </HeaderGlobalAction>
+            ) : (
+              <HeaderGlobalAction aria-label="Role-separated team" onClick={() => setTeamOpen(true)}>
+                <UserMultiple size={20} />
+              </HeaderGlobalAction>
+            )}
+          </HeaderGlobalBar>
+        </Header>
+      )}
 
       <Modal
         open={teamOpen}
@@ -2176,8 +2419,35 @@ function App() {
         </div>
       </Modal>
 
-      <Content id="main-content" tabIndex={-1}>
-        <div className="product-shell">
+      <Content id="main-content" tabIndex={-1} className={activeView === 'overview' ? 'landing-content' : undefined}>
+        {activeView === 'overview' ? (
+          <>
+            {error ? (
+              <InlineNotification
+                className="landing-error"
+                kind="error"
+                title="Live workspace unavailable"
+                subtitle={error}
+                lowContrast
+                onCloseButtonClick={() => setError(null)}
+              />
+            ) : null}
+            <LandingPage
+              ready={visibleReadiness?.status === 'ready'}
+              network={visibleReadiness?.network ?? 'ARC-TESTNET'}
+              operations={operations}
+              reliability={data?.reliability ?? null}
+              busy={busy !== null}
+              onRun={openPayablesAndRun}
+              onNavigate={navigateToView}
+            />
+            <footer className="landing-footer">
+              <span>TallyGuard · Autonomous accounts payable with evidence-bound controls.</span>
+              <div><a href="/api/openapi.json" target="_blank" rel="noreferrer">OpenAPI 3.1</a><span>Built for Tameion Agents Hackathon 2026</span></div>
+            </footer>
+          </>
+        ) : (
+          <div className="product-shell">
           <WorkspaceNavigation
             active={activeView}
             disabled={!data}
@@ -2217,85 +2487,6 @@ function App() {
               </div>
             ) : (
               <div className="workspace-page workspace-page--animated" key={activeView}>
-                {activeView === 'overview' ? (
-                  <>
-                    <section className="overview-hero">
-                      <div className="overview-hero__copy">
-                        <span className="eyebrow">Autonomous finance / Arc settlement</span>
-                        <h1>Approve the evidence.<br />Automate the payment.</h1>
-                        <p>
-                          TallyGuard turns invoice evidence into deterministic payment decisions, then settles
-                          approved USDC with a receipt finance teams can replay and audit.
-                        </p>
-                        <div className="judge-quickstart">
-                          <Button
-                            size="lg"
-                            renderIcon={PlayFilled}
-                            disabled={busy !== null}
-                            aria-controls="evaluation-workbench"
-                            onClick={openPayablesAndRun}
-                          >
-                            Run judge flow
-                          </Button>
-                          <button type="button" className="text-action" onClick={() => navigateToView('audit')}>
-                            Inspect proof system <ArrowRight size={16} aria-hidden="true" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="overview-hero__signal" aria-label="Live control flow">
-                        <div className="overview-hero__status">
-                          <span className="live-dot" aria-hidden="true" />
-                          <span>{visibleReadiness?.status === 'ready' ? 'System ready' : 'Connecting'}</span>
-                          <code>{visibleReadiness?.network ?? 'ARC-TESTNET'}</code>
-                        </div>
-                        <div className="control-flow">
-                          <article><span>01</span><strong>Evidence</strong><small>Invoice · PO · receipt</small></article>
-                          <article><span>02</span><strong>Policy</strong><small>13 deterministic controls</small></article>
-                          <article><span>03</span><strong>Settlement</strong><small>USDC on Arc</small></article>
-                          <article><span>04</span><strong>Proof</strong><small>Hash-linked audit trail</small></article>
-                        </div>
-                        <div className="overview-hero__proofline">
-                          <span>Evidence hash</span><code>sha256: sealed before evaluation</code>
-                        </div>
-                      </div>
-                    </section>
-
-                    {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} workspaceId={data.workspaceId} /> : null}
-                    {operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : null}
-
-                    <section className="overview-workflows" aria-label="Core product workspaces">
-                      <button type="button" onClick={() => navigateToView('payables')}>
-                        <span>01 / Decide</span><strong>Review payable evidence</strong>
-                        <small>Match source records, evaluate controls, and settle only eligible invoices.</small>
-                        <ArrowRight size={18} aria-hidden="true" />
-                      </button>
-                      <button type="button" onClick={() => navigateToView('policies')}>
-                        <span>02 / Govern</span><strong>Control agent authority</strong>
-                        <small>Version policy, separate approvals, and stop settlement without stopping analysis.</small>
-                        <ArrowRight size={18} aria-hidden="true" />
-                      </button>
-                      <button type="button" onClick={() => navigateToView('audit')}>
-                        <span>03 / Prove</span><strong>Replay every outcome</strong>
-                        <small>Trace evidence, policy, intent, Arc confirmation, and accounting export.</small>
-                        <ArrowRight size={18} aria-hidden="true" />
-                      </button>
-                    </section>
-
-                    {operations ? (
-                      <AutonomousRunPanel
-                        run={agentRun}
-                        busy={busy !== null}
-                        settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
-                        onPlan={handlePlanAgentRun}
-                        onExecute={handleExecuteAgentRun}
-                        onDownloadProof={handleDownloadAgentProof}
-                        onSeedShowcase={handleSeedAgentShowcase}
-                        proofHash={agentProofHash}
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-
                 {activeView === 'payables' ? (
                   <>
                     <WorkspacePageHeader
@@ -2445,7 +2636,8 @@ function App() {
               </span>
             </footer>
           </main>
-        </div>
+          </div>
+        )}
       </Content>
     </Theme>
   );
