@@ -409,6 +409,59 @@ def test_opaque_session_survives_restart_and_revocation_is_durable(tmp_path):
         )
 
 
+def test_persistent_sessions_are_pruned_and_bounded_per_principal(tmp_path):
+    repo = repository(tmp_path)
+    repo.create_user(
+        organization_id="org-1",
+        user_id="auditor-1",
+        display_name="Auditor One",
+        roles=(Role.AUDITOR.value,),
+    )
+    authenticator = Authenticator(
+        store=repo,
+        maximum_active_sessions_per_principal=2,
+    )
+    identity = Principal(
+        user_id="auditor-1",
+        organization_id="org-1",
+        roles=(Role.AUDITOR,),
+    )
+    expired_token, expired_session = authenticator.issue_session(
+        identity,
+        lifetime=timedelta(minutes=1),
+        now=datetime(2026, 9, 20, tzinfo=timezone.utc),
+    )
+    second_token, second_session = authenticator.issue_session(
+        identity,
+        now=datetime(2026, 9, 20, 0, 2, tzinfo=timezone.utc),
+    )
+    third_token, _ = authenticator.issue_session(
+        identity,
+        now=datetime(2026, 9, 20, 0, 3, tzinfo=timezone.utc),
+    )
+    fourth_token, _ = authenticator.issue_session(
+        identity,
+        now=datetime(2026, 9, 20, 0, 4, tzinfo=timezone.utc),
+    )
+
+    assert repo.get_session(expired_session.token_hash) is None
+    assert repo.get_session(second_session.token_hash) is None
+    for removed in (expired_token, second_token):
+        with pytest.raises(AuthenticationDenied, match="invalid"):
+            authenticator.authenticate(
+                removed,
+                now=datetime(2026, 9, 20, 0, 4, tzinfo=timezone.utc),
+            )
+    assert authenticator.authenticate(
+        third_token,
+        now=datetime(2026, 9, 20, 0, 4, tzinfo=timezone.utc),
+    ).user_id == "auditor-1"
+    assert authenticator.authenticate(
+        fourth_token,
+        now=datetime(2026, 9, 20, 0, 4, tzinfo=timezone.utc),
+    ).user_id == "auditor-1"
+
+
 def test_persistent_audit_chain_is_tenant_scoped_idempotent_and_tamper_evident(tmp_path):
     repo = repository(tmp_path)
     timestamp = datetime(2026, 9, 20, tzinfo=timezone.utc)

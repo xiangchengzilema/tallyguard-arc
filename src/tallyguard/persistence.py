@@ -572,10 +572,44 @@ class SqliteRepository:
             except sqlite3.IntegrityError as exc:
                 raise PersistenceError("User cannot be created in this organization.") from exc
 
-    def save_session(self, session: Session) -> None:
+    def save_session(
+        self,
+        session: Session,
+        *,
+        maximum_active_sessions_per_principal: int,
+    ) -> None:
+        if maximum_active_sessions_per_principal < 1:
+            raise ValueError("Maximum active sessions per principal must be positive.")
         principal = session.principal
         with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
             try:
+                self._connection.execute(
+                    """
+                    DELETE FROM sessions
+                    WHERE revoked_at IS NOT NULL
+                       OR julianday(expires_at) <= julianday(?)
+                    """,
+                    (session.issued_at.isoformat(),),
+                )
+                self._connection.execute(
+                    """
+                    DELETE FROM sessions
+                    WHERE token_hash IN (
+                        SELECT token_hash
+                        FROM sessions
+                        WHERE organization_id = ?
+                          AND user_id = ?
+                        ORDER BY julianday(issued_at) DESC, token_hash DESC
+                        LIMIT -1 OFFSET ?
+                    )
+                    """,
+                    (
+                        principal.organization_id,
+                        principal.user_id,
+                        maximum_active_sessions_per_principal - 1,
+                    ),
+                )
                 self._connection.execute(
                     """
                     INSERT INTO sessions
@@ -594,8 +628,13 @@ class SqliteRepository:
                         session.revoked_at.isoformat() if session.revoked_at else None,
                     ),
                 )
+                self._connection.execute("COMMIT")
             except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
                 raise PersistenceError("Session could not be stored for this user.") from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
 
     def get_session(self, token_hash: str) -> Session | None:
         with self._guard:

@@ -487,6 +487,7 @@ def create_app(
     settlement_config: ArcNetworkConfig | None = None,
     rate_limit_per_minute: int | None = None,
     demo_session_rate_limit_per_minute: int | None = None,
+    maximum_active_sessions_per_principal: int | None = None,
     evidence_analyst: EvidenceAnalyst | None = None,
     date_provider: Callable[[], date] | None = None,
     request_logging_enabled: bool | None = None,
@@ -528,7 +529,15 @@ def create_app(
     )
     resolved_path = database_path or os.getenv("TALLYGUARD_DATABASE_PATH", "data/tallyguard.sqlite3")
     repository = SqliteRepository(resolved_path)
-    authenticator = Authenticator(store=repository)
+    configured_maximum_active_sessions = (
+        maximum_active_sessions_per_principal
+        if maximum_active_sessions_per_principal is not None
+        else int(os.getenv("TALLYGUARD_MAX_ACTIVE_SESSIONS_PER_PRINCIPAL", "32"))
+    )
+    authenticator = Authenticator(
+        store=repository,
+        maximum_active_sessions_per_principal=configured_maximum_active_sessions,
+    )
     decision_service = DecisionService(repository=repository, audit_chain=repository)
     approval_inbox = ApprovalInbox(store=repository)
     network_config = settlement_config or ArcNetworkConfig.from_env()

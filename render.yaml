@@ -23,6 +23,8 @@ services:
         value: "6000"
       - key: TALLYGUARD_DEMO_SESSION_RATE_LIMIT_PER_MINUTE
         value: "120"
+      - key: TALLYGUARD_MAX_ACTIVE_SESSIONS_PER_PRINCIPAL
+        value: "32"
       - key: TALLYGUARD_MAX_EVIDENCE_BYTES
         value: "10485760"
       - key: TALLYGUARD_REQUEST_LOGS

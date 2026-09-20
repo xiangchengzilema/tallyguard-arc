@@ -55,6 +55,43 @@ def test_expired_and_revoked_sessions_are_rejected():
         authenticator.authenticate(token, now=NOW + timedelta(minutes=2))
 
 
+def test_session_store_prunes_inactive_records_and_bounds_active_sessions():
+    store = InMemorySessionStore()
+    authenticator = Authenticator(
+        store=store,
+        maximum_active_sessions_per_principal=2,
+    )
+    expired_token, expired_session = authenticator.issue_session(
+        principal(Role.AUDITOR),
+        lifetime=timedelta(minutes=1),
+        now=NOW,
+    )
+    second_token, _ = authenticator.issue_session(
+        principal(Role.AUDITOR),
+        now=NOW + timedelta(minutes=2),
+    )
+    third_token, _ = authenticator.issue_session(
+        principal(Role.AUDITOR),
+        now=NOW + timedelta(minutes=3),
+    )
+    fourth_token, _ = authenticator.issue_session(
+        principal(Role.AUDITOR),
+        now=NOW + timedelta(minutes=4),
+    )
+
+    assert store.get_session(expired_session.token_hash) is None
+    with pytest.raises(AuthenticationDenied, match="invalid"):
+        authenticator.authenticate(expired_token, now=NOW + timedelta(minutes=4))
+    with pytest.raises(AuthenticationDenied, match="invalid"):
+        authenticator.authenticate(second_token, now=NOW + timedelta(minutes=4))
+    assert authenticator.authenticate(
+        third_token, now=NOW + timedelta(minutes=4)
+    ).user_id == "user-1"
+    assert authenticator.authenticate(
+        fourth_token, now=NOW + timedelta(minutes=4)
+    ).user_id == "user-1"
+
+
 def test_operator_cannot_approve_or_settle():
     operator = principal(Role.FINANCE_OPERATOR)
     authorize(

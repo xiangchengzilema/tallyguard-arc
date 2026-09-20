@@ -105,7 +105,12 @@ class Session:
 
 
 class SessionStore(Protocol):
-    def save_session(self, session: Session) -> None: ...
+    def save_session(
+        self,
+        session: Session,
+        *,
+        maximum_active_sessions_per_principal: int,
+    ) -> None: ...
 
     def get_session(self, token_hash: str) -> Session | None: ...
 
@@ -117,8 +122,39 @@ class InMemorySessionStore:
         self._guard = Lock()
         self._sessions: dict[str, Session] = {}
 
-    def save_session(self, session: Session) -> None:
+    def save_session(
+        self,
+        session: Session,
+        *,
+        maximum_active_sessions_per_principal: int,
+    ) -> None:
+        if maximum_active_sessions_per_principal < 1:
+            raise ValueError("Maximum active sessions per principal must be positive.")
         with self._guard:
+            self._sessions = {
+                token_hash: stored
+                for token_hash, stored in self._sessions.items()
+                if stored.revoked_at is None and stored.expires_at > session.issued_at
+            }
+            principal_sessions = sorted(
+                (
+                    stored
+                    for stored in self._sessions.values()
+                    if stored.principal.organization_id == session.principal.organization_id
+                    and stored.principal.user_id == session.principal.user_id
+                ),
+                key=lambda stored: (stored.issued_at, stored.token_hash),
+                reverse=True,
+            )
+            retained_hashes = {
+                stored.token_hash
+                for stored in principal_sessions[
+                    : maximum_active_sessions_per_principal - 1
+                ]
+            }
+            for stored in principal_sessions:
+                if stored.token_hash not in retained_hashes:
+                    self._sessions.pop(stored.token_hash, None)
             self._sessions[session.token_hash] = session
 
     def get_session(self, token_hash: str) -> Session | None:
@@ -139,8 +175,16 @@ class InMemorySessionStore:
 class Authenticator:
     """Thread-safe opaque session issuer storing no bearer-token plaintext."""
 
-    def __init__(self, *, store: SessionStore | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        store: SessionStore | None = None,
+        maximum_active_sessions_per_principal: int = 32,
+    ) -> None:
+        if maximum_active_sessions_per_principal < 1:
+            raise ValueError("Maximum active sessions per principal must be positive.")
         self.store = store or InMemorySessionStore()
+        self.maximum_active_sessions_per_principal = maximum_active_sessions_per_principal
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -168,7 +212,10 @@ class Authenticator:
             issued_at=issued_at,
             expires_at=issued_at + lifetime,
         )
-        self.store.save_session(session)
+        self.store.save_session(
+            session,
+            maximum_active_sessions_per_principal=self.maximum_active_sessions_per_principal,
+        )
         return raw_token, session
 
     def authenticate(self, token: str, *, now: datetime | None = None) -> Principal:
