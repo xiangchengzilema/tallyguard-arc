@@ -67,14 +67,16 @@ local environment variables, the explicit setup command can create one new `EOA`
 `ARC-TESTNET`:
 
 ```powershell
-tallyguard-wallet-setup --confirm CREATE-ARC-TESTNET-WALLET
+tallyguard-wallet-setup --confirm CREATE-ARC-TESTNET-WALLET --acceptance-pair
 ```
 
 To reuse an existing wallet set, add `--wallet-set-id <id>` or set the non-secret
 `CIRCLE_WALLET_SET_ID`. The command creates account resources but does not fund the wallet or
-move USDC. It prints only the wallet set ID, wallet ID, public address, network, and state. Store
-the returned wallet ID locally as `CIRCLE_WALLET_ID`, then request Arc Testnet USDC for the
-public address from the Circle Faucet.
+move USDC. Acceptance-pair mode creates separate treasury and controlled-recipient wallets, then
+prints only their wallet IDs, public addresses, network, and state. Store the treasury wallet ID
+locally as `CIRCLE_WALLET_ID`, store the recipient address as
+`TALLYGUARD_ACCEPTANCE_RECIPIENT`, and fund only the treasury address from the Circle Faucet.
+Omit `--acceptance-pair` when a single existing controlled recipient will be used instead.
 
 Live Circle mode disables `/api/demo/session` by default. Do not enable
 `TALLYGUARD_ENABLE_DEMO_SESSIONS` on any deployment connected to a funded wallet. The public
