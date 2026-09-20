@@ -602,6 +602,7 @@ def create_app(
     app.extensions["tallyguard_request_metrics"] = request_metrics
     app.extensions["tallyguard_request_logging_enabled"] = request_logging_enabled
     app.extensions["tallyguard_evidence_analyst"] = evidence_analyst
+    app.extensions["tallyguard_frontend_dist"] = frontend_dist
     demo_sessions_enabled = (
         testing
         or settlement_adapter.name == "arc-simulator"
@@ -639,17 +640,32 @@ def create_app(
             )
         response.headers["X-Correlation-ID"] = _correlation_id()
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+        )
+        response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
+            "base-uri 'none'; "
             "script-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "font-src 'self' data:; "
             "connect-src 'self'; "
-            "frame-ancestors 'none'"
+            "form-action 'self'; "
+            "frame-ancestors 'none'; "
+            "object-src 'none'"
         )
+        if request.is_secure:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        if request.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.errorhandler(RequestEntityTooLarge)

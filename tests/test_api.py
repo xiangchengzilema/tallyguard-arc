@@ -50,6 +50,36 @@ def test_health_and_readiness_are_public(tmp_path):
     assert readiness["demo_sessions_enabled"] is True
 
 
+def test_public_responses_apply_browser_security_and_safe_cache_headers(tmp_path):
+    app = create_app(database_path=tmp_path / "headers.sqlite3", testing=True)
+    client = app.test_client()
+
+    api_response = client.get("/api/health", base_url="https://judge.example")
+
+    assert api_response.headers["Cache-Control"] == "no-store"
+    assert api_response.headers["Content-Security-Policy"].startswith(
+        "default-src 'self'"
+    )
+    assert "frame-ancestors 'none'" in api_response.headers["Content-Security-Policy"]
+    assert api_response.headers["Cross-Origin-Opener-Policy"] == "same-origin"
+    assert api_response.headers["Referrer-Policy"] == "no-referrer"
+    assert api_response.headers["X-Content-Type-Options"] == "nosniff"
+    assert api_response.headers["X-Frame-Options"] == "DENY"
+    assert api_response.headers["Strict-Transport-Security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
+
+    asset_name = next(
+        path.name for path in (app.extensions["tallyguard_frontend_dist"] / "assets").iterdir()
+    )
+    asset_response = client.get(f"/assets/{asset_name}")
+    assert asset_response.status_code == 200
+    assert asset_response.headers["Cache-Control"] == (
+        "public, max-age=31536000, immutable"
+    )
+    assert "Strict-Transport-Security" not in asset_response.headers
+
+
 def test_openapi_contract_covers_every_registered_api_operation(tmp_path):
     app = create_app(database_path=tmp_path / "openapi.sqlite3", testing=True)
     response = app.test_client().get("/api/openapi.json")
@@ -246,7 +276,7 @@ def test_api_responses_include_browser_security_headers(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     response = app.test_client().get("/api/health")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["Referrer-Policy"] == "same-origin"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 

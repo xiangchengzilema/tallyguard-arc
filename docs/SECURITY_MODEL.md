@@ -33,6 +33,7 @@
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
 | Audit history altered | Per-tenant append-only hash chain with verification endpoint and visible UI state |
 | Request metadata leaks financial or credential data | Structured logs record only the route endpoint name, method, status, duration, and a syntax-validated correlation ID; paths, query strings, bodies, authorization headers, tenant IDs, and record IDs are excluded |
+| Browser embeds, content sniffing, referrer leakage, or stale API caches expose judge data | Every response applies a restrictive same-origin CSP, frame denial, no-referrer and nosniff policies; HTTPS adds HSTS; API responses are never cached while fingerprinted frontend assets are immutable |
 | Caller injects control characters or unbounded data into logs | External correlation IDs must match a 128-character allowlist or are replaced with a server-generated identifier before logging or response echo |
 
 ## Secret handling
