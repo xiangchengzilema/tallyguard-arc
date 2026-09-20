@@ -91,6 +91,7 @@ def _check_render_blueprint(root: Path) -> ReleaseCheck:
         "runtime: docker",
         "healthCheckPath: /api/readiness",
         "plan: free",
+        "autoDeployTrigger: checksPass",
     )
     missing_structure = [fragment for fragment in structural_fragments if fragment not in text]
     if invalid or forbidden or missing_structure:
@@ -111,7 +112,7 @@ def _check_render_blueprint(root: Path) -> ReleaseCheck:
         "local",
         "Render public-safety blueprint",
         "passed",
-        "Simulation, Arc Testnet labels, isolated demo workspaces, and disabled Mainnet are enforced without Circle credentials.",
+        "Simulation, Arc Testnet labels, isolated demo workspaces, disabled Mainnet, and CI-gated deploys are enforced without Circle credentials.",
         _hash_file(path),
     )
 

@@ -6,6 +6,7 @@ safe simulation mode, issues one isolated role bundle per browser, and never
 requires wallet credentials. Public demo identities are enabled only because
 the Blueprint is hard-locked to the deterministic simulator; the release audit
 rejects Mainnet, live Circle credentials, or disabled judge access in this file.
+Automatic Render deploys wait for the repository CI checks to pass.
 The image also includes the immutable 10,000-workflow reliability JSON consumed
 by the auditor-only `/api/reliability/report` endpoint and judge console.
 

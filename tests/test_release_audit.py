@@ -37,6 +37,7 @@ def test_render_blueprint_requires_public_safe_isolated_simulation(tmp_path):
   - type: web
     runtime: docker
     plan: free
+    autoDeployTrigger: checksPass
     healthCheckPath: /api/readiness
     envVars:
       - key: TALLYGUARD_MODE
@@ -72,6 +73,7 @@ def test_render_blueprint_rejects_live_credentials(tmp_path):
     blueprint.write_text(
         """runtime: docker
 plan: free
+autoDeployTrigger: checksPass
 healthCheckPath: /api/readiness
 envVars:
   - key: TALLYGUARD_MODE
