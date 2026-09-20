@@ -38,3 +38,25 @@ docker run --rm -p 8000:8000 tallyguard-arc
 
 Readiness is available at `/api/readiness`. A ready simulation deployment reports
 the database, Arc network, and settlement adapter without exposing credentials.
+
+## Reproducible real-HTTP acceptance
+
+After building `web/dist`, run the deployment smoke command from the repository
+root:
+
+```bash
+tallyguard-deployment-smoke --output docs/reports/deployment-smoke.json
+```
+
+The command starts the production-shaped Flask application on an ephemeral
+loopback TCP port and exercises it through real HTTP. It verifies the built judge
+console, health and readiness probes, three separate finance roles, a
+deterministic three-way-match decision, approver settlement, receipt
+reconciliation, and the content-addressed accounting export. It refuses to run
+if settlement is not in simulation mode, if funds movement is enabled, or if
+mainnet is enabled.
+
+This report is synthetic deployment acceptance evidence. It is not an Arc
+transaction and must never be represented as customer traction or a live-funds
+test. CI rebuilds the frontend and executes the same command after the full test
+suite.

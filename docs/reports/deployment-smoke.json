@@ -1,0 +1,55 @@
+{
+  "checks": [
+    {
+      "detail": "Built frontend served over HTTP with the React root marker.",
+      "name": "judge_console",
+      "status": "passed"
+    },
+    {
+      "detail": "API health probe returned ok.",
+      "name": "health_probe",
+      "status": "passed"
+    },
+    {
+      "detail": "Database ready; simulation active; funds and mainnet disabled.",
+      "name": "safe_readiness",
+      "status": "passed"
+    },
+    {
+      "detail": "Operator, approver, and auditor sessions were issued separately.",
+      "name": "role_separation",
+      "status": "passed"
+    },
+    {
+      "detail": "Three-way evidence produced the expected PAY action.",
+      "name": "deterministic_decision",
+      "status": "passed"
+    },
+    {
+      "detail": "Approver settled once; receipt confirmed and invoice reconciled.",
+      "name": "simulation_settlement",
+      "status": "passed"
+    },
+    {
+      "detail": "One reconciled row matched invoice, decision, receipt, and SHA-256.",
+      "name": "accounting_export",
+      "status": "passed"
+    }
+  ],
+  "classification": "synthetic deployment acceptance; not customer traction",
+  "generated_at": "2026-09-20T00:49:41.057699+00:00",
+  "safety": {
+    "credentials_required": false,
+    "funds_moved": false,
+    "mainnet_enabled": false,
+    "settlement_mode": "simulation"
+  },
+  "schema_version": "1.0",
+  "summary": {
+    "checks_failed": 0,
+    "checks_passed": 7,
+    "duration_ms": 1237.44,
+    "status": "passed"
+  },
+  "target": "loopback ephemeral HTTP server"
+}

@@ -39,6 +39,9 @@ jobs:
       - name: Run Python tests
         run: python -m pytest
 
+      - name: Run real-HTTP deployment smoke
+        run: tallyguard-deployment-smoke --output /tmp/tallyguard-deployment-smoke.json
+
       - name: Compile Python sources
         run: python -m compileall -q src tests
 

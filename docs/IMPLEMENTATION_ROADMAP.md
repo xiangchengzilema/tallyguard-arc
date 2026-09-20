@@ -321,6 +321,7 @@ Implemented foundation:
 - Render Blueprint with readiness health check and explicit environment controls
 - GitHub Actions verifies frontend build, Python tests, compilation, and secret scan
 - Deployment boundary documents the temporary single-process and ephemeral SQLite constraints
+- A reproducible real-HTTP deployment smoke starts the production-shaped app on an ephemeral TCP port and verifies the built console, probes, role separation, deterministic decision, simulation settlement, reconciliation, and content-addressed ledger; CI runs the same seven checks and the report explicitly disclaims traction or live-funds evidence
 - Architecture and trust-boundary diagrams document agent authority, tenant isolation, the evidence-to-payment sequence, runtime profiles, and production migration boundary
 - Security model and live-test protocol enumerate protected assets, abuse cases, hard controls, secret handling, and honest demo limitations
 

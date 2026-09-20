@@ -136,6 +136,20 @@ records 50/50 successful mixed-queue runs, 50 verified proof packets, 50/50
 denied cross-tenant proof reads, and one execution/provider winner under a
 100-request duplicate storm.
 
+Run the production-shaped application acceptance over a real loopback HTTP
+socket after building `web/dist`:
+
+```powershell
+.\.venv\Scripts\tallyguard-deployment-smoke.exe `
+  --output docs\reports\deployment-smoke.json
+```
+
+The smoke report verifies the judge console, readiness safety boundary,
+role-separated decision and settlement flow, reconciled receipt, and hashed
+accounting export. It is explicitly synthetic and moves no funds. The latest
+checked-in result is summarized in
+[the real-HTTP deployment report](docs/reports/DEPLOYMENT_SMOKE.md).
+
 ## Deploy the public judge playground
 
 The repository includes a multi-stage `Dockerfile` and `render.yaml`. The public

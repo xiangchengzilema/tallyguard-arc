@@ -63,8 +63,8 @@ Strongly encouraged:
 - The live console now supports user-selected three-way-match JSON, validates cross-document IDs and USDC fields locally, previews extracted financial values, and persists only after explicit confirmation
 - A role-separated auditor timeline exposes linked event hashes and verified-chain status, including the settlement reconciliation event after payment
 - An optional hosted-model analyst is now available behind environment-only credentials; its output cannot include payment parameters and cannot override deterministic authorization
-- A real local HTTP smoke test created and retrieved an invoice through the public API surface
-- Seven judge scenarios and the segregated large-invoice approval path are available through API
+- A reproducible real-HTTP deployment smoke now verifies the built console, probes, three separate roles, deterministic decision, simulation settlement, reconciliation, and hashed accounting export; its checked-in report is explicitly synthetic and CI reruns all seven checks
+- Eight judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter
 - Circle completion is independently reconciled against Arc RPC and the exact USDC transfer event
 - Exported Payment Evidence Packets now have a standalone verifier that needs no application database or server; it recomputes the deterministic decision and can optionally re-prove a real transfer against Arc RPC
