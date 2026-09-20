@@ -2057,7 +2057,7 @@ function App() {
         </div>
       </Modal>
 
-      <Content id="main-content">
+      <Content id="main-content" tabIndex={-1}>
         <div className="context-bar">
           <div>
             <span className="eyebrow">Finance control plane / Judge workspace</span>
