@@ -1111,6 +1111,10 @@ def create_app(
             actor_user_id=actor_user_id,
             correlation_id=correlation_id,
         )
+        wallet_event = repository.vendor_wallet_history(
+            organization_id=g.principal.organization_id,
+            vendor_id=scenario.vendor.id,
+        )[-1]
         decision = decision_service.evaluate(
             evidence=scenario.evidence,
             vendor=scenario.vendor,
@@ -1119,6 +1123,8 @@ def create_app(
             agent_recommendation=scenario.recommendation,
             known_invoice_fingerprints=scenario.known_invoice_fingerprints,
             evaluation_date=scenario.evaluation_date,
+            vendor_wallet_event_type=wallet_event.event_type.value,
+            vendor_wallet_verified_date=wallet_event.verified_at.date(),
         )
         if decision.final_action != scenario.definition.expected_action:
             raise RuntimeError("Demo scenario produced an unexpected control result.")
@@ -1438,6 +1444,8 @@ def create_app(
             asset=inputs.asset,
             network=inputs.network,
             evaluation_date=inputs.evaluation_date,
+            vendor_wallet_event_type=inputs.vendor_wallet_event_type,
+            vendor_wallet_verified_date=inputs.vendor_wallet_verified_date,
         )
 
         changed_fields = []
@@ -1694,6 +1702,10 @@ def create_app(
                 actor_user_id=g.principal.user_id,
                 correlation_id=_correlation_id(),
             )
+        wallet_event = repository.vendor_wallet_history(
+            organization_id=g.principal.organization_id,
+            vendor_id=vendor.id,
+        )[-1]
         decision = decision_service.evaluate(
             evidence=normalized,
             vendor=vendor,
@@ -1712,6 +1724,8 @@ def create_app(
             asset=stored.invoice.currency,
             network=network_config.name.value,
             evaluation_date=current_date(),
+            vendor_wallet_event_type=wallet_event.event_type.value,
+            vendor_wallet_verified_date=wallet_event.verified_at.date(),
         )
         target_status = status_for_decision(decision.final_action)
         stored = repository.transition_invoice(
@@ -2663,6 +2677,10 @@ def create_app(
         treasury = repository.latest_treasury_snapshot(
             organization_id=organization_id
         ).snapshot
+        wallet_event = repository.vendor_wallet_history(
+            organization_id=organization_id,
+            vendor_id=vendor.id,
+        )[-1]
         release = decision_service.evaluate(
             evidence=inputs.evidence,
             vendor=vendor,
@@ -2676,6 +2694,8 @@ def create_app(
             asset=stored.invoice.currency,
             network=network_config.name.value,
             evaluation_date=evaluated_on,
+            vendor_wallet_event_type=wallet_event.event_type.value,
+            vendor_wallet_verified_date=wallet_event.verified_at.date(),
         )
         target_status = status_for_decision(release.final_action)
         current = repository.get_invoice(

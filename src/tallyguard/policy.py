@@ -16,6 +16,9 @@ from typing import Iterable
 from .models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
 
 
+WALLET_CHANGE_COOLDOWN_DAYS = 2
+
+
 class DecisionAction(StrEnum):
     PAY = "PAY"
     SCHEDULE = "SCHEDULE"
@@ -120,20 +123,28 @@ class PolicyEngine:
         asset: str = "USDC",
         network: str = "ARC-TESTNET",
         evaluation_date: date | None = None,
+        vendor_wallet_event_type: str | None = None,
+        vendor_wallet_verified_date: date | None = None,
     ) -> Decision:
+        resolved_evaluation_date = evaluation_date or date.today()
         results = (
             self._kill_switch(policy),
             self._tenant_boundary(invoice, vendor, purchase_order, delivery, treasury, policy),
             self._duplicate(invoice, known_invoice_fingerprints),
             self._vendor(invoice, vendor),
             self._wallet(invoice, vendor),
+            self._wallet_change_cooldown(
+                vendor_wallet_event_type,
+                vendor_wallet_verified_date,
+                resolved_evaluation_date,
+            ),
             self._asset_and_network(asset, network, policy),
             self._purchase_order(invoice, vendor, purchase_order, policy),
             self._delivery(invoice, purchase_order, delivery, policy),
             self._autonomy_limit(invoice, vendor, policy),
             self._daily_limit(invoice, treasury, policy),
             self._cash_reserve(invoice, treasury, policy),
-            self._payment_timing(invoice, policy, evaluation_date or date.today()),
+            self._payment_timing(invoice, policy, resolved_evaluation_date),
         )
         action = self._final_action(results)
         return Decision(
@@ -225,6 +236,40 @@ class PolicyEngine:
                 remediation="Verify the wallet change out-of-band and update the vendor profile.",
             )
         return PolicyEngine._pass("VENDOR_WALLET_VERIFIED", "Payment address matches the vendor profile.")
+
+    @staticmethod
+    def _wallet_change_cooldown(
+        event_type: str | None,
+        verified_date: date | None,
+        evaluation_date: date,
+    ) -> RuleResult:
+        if event_type != "REPLACED":
+            return PolicyEngine._pass(
+                "WALLET_CHANGE_COOLDOWN_CLEAR",
+                "Vendor payout wallet is not in a recent replacement cooldown.",
+            )
+        if verified_date is None:
+            return RuleResult(
+                code="WALLET_CHANGE_TIMESTAMP_MISSING",
+                disposition=RuleDisposition.HOLD,
+                message="The replacement wallet has no independently replayable verification date.",
+                remediation="Re-verify the wallet change and record its verification timestamp.",
+            )
+        release_date = verified_date + timedelta(days=WALLET_CHANGE_COOLDOWN_DAYS)
+        if evaluation_date < release_date:
+            return RuleResult(
+                code="WALLET_CHANGE_COOLDOWN_ACTIVE",
+                disposition=RuleDisposition.HOLD,
+                message=f"The replacement wallet is cooling down until {release_date.isoformat()}.",
+                remediation=(
+                    "Wait for the payout-address cooldown to expire, then re-evaluate against "
+                    "current evidence and policy."
+                ),
+            )
+        return PolicyEngine._pass(
+            "WALLET_CHANGE_COOLDOWN_COMPLETE",
+            "The independently verified payout-address cooldown has elapsed.",
+        )
 
     @staticmethod
     def _asset_and_network(asset: str, network: str, policy: Policy) -> RuleResult:

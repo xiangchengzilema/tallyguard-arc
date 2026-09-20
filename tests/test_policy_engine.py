@@ -106,6 +106,30 @@ def test_changed_vendor_wallet_is_held(case):
     assert "VENDOR_WALLET_CHANGED" in decision.reason_codes
 
 
+def test_recently_replaced_matching_wallet_is_held_during_cooldown(case):
+    decision = evaluate(
+        case,
+        evaluation_date=date(2026, 9, 20),
+        vendor_wallet_event_type="REPLACED",
+        vendor_wallet_verified_date=date(2026, 9, 20),
+    )
+
+    assert decision.action == DecisionAction.HOLD
+    assert "WALLET_CHANGE_COOLDOWN_ACTIVE" in decision.reason_codes
+
+
+def test_replaced_matching_wallet_can_pay_after_cooldown(case):
+    decision = evaluate(
+        case,
+        evaluation_date=date(2026, 9, 22),
+        vendor_wallet_event_type="REPLACED",
+        vendor_wallet_verified_date=date(2026, 9, 20),
+    )
+
+    assert decision.action == DecisionAction.PAY
+    assert "WALLET_CHANGE_COOLDOWN_ACTIVE" not in decision.reason_codes
+
+
 def test_invoice_above_po_is_held(case):
     original = case[1]
     oversized = Invoice(

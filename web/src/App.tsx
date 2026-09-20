@@ -613,6 +613,13 @@ function VendorTrustPanel({
   const walletMatches = invoiceApplies
     ? activeInvoice.payment_wallet_address.toLowerCase() === selected.vendor.approved_wallet_address.toLowerCase()
     : null;
+  const latestWalletEvent = selected && selected.walletHistory.length > 0
+    ? selected.walletHistory[selected.walletHistory.length - 1]
+    : null;
+  const cooldownUntil = latestWalletEvent?.event_type === 'REPLACED'
+    ? new Date(new Date(latestWalletEvent.verified_at).getTime() + 2 * 24 * 60 * 60 * 1000)
+    : null;
+  const cooldownActive = cooldownUntil !== null && cooldownUntil.getTime() > Date.now();
 
   return (
     <section className="vendor-trust" aria-label="Vendor payout identity control center">
@@ -653,6 +660,10 @@ function VendorTrustPanel({
               <div><span>Risk tier</span><strong>{selected.vendor.risk_tier}</strong></div>
               <div><span>Autopay ceiling</span><strong>{formatMoney(selected.vendor.autopay_limit)} USDC</strong></div>
               <div><span>Wallet proofs</span><strong>{selected.walletHistory.length}</strong></div>
+              <div>
+                <span>Change control</span>
+                <strong>{cooldownActive ? `Hold until ${cooldownUntil?.toLocaleDateString()}` : 'Cleared'}</strong>
+              </div>
             </div>
             <div className="wallet-history">
               <div className="wallet-history__title"><Wallet size={17} /><span>Append-only wallet verification history</span></div>

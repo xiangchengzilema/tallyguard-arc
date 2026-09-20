@@ -66,6 +66,7 @@ Implemented foundation:
 - Explicit fail-closed outcomes for missing PO and delivery evidence
 - Evidence normalization into invoice, PO, and delivery domain records with confidence gates
 - Verified vendor-wallet onboarding and append-only wallet replacement history
+- Independently verified wallet replacements enter a deterministic two-day payment cooldown; matching invoices remain held until a fresh evaluation after expiry
 - Persistent vendor APIs enforce finance-operator RBAC, optimistic current-wallet checks, explicit verification references, tenant isolation, and restart-safe history
 - Authenticated multipart evidence upload persists original bytes and links exactly one invoice, purchase order, and delivery document per invoice
 - Structured JSON is extracted with exact JSON pointers; PDF/image observations require explicit page or bounding-box provenance
@@ -226,7 +227,7 @@ Implemented foundation:
 - Honest visual distinction between public simulation and live Arc proof
 - Loading, empty, error, desktop, and mobile states
 - A judge-facing live-evidence mode now creates a fresh tenant dataset, uploads invoice/PO/delivery JSON as immutable multipart evidence, invokes the production-shaped evaluation endpoint, shows the agent's exact evidence citations, and completes the same idempotent settlement flow used by the API
-- Browser acceptance confirms the live path reaches a 12/12 deterministic `PAY` decision and a reconciled Arc-simulator receipt with no console errors
+- Browser acceptance confirms the live path reaches a complete deterministic `PAY` rule trace and a reconciled Arc-simulator receipt with no console errors
 - Reviewers can select their own invoice, purchase-order, and delivery JSON files; client-side schema and relationship validation previews the extracted amounts, IDs, due date, and recipient before any record is persisted
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation

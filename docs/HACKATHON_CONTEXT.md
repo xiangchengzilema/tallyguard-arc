@@ -59,7 +59,7 @@ Strongly encouraged:
 - Real uploaded invoice, purchase-order, and delivery evidence now flows through the verified vendor, active policy, treasury snapshot, and Arc route into an immutable decision
 - Every real evaluation now records a non-authoritative agent recommendation with confidence, reason codes, and immutable evidence-package citations beside the deterministic policy result
 - The React judge console now includes a fresh-evidence mode that creates and uploads a new three-way-match package through the authenticated API instead of relying only on seeded scenarios
-- Playwright browser acceptance verified the fresh package, 12/12 policy trace, cited agent recommendation, and reconciled simulation receipt without console errors
+- Playwright browser acceptance verified the fresh package, complete deterministic policy trace, cited agent recommendation, and reconciled simulation receipt without console errors
 - The live console now supports user-selected three-way-match JSON, validates cross-document IDs and USDC fields locally, previews extracted financial values, and persists only after explicit confirmation
 - A role-separated auditor timeline exposes linked event hashes and verified-chain status, including the settlement reconciliation event after payment
 - An optional hosted-model analyst is now available behind environment-only credentials; its output cannot include payment parameters and cannot override deterministic authorization

@@ -51,6 +51,8 @@ class DecisionReplayInputs:
     asset: str
     network: str
     evaluation_date: date
+    vendor_wallet_event_type: str | None = None
+    vendor_wallet_verified_date: date | None = None
 
     @property
     def content_hash(self) -> str:
@@ -131,6 +133,14 @@ class DecisionReplayInputs:
             "asset": self.asset,
             "network": self.network,
             "evaluation_date": self.evaluation_date.isoformat(),
+            "vendor_wallet_trust": {
+                "event_type": self.vendor_wallet_event_type,
+                "verified_date": (
+                    self.vendor_wallet_verified_date.isoformat()
+                    if self.vendor_wallet_verified_date is not None
+                    else None
+                ),
+            },
         }
 
     @classmethod
@@ -182,6 +192,9 @@ class DecisionReplayInputs:
             purchase_order=purchase_order,
             delivery=delivery,
         )
+        wallet_trust_value = payload.get("vendor_wallet_trust")
+        wallet_trust = dict(wallet_trust_value) if isinstance(wallet_trust_value, dict) else {}
+        wallet_verified_date = wallet_trust.get("verified_date")
         return cls(
             evidence=evidence,
             vendor=Vendor(
@@ -222,6 +235,16 @@ class DecisionReplayInputs:
             asset=str(payload["asset"]),
             network=str(payload["network"]),
             evaluation_date=date.fromisoformat(str(payload["evaluation_date"])),
+            vendor_wallet_event_type=(
+                str(wallet_trust["event_type"])
+                if wallet_trust.get("event_type") is not None
+                else None
+            ),
+            vendor_wallet_verified_date=(
+                date.fromisoformat(str(wallet_verified_date))
+                if wallet_verified_date is not None
+                else None
+            ),
         )
 
 
@@ -315,6 +338,8 @@ class DecisionService:
         asset: str = "USDC",
         network: str = "ARC-TESTNET",
         evaluation_date: date | None = None,
+        vendor_wallet_event_type: str | None = None,
+        vendor_wallet_verified_date: date | None = None,
         created_at: datetime | None = None,
     ) -> DecisionRecord:
         organization_id = evidence.invoice.organization_id
@@ -334,6 +359,8 @@ class DecisionService:
             asset=asset.strip().upper(),
             network=network.strip().upper(),
             evaluation_date=resolved_evaluation_date,
+            vendor_wallet_event_type=vendor_wallet_event_type,
+            vendor_wallet_verified_date=vendor_wallet_verified_date,
         )
         replay_input_hash = replay_inputs.content_hash
         decision = self.policy_engine.evaluate(
@@ -347,6 +374,8 @@ class DecisionService:
             asset=replay_inputs.asset,
             network=replay_inputs.network,
             evaluation_date=resolved_evaluation_date,
+            vendor_wallet_event_type=replay_inputs.vendor_wallet_event_type,
+            vendor_wallet_verified_date=replay_inputs.vendor_wallet_verified_date,
         )
         policy_hash = policy_content_hash(policy)
         decision_id = self._decision_id(
@@ -412,6 +441,8 @@ class DecisionService:
             asset=inputs.asset,
             network=inputs.network,
             evaluation_date=inputs.evaluation_date,
+            vendor_wallet_event_type=inputs.vendor_wallet_event_type,
+            vendor_wallet_verified_date=inputs.vendor_wallet_verified_date,
         )
         snapshot_hash = inputs.content_hash
         replayed_id = self._decision_id(

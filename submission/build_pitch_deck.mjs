@@ -6,7 +6,7 @@ import { Presentation, PresentationFile } from "@oai/artifact-tool";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_DIR = "C:/Users/55246/.codex/plugins/cache/openai-primary-runtime/presentations/26.909.12148/skills/presentations";
 const BUILD_DIR = path.join(ROOT, ".codex-deck");
-const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v3.pptx");
+const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v4.pptx");
 const RUNTIME_PYTHON = "C:/Users/55246/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe";
 
 const { resolvePresentationFont, finalizePresentation } = await import(
@@ -176,7 +176,7 @@ function setNotes(slide, text) {
 
   const nodes = [
     { x: 58, w: 190, n: "01", t: "Seal evidence", d: "PDF, image, or JSON\nwith field provenance" },
-    { x: 286, w: 190, n: "02", t: "Apply policy", d: "12 deterministic\nfinancial controls" },
+    { x: 286, w: 190, n: "02", t: "Apply policy", d: "13 deterministic\nfinancial controls" },
     { x: 514, w: 190, n: "03", t: "Plan actions", d: "PAY, schedule, hold,\nreject, or escalate" },
     { x: 742, w: 190, n: "04", t: "Move USDC", d: "Circle wallet with\nidempotent intent" },
     { x: 970, w: 250, n: "05", t: "Prove on Arc", d: "Exact Transfer event,\nnetwork, asset, recipient" },
@@ -205,7 +205,7 @@ function setNotes(slide, text) {
   addShape(slide, "roundRect", 56, 214, 706, 420, C.white, C.line, 1, "rounded-xl");
   await addImage(slide, "decision-evidence.png", { left: 70, top: 228, width: 678, height: 392 }, { alt: "Evidence package and deterministic payment decision", fit: "cover", crop: { left: 0, top: 0.03, right: 0, bottom: 0.25 } });
   const claims = [
-    ["12 / 12", "controls clear", "Vendor, wallet, PO, delivery, route, limits, reserve, and timing."],
+    ["13 / 13", "controls clear", "Vendor, wallet, PO, delivery, route, limits, reserve, wallet-change cooldown, and timing."],
     ["SHA-256", "source binding", "The decision carries the evidence manifest, policy hash, and replay snapshot."],
     ["0", "AI payment authority", "The agent can recommend and explain, but cannot set amount, recipient, or authorization."],
   ];
@@ -376,7 +376,7 @@ function setNotes(slide, text) {
   setNotes(slide, "Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
 }
 
-const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v3.candidate.pptx");
+const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v4.candidate.pptx");
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 
 const requirements = {
@@ -404,7 +404,7 @@ const result = await finalizePresentation({
   requiredNativeTableOwnerSlides: requirements.requiredNativeTableOwnerSlides,
   fontPolicy,
   verifyArtifactToolImport: true,
-  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v3.validation.json"),
+  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v4.validation.json"),
 });
 
 console.log(JSON.stringify({ fontFamily, monoFamily, finalPath: FINAL_PPTX, result }, null, 2));

@@ -531,7 +531,7 @@ body {
 .vendor-wallet-proof { align-items: center; margin-top: 1rem; padding: 1rem; border: 1px solid #b9d9d2; background: #f2fbf9; }
 .vendor-wallet-proof code { color: var(--tg-accent-dark); font-size: .75rem; overflow-wrap: anywhere; }
 .vendor-wallet-proof .cds--tag, .vendor-identity .cds--tag { flex: none; margin: 0; }
-.vendor-trust__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 1rem; border: 1px solid var(--tg-line); }
+.vendor-trust__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 1rem; border: 1px solid var(--tg-line); }
 .vendor-trust__facts > div { display: grid; gap: .3rem; padding: .9rem 1rem; border-right: 1px solid var(--tg-line); }
 .vendor-trust__facts > div:last-child { border-right: 0; }
 .vendor-trust__facts strong { font-size: .75rem; font-weight: 600; text-transform: capitalize; }

@@ -170,6 +170,27 @@ def test_decision_replay_recomputes_every_bound_input_exactly():
     assert all(check.passed for check in verification.checks)
 
 
+def test_wallet_replacement_cooldown_is_sealed_and_replayed():
+    evidence, vendor, treasury, policy = case()
+    service = DecisionService()
+    record = service.evaluate(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=treasury,
+        policy=policy,
+        evaluation_date=date(2026, 9, 20),
+        vendor_wallet_event_type="REPLACED",
+        vendor_wallet_verified_date=date(2026, 9, 20),
+    )
+
+    assert record.final_action == DecisionAction.HOLD
+    assert "WALLET_CHANGE_COOLDOWN_ACTIVE" in record.policy_decision.reason_codes
+    assert record.replay_inputs is not None
+    assert record.replay_inputs.vendor_wallet_event_type == "REPLACED"
+    assert record.replay_inputs.vendor_wallet_verified_date == date(2026, 9, 20)
+    assert service.verify_replay(record).verified is True
+
+
 def test_decision_replay_exposes_snapshot_tampering_instead_of_masking_it():
     evidence, vendor, treasury, policy = case()
     service = DecisionService()
