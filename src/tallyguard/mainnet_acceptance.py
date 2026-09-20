@@ -316,6 +316,7 @@ def run_mainnet_acceptance(
                 "requested_by_user_id": resolved["requested_by_user_id"],
                 "resolved_by_user_id": resolved["resolved_by_user_id"],
             },
+            "intent": first["intent"],
             "receipt": first["receipt"],
             "idempotent_replay": {
                 "same_receipt": True,

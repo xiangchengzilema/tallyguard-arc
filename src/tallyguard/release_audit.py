@@ -152,6 +152,65 @@ def _acceptance_check(path_value: str | None) -> ReleaseCheck:
     )
 
 
+def _mainnet_acceptance_check(path_value: str) -> ReleaseCheck:
+    path = Path(path_value)
+    try:
+        report = _load_json(path)
+        amount = Decimal(str(report.get("amount_usdc")))
+        approval = report.get("approval")
+        intent = report.get("intent")
+        receipt = report.get("receipt")
+        requester = str(approval.get("requested_by_user_id", "")) if isinstance(approval, dict) else ""
+        resolver = str(approval.get("resolved_by_user_id", "")) if isinstance(approval, dict) else ""
+        valid = bool(
+            report.get("classification") == "controlled-live-mainnet-proof"
+            and report.get("network") == "ARC-MAINNET"
+            and Decimal("0") < amount <= Decimal("0.01")
+            and report.get("decision_action") == "PAY"
+            and report.get("audit_chain_valid") is True
+            and isinstance(approval, dict)
+            and approval.get("status") == "APPROVED"
+            and requester
+            and resolver
+            and requester != resolver
+            and isinstance(intent, dict)
+            and intent.get("approval_reference") == approval.get("id")
+            and intent.get("network") == "ARC-MAINNET"
+            and Decimal(str(intent.get("amount_usdc"))) == amount
+            and isinstance(receipt, dict)
+            and receipt.get("provider") == "circle-developer-wallets+arc-rpc"
+            and receipt.get("network") == "ARC-MAINNET"
+            and receipt.get("status") == "CONFIRMED"
+            and re.fullmatch(r"0x[0-9a-fA-F]{64}", str(receipt.get("transaction_hash", "")))
+            and str(receipt.get("explorer_url", "")).startswith(
+                "https://explorer.arc.io/"
+            )
+            and report.get("idempotent_replay", {}).get("same_receipt") is True
+            and report.get("idempotent_replay", {}).get(
+                "second_request_reused_receipt"
+            )
+            is True
+        )
+    except (OSError, json.JSONDecodeError, ValueError, InvalidOperation) as exc:
+        return ReleaseCheck(
+            "external", "Controlled Arc Mainnet proof", "failed", f"Cannot verify: {exc}"
+        )
+    if not valid:
+        return ReleaseCheck(
+            "external",
+            "Controlled Arc Mainnet proof",
+            "failed",
+            "Artifact does not prove a capped, role-separated, Circle-backed, idempotent Arc Mainnet payment.",
+        )
+    return ReleaseCheck(
+        "external",
+        "Controlled Arc Mainnet proof",
+        "passed",
+        "Optional 0.01-USDC Mainnet proof is structurally complete and Circle/Arc bound.",
+        _hash_file(path),
+    )
+
+
 def _pilot_check(path_value: str | None) -> ReleaseCheck:
     if not path_value:
         return ReleaseCheck(
@@ -264,6 +323,7 @@ def audit_release(
     video_url: str | None = None,
     testnet_explorer_url: str | None = None,
     acceptance_artifact: str | None = None,
+    mainnet_acceptance_artifact: str | None = None,
     pilot_report: str | None = None,
     include_git: bool = True,
 ) -> dict[str, Any]:
@@ -322,6 +382,8 @@ def audit_release(
             _pilot_check(pilot_report),
         )
     )
+    if mainnet_acceptance_artifact is not None:
+        checks.append(_mainnet_acceptance_check(mainnet_acceptance_artifact))
     counts = {
         status: sum(check.status == status for check in checks)
         for status in ("passed", "pending", "failed")
@@ -345,6 +407,7 @@ def main() -> None:
     parser.add_argument("--video-url")
     parser.add_argument("--testnet-explorer-url")
     parser.add_argument("--acceptance-artifact")
+    parser.add_argument("--mainnet-acceptance-artifact")
     parser.add_argument("--pilot-report")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--require-complete", action="store_true")
@@ -356,6 +419,7 @@ def main() -> None:
         video_url=args.video_url,
         testnet_explorer_url=args.testnet_explorer_url,
         acceptance_artifact=args.acceptance_artifact,
+        mainnet_acceptance_artifact=args.mainnet_acceptance_artifact,
         pilot_report=args.pilot_report,
     )
     rendered = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

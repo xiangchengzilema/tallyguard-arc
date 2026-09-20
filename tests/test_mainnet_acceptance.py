@@ -51,6 +51,8 @@ def test_mainnet_acceptance_proves_approval_and_exactly_once_replay(tmp_path):
     assert report["decision_action"] == "PAY"
     assert report["approval"]["status"] == "APPROVED"
     assert report["approval"]["requested_by_user_id"] != report["approval"]["resolved_by_user_id"]
+    assert report["intent"]["approval_reference"] == report["approval"]["id"]
+    assert report["intent"]["network"] == "ARC-MAINNET"
     assert report["receipt"]["status"] == "CONFIRMED"
     assert report["idempotent_replay"]["second_request_reused_receipt"] is True
     assert report["audit_chain_valid"] is True
