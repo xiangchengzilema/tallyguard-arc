@@ -76,11 +76,13 @@ Every payment answers four questions:
 - The standalone `tallyguard-verify-packet` command validates that export without database or server access, deterministically replays all controls, checks payment bindings and event hashes, and can optionally re-prove a real transfer through Arc RPC
 - Auditors can export a stable, content-addressed CSV ledger of reconciled payments with invoice, vendor, evidence, policy, approval, Circle, and Arc proof fields; user-controlled cells are neutralized against spreadsheet formula injection
 - Persistent per-tenant tamper-evident audit chains with an authenticated verification endpoint
+- Auditor-only global ledger search filters the tenant chain by event type, object type, literal text, and time window; cursor pagination preserves original sequence numbers while chain validity is always computed over the complete tenant history
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with eight deterministic risk and recovery scenarios and a fresh-evidence workflow
 - The fresh-evidence path creates tenant-scoped vendor, policy, treasury, invoice, PO, and delivery records; uploads three hashed source files; evaluates them; and can produce a reconciled simulation receipt from one screen
 - A bring-your-own-evidence path validates three JSON files locally, previews the extracted financial fields for human confirmation, then persists the original bytes and runs the same policy pipeline
 - An auditor-only timeline filters the tenant hash chain to the active invoice and refreshes after evaluation, approval, and settlement so the judge can verify each state mutation on screen
+- A responsive global audit explorer performs server-side tenant-scoped search, displays correlation references and hash links, and loads older results without weakening full-chain verification
 - A tenant-scoped operations summary aggregates durable open exposure, blocked value, seven-day due risk, overdue value, reconciled value, treasury headroom, policy reserve, and a due-date-sorted invoice queue
 - A finance-governance panel exposes the active policy hash, autonomy cap, daily limit, reserve floor, settlement route, kill-switch state, and role-separated approve/reject actions across pending exceptions
 - The same governance view exposes server-calculated settlement capacity: observed balance, durable commitments, daily headroom, reserve floor, snapshot freshness, and the maximum new payment currently admissible

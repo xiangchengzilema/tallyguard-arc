@@ -129,6 +129,38 @@ export interface AuditTrail {
   events: AuditEvent[];
 }
 
+export interface AuditSearchFilters {
+  event_type: string | null;
+  aggregate_type: string | null;
+  aggregate_id: string | null;
+  query: string | null;
+  created_after: string | null;
+  created_before: string | null;
+  before_sequence: number | null;
+}
+
+export interface AuditSearchResult {
+  chainValid: boolean;
+  events: AuditEvent[];
+  filters: AuditSearchFilters;
+  page: {
+    limit: number;
+    has_more: boolean;
+    next_before_sequence: number | null;
+  };
+}
+
+export interface AuditSearchRequest {
+  query?: string;
+  eventType?: string;
+  aggregateType?: string;
+  aggregateId?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  beforeSequence?: number;
+  limit?: number;
+}
+
 export interface Approval {
   id: string;
   decision_id: string;
@@ -534,6 +566,7 @@ export interface BootstrapData {
   reliability: ReliabilityEvidence;
   governance: GovernanceOverview;
   vendorDirectory: VendorTrustRecord[];
+  auditSearch: AuditSearchResult;
   readiness: {
     status: string;
     database: string;

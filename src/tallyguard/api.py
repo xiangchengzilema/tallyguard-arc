@@ -3053,16 +3053,112 @@ def create_app(
     @app.get("/api/audit/events")
     @require(Permission.AUDIT_READ)
     def get_audit_events():
-        events = repository.audit_events(organization_id=g.principal.organization_id)
+        organization_id = g.principal.organization_id
+        if not request.args:
+            events = repository.audit_events(organization_id=organization_id)
+            return jsonify(
+                {
+                    "chain_valid": repository.verify_audit_chain(
+                        organization_id=organization_id
+                    ),
+                    "items": [_audit_event_json(event) for event in events],
+                    "page": {
+                        "limit": len(events),
+                        "has_more": False,
+                        "next_before_sequence": None,
+                    },
+                    "filters": {
+                        "event_type": None,
+                        "aggregate_type": None,
+                        "aggregate_id": None,
+                        "query": None,
+                        "created_after": None,
+                        "created_before": None,
+                        "before_sequence": None,
+                    },
+                    "correlation_id": _correlation_id(),
+                }
+            )
+
+        def bounded_argument(name: str, *, maximum: int) -> str | None:
+            value = request.args.get(name)
+            if value is None:
+                return None
+            value = value.strip()
+            if len(value) > maximum:
+                raise ValueError(f"Audit filter {name} exceeds {maximum} characters.")
+            return value or None
+
+        try:
+            limit = int(request.args.get("limit", "50"))
+            before_sequence_raw = request.args.get("before_sequence")
+            before_sequence = (
+                int(before_sequence_raw) if before_sequence_raw is not None else None
+            )
+        except ValueError as exc:
+            raise ValueError("Audit limit and cursor must be integers.") from exc
+        if not 1 <= limit <= 200:
+            raise ValueError("Audit limit must be between 1 and 200.")
+        if before_sequence is not None and before_sequence < 1:
+            raise ValueError("Audit cursor must be positive.")
+
+        def datetime_argument(name: str) -> datetime | None:
+            raw = bounded_argument(name, maximum=64)
+            if raw is None:
+                return None
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError(f"Audit filter {name} must be an ISO-8601 timestamp.") from exc
+            if parsed.tzinfo is None:
+                raise ValueError(f"Audit filter {name} must include a timezone.")
+            return parsed.astimezone(timezone.utc)
+
+        created_after = datetime_argument("created_after")
+        created_before = datetime_argument("created_before")
+        if (
+            created_after is not None
+            and created_before is not None
+            and created_after > created_before
+        ):
+            raise ValueError("Audit start time cannot be later than the end time.")
+
+        filters = {
+            "event_type": bounded_argument("event_type", maximum=80),
+            "aggregate_type": bounded_argument("aggregate_type", maximum=80),
+            "aggregate_id": bounded_argument("aggregate_id", maximum=200),
+            "query": bounded_argument("q", maximum=200),
+            "created_after": created_after,
+            "created_before": created_before,
+        }
+        candidates = repository.search_audit_events(
+            organization_id=organization_id,
+            **filters,
+            before_sequence=before_sequence,
+            limit=limit + 1,
+        )
+        has_more = len(candidates) > limit
+        events = candidates[:limit]
         return jsonify(
             {
                 "chain_valid": repository.verify_audit_chain(
-                    organization_id=g.principal.organization_id
+                    organization_id=organization_id
                 ),
-                "items": [
-                    _audit_event_json(event)
-                    for event in events
-                ],
+                "items": [_audit_event_json(event) for event in events],
+                "page": {
+                    "limit": limit,
+                    "has_more": has_more,
+                    "next_before_sequence": (
+                        events[-1].sequence if has_more and events else None
+                    ),
+                },
+                "filters": {
+                    **{
+                        key: value.isoformat() if isinstance(value, datetime) else value
+                        for key, value in filters.items()
+                    },
+                    "before_sequence": before_sequence,
+                },
                 "correlation_id": _correlation_id(),
             }
         )

@@ -130,6 +130,15 @@ SHA-256 of canonical packet JSON in both the body and `X-TallyGuard-Packet-SHA25
 bytes remain available through separately authorized evidence downloads and are not copied into
 the packet.
 
+## Searchable audit ledger
+
+`GET /api/audit/events` keeps the original full-chain response when called without filters. Auditor
+queries can additionally constrain exact event and aggregate types, literal text, and timezone-aware
+creation windows. Results are tenant-scoped and newest-first, with a stable sequence cursor for older
+pages. Search never changes the integrity claim: `chain_valid` is recomputed over the tenant's complete
+append-only chain rather than only the visible page. User search text is escaped before the SQLite
+`LIKE` expression so `%` and `_` remain literal input rather than wildcard operators.
+
 ## Policy what-if boundary
 
 An administrator may run a temporary policy patch against a decision's sealed replay inputs. Only

@@ -235,6 +235,7 @@ Implemented foundation:
 - Reviewers can select their own invoice, purchase-order, and delivery JSON files; client-side schema and relationship validation previews the extracted amounts, IDs, due date, and recipient before any record is persisted
 - A checked-in three-document Atlas fixture provides a reproducible upload-review-evaluate path without requiring credentials
 - The console reads audit data through a separate auditor session, filters it to the active invoice, verifies the full tenant chain, and refreshes after evaluation, approval, and reconciliation
+- The global audit explorer now performs tenant-scoped server-side search by literal text, event type, aggregate type, and timezone-aware date window, with newest-first cursor pagination and full-chain verification kept separate from the filtered result page
 - The audit view downloads the current invoice's Payment Evidence Packet and displays its server-computed content hash after a successful export
 - The decision view includes a visibly non-persistent policy sandbox that can demonstrate an autonomy-cap or kill-switch change against the exact sealed inputs and compare the resulting action and reason codes
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
@@ -256,7 +257,7 @@ Implemented foundation:
 - Approval inbox for exceptions (complete)
 - Settlement drawer with Arc transaction proof
 - Vendor risk and wallet-change history (complete)
-- Audit explorer with chain verification (active-invoice timeline complete; global search remains optional)
+- Audit explorer with chain verification (active-invoice timeline and global searchable ledger complete)
 - Seeded scenario switcher for fast judging
 - User-supplied document picker and extraction review before evaluation (structured JSON complete; PDF/image OCR adapter remains optional)
 

@@ -404,6 +404,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_aggregate
     ON audit_events (organization_id, aggregate_type, aggregate_id, sequence);
 
+CREATE INDEX IF NOT EXISTS idx_audit_tenant_event_type
+    ON audit_events (organization_id, event_type, sequence DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_transitions (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id TEXT NOT NULL,
@@ -2015,6 +2018,83 @@ class SqliteRepository:
                 WHERE organization_id = ? ORDER BY sequence
                 """,
                 (organization_id,),
+            ).fetchall()
+        return tuple(self._audit_event(row) for row in rows)
+
+    def search_audit_events(
+        self,
+        *,
+        organization_id: str,
+        event_type: str | None = None,
+        aggregate_type: str | None = None,
+        aggregate_id: str | None = None,
+        query: str | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        before_sequence: int | None = None,
+        limit: int = 50,
+    ) -> tuple[AuditEvent, ...]:
+        """Return a tenant-scoped, newest-first audit page.
+
+        ``query`` searches identifiers, event names, and the canonical JSON
+        payload. SQL wildcards are escaped so user text remains literal.
+        """
+
+        if not organization_id.strip():
+            raise PersistenceError("Audit search requires an organization ID.")
+        if not 1 <= limit <= 201:
+            raise PersistenceError("Audit search limit must be between 1 and 201.")
+        if before_sequence is not None and before_sequence < 1:
+            raise PersistenceError("Audit search cursor must be positive.")
+
+        clauses = ["organization_id = ?"]
+        parameters: list[object] = [organization_id]
+        for column, value in (
+            ("event_type", event_type),
+            ("aggregate_type", aggregate_type),
+            ("aggregate_id", aggregate_id),
+        ):
+            normalized = (value or "").strip()
+            if normalized:
+                clauses.append(f"{column} = ?")
+                parameters.append(normalized)
+        if before_sequence is not None:
+            clauses.append("sequence < ?")
+            parameters.append(before_sequence)
+        if created_after is not None:
+            clauses.append("created_at >= ?")
+            parameters.append(created_after.isoformat())
+        if created_before is not None:
+            clauses.append("created_at <= ?")
+            parameters.append(created_before.isoformat())
+        normalized_query = (query or "").strip()
+        if normalized_query:
+            escaped = (
+                normalized_query.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            pattern = f"%{escaped}%"
+            clauses.append(
+                "("
+                "event_type LIKE ? ESCAPE '\\' OR "
+                "aggregate_type LIKE ? ESCAPE '\\' OR "
+                "aggregate_id LIKE ? ESCAPE '\\' OR "
+                "payload_json LIKE ? ESCAPE '\\'"
+                ")"
+            )
+            parameters.extend((pattern, pattern, pattern, pattern))
+        parameters.append(limit)
+
+        with self._guard:
+            rows = self._connection.execute(
+                f"""
+                SELECT * FROM audit_events
+                WHERE {' AND '.join(clauses)}
+                ORDER BY sequence DESC
+                LIMIT ?
+                """,
+                tuple(parameters),
             ).fetchall()
         return tuple(self._audit_event(row) for row in rows)
 

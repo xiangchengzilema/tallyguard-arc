@@ -8,8 +8,12 @@ import {
   HeaderName,
   InlineLoading,
   InlineNotification,
+  Search,
+  Select,
+  SelectItem,
   SkeletonText,
   Tag,
+  TextInput,
   Theme,
 } from '@carbon/react';
 import {
@@ -37,6 +41,7 @@ import {
   downloadAgentRunProof,
   downloadEvidencePacket,
   executeAgentRun,
+  fetchAuditEvents,
   fetchGovernanceOverview,
   fetchInvoiceAudit,
   fetchOperationsOverview,
@@ -59,6 +64,8 @@ import type {
   Approval,
   AgentRun,
   AgentAction,
+  AuditSearchRequest,
+  AuditSearchResult,
   AuditTrail,
   BootstrapData,
   DecisionAction,
@@ -1275,6 +1282,128 @@ function AuditTimeline({
   );
 }
 
+const AUDIT_EVENT_OPTIONS = [
+  'AGENT_RUN_EXECUTED',
+  'AGENT_RUN_PLANNED',
+  'APPROVAL_REQUESTED',
+  'APPROVAL_RESOLVED',
+  'EVIDENCE_INGESTED',
+  'POLICY_EVALUATED',
+  'SETTLEMENT_PROVIDER_UNAVAILABLE',
+  'SETTLEMENT_RECONCILED',
+  'TREASURY_SNAPSHOT_RECORDED',
+  'VENDOR_WALLET_REPLACED',
+];
+
+const AUDIT_AGGREGATE_OPTIONS = [
+  'agent_run',
+  'approval',
+  'decision',
+  'evidence',
+  'payment',
+  'policy',
+  'schedule',
+  'settlement_gate',
+  'treasury_snapshot',
+  'vendor',
+  'vendor_wallet_change',
+];
+
+function toIsoTimestamp(value: string): string | undefined {
+  if (!value) return undefined;
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? undefined : timestamp.toISOString();
+}
+
+function AuditExplorer({
+  result,
+  busy,
+  onSearch,
+  onLoadMore,
+}: {
+  result: AuditSearchResult;
+  busy: boolean;
+  onSearch: (filters: AuditSearchRequest) => void;
+  onLoadMore: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [eventType, setEventType] = useState('');
+  const [aggregateType, setAggregateType] = useState('');
+  const [createdAfter, setCreatedAfter] = useState('');
+  const [createdBefore, setCreatedBefore] = useState('');
+  const search = () => onSearch({
+    query,
+    eventType,
+    aggregateType,
+    createdAfter: toIsoTimestamp(createdAfter),
+    createdBefore: toIsoTimestamp(createdBefore),
+    limit: 12,
+  });
+
+  return (
+    <section className="tenant-audit" aria-label="Searchable tenant audit ledger">
+      <div className="tenant-audit__head">
+        <div>
+          <span className="eyebrow">Tenant-wide audit ledger</span>
+          <h2>Search every decision, handoff, and settlement proof.</h2>
+          <p>Filters run server-side inside the active tenant boundary. Correlation IDs in canonical payloads are searchable without weakening the hash chain.</p>
+        </div>
+        <Tag type={result.chainValid ? 'green' : 'red'}>{result.chainValid ? 'Full chain verified' : 'Chain invalid'}</Tag>
+      </div>
+      <div className="tenant-audit__filters">
+        <Search
+          id="tenant-audit-query"
+          labelText="Search audit events"
+          placeholder="Aggregate ID, event, invoice, correlation ID…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') search(); }}
+        />
+        <Select id="tenant-audit-event" labelText="Event type" value={eventType} onChange={(event) => setEventType(event.target.value)}>
+          <SelectItem value="" text="All events" />
+          {AUDIT_EVENT_OPTIONS.map((value) => <SelectItem key={value} value={value} text={value.replaceAll('_', ' ')} />)}
+        </Select>
+        <Select id="tenant-audit-aggregate" labelText="Object type" value={aggregateType} onChange={(event) => setAggregateType(event.target.value)}>
+          <SelectItem value="" text="All objects" />
+          {AUDIT_AGGREGATE_OPTIONS.map((value) => <SelectItem key={value} value={value} text={value.replaceAll('_', ' ')} />)}
+        </Select>
+        <TextInput id="tenant-audit-after" type="datetime-local" labelText="From" value={createdAfter} onChange={(event) => setCreatedAfter(event.target.value)} />
+        <TextInput id="tenant-audit-before" type="datetime-local" labelText="To" value={createdBefore} onChange={(event) => setCreatedBefore(event.target.value)} />
+        <Button kind="primary" size="md" disabled={busy} onClick={search}>Search ledger</Button>
+      </div>
+      <div className="tenant-audit__meta">
+        <span>{result.events.length} events loaded · newest first</span>
+        <code>{result.filters.query || result.filters.event_type || result.filters.aggregate_type || 'unfiltered latest page'}</code>
+      </div>
+      <div className="tenant-audit__events">
+        {result.events.length ? result.events.map((event) => {
+          const correlation = typeof event.payload.correlation_id === 'string' ? event.payload.correlation_id : null;
+          return (
+            <article key={`${event.sequence}-${event.event_hash}`}>
+              <span>#{String(event.sequence).padStart(4, '0')}</span>
+              <div>
+                <strong>{event.event_type.replaceAll('_', ' ')}</strong>
+                <small>{event.aggregate_type} · {event.aggregate_id}</small>
+                {correlation ? <code>{correlation}</code> : null}
+              </div>
+              <div>
+                <time>{new Date(event.created_at).toLocaleString()}</time>
+                <code>{shorten(event.event_hash, 10, 8)}</code>
+              </div>
+            </article>
+          );
+        }) : <div className="tenant-audit__empty">No tenant event matches these filters.</div>}
+      </div>
+      <div className="tenant-audit__foot">
+        <span>Every result retains its original sequence and SHA-256 link to the complete tenant chain.</span>
+        <Button kind="ghost" size="sm" disabled={busy || !result.page.has_more} onClick={onLoadMore}>
+          {result.page.has_more ? 'Load older events' : 'End of result set'}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [data, setData] = useState<BootstrapData | null>(null);
   const [selectedKey, setSelectedKey] = useState('clean-payment');
@@ -1300,6 +1429,7 @@ function App() {
   const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
   const [agentProofHash, setAgentProofHash] = useState<string | null>(null);
   const [ledgerExport, setLedgerExport] = useState<{ hash: string; rows: number } | null>(null);
+  const [auditSearch, setAuditSearch] = useState<AuditSearchResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1312,6 +1442,7 @@ function App() {
           setAgentRun(result.agentRun);
           setGovernance(result.governance);
           setVendorDirectory(result.vendorDirectory);
+          setAuditSearch(result.auditSearch);
           setSelectedKey(result.scenarios[0]?.key ?? 'clean-payment');
         }
       })
@@ -1333,6 +1464,30 @@ function App() {
       setBusy(null);
     }
   }, []);
+
+  const handleAuditSearch = useCallback((filters: AuditSearchRequest) => {
+    if (!data) return;
+    void act('Searching the tenant audit ledger', async () => {
+      setAuditSearch(await fetchAuditEvents(data.sessions.auditor, filters));
+    });
+  }, [act, data]);
+
+  const handleLoadMoreAudit = useCallback(() => {
+    if (!data || !auditSearch?.page.next_before_sequence) return;
+    void act('Loading older audit events', async () => {
+      const next = await fetchAuditEvents(data.sessions.auditor, {
+        query: auditSearch.filters.query ?? undefined,
+        eventType: auditSearch.filters.event_type ?? undefined,
+        aggregateType: auditSearch.filters.aggregate_type ?? undefined,
+        aggregateId: auditSearch.filters.aggregate_id ?? undefined,
+        createdAfter: auditSearch.filters.created_after ?? undefined,
+        createdBefore: auditSearch.filters.created_before ?? undefined,
+        beforeSequence: auditSearch.page.next_before_sequence ?? undefined,
+        limit: auditSearch.page.limit,
+      });
+      setAuditSearch({ ...next, events: [...auditSearch.events, ...next.events] });
+    });
+  }, [act, auditSearch, data]);
 
   const handleRun = useCallback((key: string) => {
     if (!data) return;
@@ -1703,6 +1858,15 @@ function App() {
         ) : null}
 
         <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} />
+
+        {auditSearch ? (
+          <AuditExplorer
+            result={auditSearch}
+            busy={busy !== null}
+            onSearch={handleAuditSearch}
+            onLoadMore={handleLoadMoreAudit}
+          />
+        ) : null}
 
         {data ? <ReliabilityPanel evidence={data.reliability} /> : null}
 

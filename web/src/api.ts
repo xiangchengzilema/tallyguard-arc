@@ -2,6 +2,8 @@ import type {
   Approval,
   AgentRun,
   AuditEvent,
+  AuditSearchRequest,
+  AuditSearchResult,
   AuditTrail,
   BootstrapData,
   EvidenceFileBundle,
@@ -71,13 +73,14 @@ export async function bootstrap(): Promise<BootstrapData> {
     Promise.all(sessionRoles.map(createSession)),
   ]);
   const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  const [operations, incidents, agentRun, reliability, governance, vendorDirectory] = await Promise.all([
+  const [operations, incidents, agentRun, reliability, governance, vendorDirectory, auditSearch] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchSettlementIncidents(sessions.auditor),
     fetchLatestAgentRun(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
     fetchGovernanceOverview(sessions.approver),
     fetchVendorDirectory(sessions.auditor),
+    fetchAuditEvents(sessions.auditor, { limit: 12 }),
   ]);
   return {
     scenarios: catalog.items,
@@ -89,6 +92,7 @@ export async function bootstrap(): Promise<BootstrapData> {
     reliability,
     governance,
     vendorDirectory,
+    auditSearch,
   };
 }
 
@@ -636,6 +640,40 @@ export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string)
     event.aggregate_id === invoiceId || event.payload.invoice_id === invoiceId
   ));
   return { chainValid: payload.chain_valid, events };
+}
+
+export async function fetchAuditEvents(
+  auditorToken: string,
+  filters: AuditSearchRequest = {},
+): Promise<AuditSearchResult> {
+  const parameters = new URLSearchParams();
+  const values: Array<[string, string | number | undefined]> = [
+    ['q', filters.query],
+    ['event_type', filters.eventType],
+    ['aggregate_type', filters.aggregateType],
+    ['aggregate_id', filters.aggregateId],
+    ['created_after', filters.createdAfter],
+    ['created_before', filters.createdBefore],
+    ['before_sequence', filters.beforeSequence],
+    ['limit', filters.limit ?? 12],
+  ];
+  for (const [key, value] of values) {
+    if (value !== undefined && String(value).trim() !== '') {
+      parameters.set(key, String(value));
+    }
+  }
+  const payload = await request<{
+    chain_valid: boolean;
+    items: AuditEvent[];
+    filters: AuditSearchResult['filters'];
+    page: AuditSearchResult['page'];
+  }>(`/api/audit/events?${parameters.toString()}`, { method: 'GET' }, auditorToken);
+  return {
+    chainValid: payload.chain_valid,
+    events: payload.items,
+    filters: payload.filters,
+    page: payload.page,
+  };
 }
 
 export async function verifyDecisionReplay(
