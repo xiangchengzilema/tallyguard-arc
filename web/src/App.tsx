@@ -8,6 +8,7 @@ import {
   HeaderName,
   InlineLoading,
   InlineNotification,
+  Modal,
   Search,
   Select,
   SelectItem,
@@ -120,6 +121,13 @@ const LIVE_STEPS = [
   ['02', 'Lock controls', 'Activate an immutable policy and treasury snapshot.'],
   ['03', 'Ingest evidence', 'Hash and upload invoice, PO, and delivery JSON.'],
   ['04', 'Evaluate', 'Compare the agent opinion with deterministic controls.'],
+] as const;
+
+const TEAM_ROLES = [
+  ['Admin', 'Defines tenant membership and governance configuration; cannot silently replace another role.'],
+  ['Finance operator', 'Ingests evidence, plans agent work, and requests settlement or policy exceptions.'],
+  ['Approver', 'Independently resolves bound exceptions and authorizes eligible settlement actions.'],
+  ['Auditor', 'Reads decisions, receipts, proof packets, and the tenant-wide hash-linked ledger.'],
 ] as const;
 
 function StatusTag({ action }: { action: DecisionAction }) {
@@ -1616,6 +1624,7 @@ function App() {
   const [agentProofHash, setAgentProofHash] = useState<string | null>(null);
   const [ledgerExport, setLedgerExport] = useState<{ hash: string; rows: number } | null>(null);
   const [auditSearch, setAuditSearch] = useState<AuditSearchResult | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
 
   const installBootstrap = useCallback((result: BootstrapData) => {
     setData(result);
@@ -1975,10 +1984,43 @@ function App() {
               <Locked size={20} />
             </HeaderGlobalAction>
           ) : (
-            <HeaderGlobalAction aria-label="Role-separated team"><UserMultiple size={20} /></HeaderGlobalAction>
+            <HeaderGlobalAction aria-label="Role-separated team" onClick={() => setTeamOpen(true)}>
+              <UserMultiple size={20} />
+            </HeaderGlobalAction>
           )}
         </HeaderGlobalBar>
       </Header>
+
+      <Modal
+        open={teamOpen}
+        passiveModal
+        modalHeading="Four roles. One isolated finance workspace."
+        modalLabel="Role-separated access"
+        onRequestClose={() => setTeamOpen(false)}
+      >
+        <div className="team-boundary">
+          <p>
+            Every browser receives four distinct, short-lived sessions inside one fresh tenant.
+            Tokens stay in page memory, and no role can bypass the controls assigned to another.
+          </p>
+          <div className="team-boundary__workspace">
+            <span>Current workspace</span>
+            <code>{data?.workspaceId ?? 'Waiting for isolated workspace'}</code>
+          </div>
+          <div className="team-boundary__roles">
+            {TEAM_ROLES.map(([name, description], index) => (
+              <article key={name}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <div>
+                  <strong>{name}</strong>
+                  <p>{description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+          <small>Public simulation only · no wallet credentials · no funds move</small>
+        </div>
+      </Modal>
 
       <Content id="main-content">
         <div className="context-bar">

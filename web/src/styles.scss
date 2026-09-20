@@ -58,6 +58,19 @@ body {
   border-left: 1px solid #3f4a49;
 }
 
+.team-boundary { display: grid; gap: 1.25rem; padding-bottom: .5rem; }
+.team-boundary > p { max-width: 66ch; margin: 0; color: var(--tg-muted); line-height: 1.55; }
+.team-boundary > small { color: var(--tg-muted); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
+.team-boundary__workspace { display: grid; gap: .35rem; padding: .9rem 1rem; border-left: 3px solid var(--tg-accent); background: var(--tg-soft); }
+.team-boundary__workspace span { color: var(--tg-muted); font-size: .6875rem; letter-spacing: .08em; text-transform: uppercase; }
+.team-boundary__workspace code { overflow-wrap: anywhere; font-size: .8125rem; }
+.team-boundary__roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--tg-line); border-left: 1px solid var(--tg-line); }
+.team-boundary__roles article { display: grid; grid-template-columns: auto 1fr; gap: .8rem; min-height: 132px; padding: 1rem; border-right: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); }
+.team-boundary__roles article > span { color: var(--tg-accent-dark); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
+.team-boundary__roles article div { display: grid; align-content: start; gap: .45rem; }
+.team-boundary__roles strong { font-size: .875rem; }
+.team-boundary__roles p { margin: 0; color: var(--tg-muted); font-size: .75rem; line-height: 1.45; }
+
 .eyebrow {
   display: block;
   color: var(--tg-accent-dark);
@@ -670,6 +683,7 @@ body {
 
 @media (max-width: 800px) {
   .header-context { display: none; }
+  .team-boundary__roles { grid-template-columns: 1fr; }
   .cds--content { padding: 4.5rem .75rem 1rem; }
   .context-bar { align-items: flex-start; flex-direction: column; }
   .context-bar h1 { font-size: 2.5rem; }
