@@ -1,7 +1,7 @@
-"""Explicit Circle developer-wallet provisioning for Arc Testnet.
+"""Explicit Circle developer-wallet provisioning for Arc Testnet or Mainnet.
 
 This command creates account resources but never funds a wallet or submits a
-transfer. It is intentionally locked to ARC-TESTNET and requires a typed
+transfer. Mainnet additionally requires the runtime gate and a distinct typed
 confirmation phrase before any Circle mutation.
 """
 
@@ -15,11 +15,12 @@ from typing import Any
 from uuid import uuid4
 
 from .circle_arc import CircleConfigurationError, _enum_value
-from .network import ArcNetwork
+from .network import ArcNetwork, ArcNetworkConfig
 from .environment import load_local_environment
 
 
-CONFIRMATION_PHRASE = "CREATE-ARC-TESTNET-WALLET"
+TESTNET_CONFIRMATION_PHRASE = "CREATE-ARC-TESTNET-WALLET"
+MAINNET_CONFIRMATION_PHRASE = "CREATE-ARC-MAINNET-WALLET"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +51,7 @@ class AcceptanceWalletPair:
 
 
 class CircleWalletProvisioner:
-    """Small official-SDK bridge dedicated to one Arc Testnet EOA wallet."""
+    """Small official-SDK bridge dedicated to an explicitly selected Arc network."""
 
     def __init__(self, *, api_key: str, entity_secret: str) -> None:
         if not api_key.strip() or not entity_secret.strip():
@@ -90,11 +91,13 @@ class CircleWalletProvisioner:
     def provision(
         self,
         *,
+        config: ArcNetworkConfig | None = None,
         wallet_set_id: str | None = None,
-        wallet_set_name: str = "TallyGuard Arc Testnet",
+        wallet_set_name: str | None = None,
     ) -> ProvisionedWallet:
         return self.provision_wallets(
             count=1,
+            config=config,
             wallet_set_id=wallet_set_id,
             wallet_set_name=wallet_set_name,
         )[0]
@@ -102,11 +105,13 @@ class CircleWalletProvisioner:
     def provision_acceptance_pair(
         self,
         *,
+        config: ArcNetworkConfig | None = None,
         wallet_set_id: str | None = None,
-        wallet_set_name: str = "TallyGuard Arc Testnet",
+        wallet_set_name: str | None = None,
     ) -> AcceptanceWalletPair:
         wallets = self.provision_wallets(
             count=2,
+            config=config,
             wallet_set_id=wallet_set_id,
             wallet_set_name=wallet_set_name,
         )
@@ -120,17 +125,20 @@ class CircleWalletProvisioner:
         self,
         *,
         count: int,
+        config: ArcNetworkConfig | None = None,
         wallet_set_id: str | None = None,
-        wallet_set_name: str = "TallyGuard Arc Testnet",
+        wallet_set_name: str | None = None,
     ) -> tuple[ProvisionedWallet, ...]:
         if count not in {1, 2}:
             raise ValueError("TallyGuard provisioning is limited to one wallet or one acceptance pair.")
+        selected_config = config or ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+        selected_set_name = wallet_set_name or f"TallyGuard {selected_config.name.value}"
         selected_set_id = (wallet_set_id or "").strip()
         if not selected_set_id:
             request = self._sdk.CreateWalletSetRequest.from_dict(
                 {
                     "idempotencyKey": str(uuid4()),
-                    "name": wallet_set_name,
+                    "name": selected_set_name,
                 }
             )
             response = self._wallet_sets.create_wallet_set(request)
@@ -142,7 +150,7 @@ class CircleWalletProvisioner:
             {
                 "idempotencyKey": str(uuid4()),
                 "accountType": "EOA",
-                "blockchains": [ArcNetwork.TESTNET.value],
+                "blockchains": [selected_config.circle_blockchain],
                 "count": count,
                 "walletSetId": selected_set_id,
             }
@@ -155,9 +163,10 @@ class CircleWalletProvisioner:
         for item in wallets:
             wallet = _unwrap_wallet(item)
             blockchain = _enum_value(getattr(wallet, "blockchain", ""))
-            if blockchain != ArcNetwork.TESTNET.value:
+            if blockchain != selected_config.circle_blockchain:
                 raise CircleConfigurationError(
-                    f"Circle created a wallet on {blockchain or '<unknown>'}, not ARC-TESTNET."
+                    "Circle created a wallet on "
+                    f"{blockchain or '<unknown>'}, not {selected_config.circle_blockchain}."
                 )
             address = str(getattr(wallet, "address", ""))
             if not _is_evm_address(address):
@@ -196,50 +205,107 @@ def _is_evm_address(value: str) -> bool:
     return True
 
 
+def validate_provisioning_authorization(
+    *,
+    config: ArcNetworkConfig,
+    confirmation: str,
+    allow_mainnet: bool,
+) -> None:
+    expected = (
+        MAINNET_CONFIRMATION_PHRASE
+        if config.is_mainnet
+        else TESTNET_CONFIRMATION_PHRASE
+    )
+    if confirmation != expected:
+        raise CircleConfigurationError(
+            f"Provisioning confirmation must exactly equal {expected}."
+        )
+    if config.is_mainnet and not allow_mainnet:
+        raise CircleConfigurationError(
+            "Arc Mainnet wallet provisioning requires TALLYGUARD_ALLOW_MAINNET=true."
+        )
+
+
 def main() -> None:
     load_local_environment()
     parser = argparse.ArgumentParser(
-        description="Create one dedicated Circle developer-controlled EOA wallet on Arc Testnet"
+        description="Create dedicated Circle developer-controlled EOA wallets on an explicit Arc network"
     )
-    parser.add_argument("--confirm", required=True, help=f"must equal {CONFIRMATION_PHRASE}")
+    parser.add_argument(
+        "--network",
+        choices=[network.value for network in ArcNetwork],
+        default=os.getenv("TALLYGUARD_ARC_NETWORK", ArcNetwork.TESTNET.value),
+    )
+    parser.add_argument(
+        "--confirm",
+        required=True,
+        help=(
+            f"must equal {TESTNET_CONFIRMATION_PHRASE} on Testnet or "
+            f"{MAINNET_CONFIRMATION_PHRASE} on Mainnet"
+        ),
+    )
     parser.add_argument(
         "--wallet-set-id",
         default=os.getenv("CIRCLE_WALLET_SET_ID", ""),
         help="reuse an existing Circle wallet set; otherwise one new set is created",
     )
-    parser.add_argument("--wallet-set-name", default="TallyGuard Arc Testnet")
+    parser.add_argument("--wallet-set-name")
     parser.add_argument(
         "--acceptance-pair",
         action="store_true",
-        help="create separate treasury and controlled-recipient wallets for Testnet acceptance",
+        help="create separate treasury and controlled-recipient wallets",
     )
     args = parser.parse_args()
 
-    if args.confirm != CONFIRMATION_PHRASE:
-        raise SystemExit(f"Refusing to create account resources: --confirm must equal {CONFIRMATION_PHRASE}.")
+    config = ArcNetworkConfig.for_network(args.network)
+    allow_mainnet = os.getenv("TALLYGUARD_ALLOW_MAINNET", "false").strip().lower() == "true"
+    try:
+        validate_provisioning_authorization(
+            config=config,
+            confirmation=args.confirm,
+            allow_mainnet=allow_mainnet,
+        )
+    except CircleConfigurationError as exc:
+        raise SystemExit(f"Refusing to create account resources: {exc}") from exc
 
     provisioner = CircleWalletProvisioner.from_env()
     if args.acceptance_pair:
         pair = provisioner.provision_acceptance_pair(
+            config=config,
             wallet_set_id=args.wallet_set_id,
             wallet_set_name=args.wallet_set_name,
         )
         output = pair.to_dict()
-        output["next_steps"] = [
-            "Store treasury.wallet_id locally as CIRCLE_WALLET_ID.",
-            "Store recipient.address locally as TALLYGUARD_ACCEPTANCE_RECIPIENT.",
-            "Fund only treasury.address with Arc Testnet USDC from the Circle Faucet.",
-            "Run tallyguard-preflight before the explicit acceptance transfer.",
-        ]
+        output["network"] = config.name.value
+        if config.is_mainnet:
+            output["next_steps"] = [
+                "Store treasury.wallet_id locally as CIRCLE_WALLET_ID.",
+                "Keep both wallets unfunded until Arc Testnet acceptance has passed.",
+                "Fund only treasury.address with a deliberately small Arc Mainnet USDC balance.",
+                "Run the full read-only tallyguard-preflight before any transfer.",
+                "Create and independently resolve a decision-bound mainnet approval.",
+            ]
+        else:
+            output["next_steps"] = [
+                "Store treasury.wallet_id locally as CIRCLE_WALLET_ID.",
+                "Store recipient.address locally as TALLYGUARD_ACCEPTANCE_RECIPIENT.",
+                "Fund only treasury.address with Arc Testnet USDC from the Circle Faucet.",
+                "Run tallyguard-preflight before the explicit acceptance transfer.",
+            ]
     else:
         wallet = provisioner.provision(
+            config=config,
             wallet_set_id=args.wallet_set_id,
             wallet_set_name=args.wallet_set_name,
         )
         output = wallet.to_dict()
+        output["network"] = config.name.value
         output["next_step"] = (
-            "Store wallet_id locally as CIRCLE_WALLET_ID, request Arc Testnet USDC from the Circle "
-            "Faucet for the returned address, then run tallyguard-preflight."
+            "Store wallet_id locally as CIRCLE_WALLET_ID, keep the wallet low-balance, and run the "
+            "full read-only tallyguard-preflight before any transfer."
+            if config.is_mainnet
+            else "Store wallet_id locally as CIRCLE_WALLET_ID, request Arc Testnet USDC from the "
+            "Circle Faucet for the returned address, then run tallyguard-preflight."
         )
     print(json.dumps(output, indent=2))
 

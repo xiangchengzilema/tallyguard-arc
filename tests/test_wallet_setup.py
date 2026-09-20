@@ -3,7 +3,13 @@ from types import SimpleNamespace
 import pytest
 
 from tallyguard.circle_arc import CircleConfigurationError
-from tallyguard.wallet_setup import CircleWalletProvisioner
+from tallyguard.network import ArcNetwork, ArcNetworkConfig
+from tallyguard.wallet_setup import (
+    MAINNET_CONFIRMATION_PHRASE,
+    TESTNET_CONFIRMATION_PHRASE,
+    CircleWalletProvisioner,
+    validate_provisioning_authorization,
+)
 
 
 WALLET_SET_ID = "301e9038-e4c3-5a77-a9fe-95fd644f4c85"
@@ -123,6 +129,29 @@ def test_provision_fails_closed_if_circle_returns_wrong_network():
         client.provision(wallet_set_id=WALLET_SET_ID)
 
 
+def test_provision_creates_mainnet_wallet_only_on_circle_arc_identifier():
+    client = provisioner(wallets=FakeWallets(blockchain="ARC"))
+    config = ArcNetworkConfig.for_network(ArcNetwork.MAINNET)
+
+    created = client.provision(
+        config=config,
+        wallet_set_id=WALLET_SET_ID,
+    )
+
+    assert created.blockchain == "ARC"
+    assert client._wallets.requests[0]["blockchains"] == ["ARC"]
+
+
+def test_provision_mainnet_rejects_testnet_wallet_response():
+    client = provisioner(wallets=FakeWallets(blockchain="ARC-TESTNET"))
+
+    with pytest.raises(CircleConfigurationError, match="not ARC"):
+        client.provision(
+            config=ArcNetworkConfig.for_network(ArcNetwork.MAINNET),
+            wallet_set_id=WALLET_SET_ID,
+        )
+
+
 def test_provision_fails_closed_if_circle_returns_invalid_address():
     client = provisioner(wallets=FakeWallets(address="not-an-address"))
 
@@ -139,3 +168,41 @@ def test_from_env_reports_only_missing_variable_names(monkeypatch):
 
     assert "CIRCLE_WEB3_API_KEY" in str(exc_info.value)
     assert "CIRCLE_ENTITY_SECRET" in str(exc_info.value)
+
+
+def test_testnet_provisioning_requires_testnet_confirmation():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    validate_provisioning_authorization(
+        config=config,
+        confirmation=TESTNET_CONFIRMATION_PHRASE,
+        allow_mainnet=False,
+    )
+    with pytest.raises(CircleConfigurationError, match=TESTNET_CONFIRMATION_PHRASE):
+        validate_provisioning_authorization(
+            config=config,
+            confirmation=MAINNET_CONFIRMATION_PHRASE,
+            allow_mainnet=True,
+        )
+
+
+def test_mainnet_provisioning_requires_distinct_phrase_and_runtime_gate():
+    config = ArcNetworkConfig.for_network(ArcNetwork.MAINNET)
+
+    with pytest.raises(CircleConfigurationError, match=MAINNET_CONFIRMATION_PHRASE):
+        validate_provisioning_authorization(
+            config=config,
+            confirmation=TESTNET_CONFIRMATION_PHRASE,
+            allow_mainnet=True,
+        )
+    with pytest.raises(CircleConfigurationError, match="ALLOW_MAINNET"):
+        validate_provisioning_authorization(
+            config=config,
+            confirmation=MAINNET_CONFIRMATION_PHRASE,
+            allow_mainnet=False,
+        )
+    validate_provisioning_authorization(
+        config=config,
+        confirmation=MAINNET_CONFIRMATION_PHRASE,
+        allow_mainnet=True,
+    )

@@ -81,6 +81,22 @@ locally as `CIRCLE_WALLET_ID`, store the recipient address as
 `TALLYGUARD_ACCEPTANCE_RECIPIENT`, and fund only the treasury address from the Circle Faucet.
 Omit `--acceptance-pair` when a single existing controlled recipient will be used instead.
 
+The same provisioner can create a dedicated Arc Mainnet wallet or controlled pair, but only when
+the network, runtime gate, and mainnet-specific phrase all agree. This creates Circle account
+resources only; it does not fund a wallet or submit a transfer:
+
+```powershell
+$env:TALLYGUARD_ARC_NETWORK = "ARC-MAINNET"
+$env:TALLYGUARD_ALLOW_MAINNET = "true"
+tallyguard-wallet-setup `
+  --network ARC-MAINNET `
+  --confirm CREATE-ARC-MAINNET-WALLET `
+  --acceptance-pair
+```
+
+Keep the returned addresses unfunded until the Testnet acceptance gate below passes. Then fund
+only the dedicated treasury address with the deliberately small amount approved for the proof.
+
 Live Circle mode disables `/api/demo/session` by default. Do not enable
 `TALLYGUARD_ENABLE_DEMO_SESSIONS` on any deployment connected to a funded wallet. The public
 judge deployment remains in credential-free simulation mode, where seeded demo identities are
@@ -163,6 +179,8 @@ Before any mainnet proof:
 - rerun the same internal payment request and verify no second provider submission occurs;
 - test wrong recipient, wrong amount, reverted receipt, missing receipt, delayed Circle state, and provider failure paths;
 - run the full unit and multi-tenant load suites.
+- create the dedicated mainnet wallet only with the separate mainnet confirmation phrase;
+- request a durable mainnet approval for the exact `PAY` decision and have a different role resolve it.
 
 The mainnet flag must not be enabled until this gate passes.
 
