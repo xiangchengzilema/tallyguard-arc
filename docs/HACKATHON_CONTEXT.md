@@ -64,7 +64,7 @@ Strongly encouraged:
 - A one-click browser sample loads three reproducible PDFs and runs the real authenticated extraction path, so a public reviewer does not need repository fixtures
 - A role-separated auditor timeline exposes linked event hashes and verified-chain status, including the settlement reconciliation event after payment
 - An optional hosted-model analyst is now available behind environment-only credentials; its output cannot include payment parameters and cannot override deterministic authorization
-- A reproducible real-HTTP deployment smoke now verifies the built console, probes, three separate roles, deterministic decision, simulation settlement, reconciliation, and hashed accounting export; its checked-in report is explicitly synthetic and CI reruns all seven checks
+- A reproducible real-HTTP deployment smoke now verifies the built console, probes, three separate roles, deterministic decision, simulation settlement, reconciliation, hashed accounting export, and session revocation; its checked-in report is explicitly synthetic and CI reruns all eight checks
 - Eight judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter
 - Circle completion is independently reconciled against Arc RPC and the exact USDC transfer event

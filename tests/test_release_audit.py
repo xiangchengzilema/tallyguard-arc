@@ -7,6 +7,7 @@ from tallyguard.release_audit import (
     _acceptance_check,
     _check_png_dimensions,
     _check_text_fragments,
+    _deployment_report_valid,
     _git_commit_check,
     _mainnet_acceptance_check,
     _pilot_check,
@@ -58,6 +59,37 @@ def test_video_runbook_check_requires_all_three_widths_and_single_product_claim(
     failed = _check_text_fragments(tmp_path, "runbook.md", required)
     assert failed.status == "failed"
     assert "768px" in failed.detail
+
+
+def test_deployment_report_validation_requires_safe_session_cleanup():
+    required = (
+        "judge_console",
+        "health_probe",
+        "safe_readiness",
+        "role_separation",
+        "deterministic_decision",
+        "simulation_settlement",
+        "accounting_export",
+        "session_revocation",
+    )
+    report = {
+        "classification": "synthetic deployment acceptance; not customer traction",
+        "summary": {"status": "passed", "checks_passed": 8, "checks_failed": 0},
+        "safety": {
+            "settlement_mode": "simulation",
+            "funds_moved": False,
+            "mainnet_enabled": False,
+            "credentials_required": False,
+        },
+        "checks": [
+            {"name": name, "status": "passed", "detail": "verified"}
+            for name in required
+        ],
+    }
+
+    assert _deployment_report_valid(report) is True
+    report["checks"][-1]["status"] = "failed"
+    assert _deployment_report_valid(report) is False
 
 
 def test_acceptance_check_requires_capped_arc_testnet_proof(tmp_path):

@@ -86,6 +86,9 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Select the AP/AR Automation Agent track and mention the secondary
   Compliance Intelligence fit in the description.
 - [ ] Recheck repository, live product, video, deck, Explorer, and pilot links.
+- [ ] Run `tallyguard-deployment-smoke --base-url <LIVE_URL> --output
+  artifacts/remote-deployment-smoke.json` from outside the host and confirm all
+  eight public workflow checks pass while funds movement and mainnet stay disabled.
 - [ ] Save screenshots of the completed form before submitting.
 - [ ] Submit before the internal deadline, then reopen the confirmation page or
   email and preserve proof of submission.

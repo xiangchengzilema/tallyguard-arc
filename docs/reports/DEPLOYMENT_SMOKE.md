@@ -8,7 +8,7 @@ Settlement profile: simulation, Arc Mainnet disabled
 
 ## Result
 
-All seven deployment checks passed against a production-shaped Flask
+All eight deployment checks passed against a production-shaped Flask
 application bound to an ephemeral loopback TCP port:
 
 1. The built React judge console returned HTTP 200 and its root marker.
@@ -21,6 +21,7 @@ application bound to an ephemeral loopback TCP port:
    `CONFIRMED` and the invoice reached `RECONCILED`.
 7. The auditor exported one accounting row whose invoice, decision,
    transaction, status, row count, and SHA-256 content address all matched.
+8. All three temporary finance-role sessions were revoked before the run ended.
 
 The raw machine-readable result is in
 [`deployment-smoke.json`](deployment-smoke.json).

@@ -34,10 +34,15 @@
       "detail": "One reconciled row matched invoice, decision, receipt, and SHA-256.",
       "name": "accounting_export",
       "status": "passed"
+    },
+    {
+      "detail": "All temporary finance-role sessions were revoked.",
+      "name": "session_revocation",
+      "status": "passed"
     }
   ],
   "classification": "synthetic deployment acceptance; not customer traction",
-  "generated_at": "2026-09-20T00:49:41.057699+00:00",
+  "generated_at": "2026-09-20T05:29:06.330954+00:00",
   "safety": {
     "credentials_required": false,
     "funds_moved": false,
@@ -47,8 +52,8 @@
   "schema_version": "1.0",
   "summary": {
     "checks_failed": 0,
-    "checks_passed": 7,
-    "duration_ms": 1237.44,
+    "checks_passed": 8,
+    "duration_ms": 1691.63,
     "status": "passed"
   },
   "target": "loopback ephemeral HTTP server"

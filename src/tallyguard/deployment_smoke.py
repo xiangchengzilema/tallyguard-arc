@@ -6,6 +6,7 @@ import argparse
 import csv
 from datetime import datetime, timezone
 from hashlib import sha256
+from ipaddress import ip_address
 from io import StringIO
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ from threading import Thread
 from time import monotonic
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from flask import Flask
@@ -40,7 +42,10 @@ def _request(
     correlation_id: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, str], bytes]:
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "TallyGuard-Deployment-Smoke/0.1",
+    }
     data = None
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
@@ -98,36 +103,82 @@ def _require(condition: bool, message: str) -> None:
         raise DeploymentSmokeError(message)
 
 
-def run_deployment_smoke(app: Flask) -> dict[str, Any]:
-    """Exercise the production-shaped app over a loopback TCP socket."""
+def _normalize_remote_base_url(value: str) -> str:
+    candidate = value.strip().rstrip("/")
+    parsed = urlparse(candidate)
+    host = parsed.hostname
+    public_host = bool(
+        host
+        and host.lower() != "localhost"
+        and not host.lower().endswith(".localhost")
+    )
+    if public_host:
+        try:
+            public_host = ip_address(str(host)).is_global
+        except ValueError:
+            pass
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or not public_host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise DeploymentSmokeError(
+            "Remote deployment must be a public HTTPS origin without credentials, "
+            "path, query, or fragment."
+        )
+    return candidate
+
+
+def run_deployment_smoke(
+    app: Flask | None = None,
+    *,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """Exercise either a local app or an already deployed public-safe origin."""
+
+    if (app is None) == (base_url is None):
+        raise DeploymentSmokeError("Provide exactly one app or remote base URL.")
 
     started_at = monotonic()
-    server = make_server(
-        "127.0.0.1",
-        0,
-        app,
-        threaded=True,
-        request_handler=_QuietRequestHandler,
-    )
-    thread = Thread(target=server.serve_forever, name="tallyguard-smoke", daemon=True)
-    thread.start()
-    base_url = f"http://127.0.0.1:{server.server_port}"
+    server = None
+    thread = None
+    if app is not None:
+        server = make_server(
+            "127.0.0.1",
+            0,
+            app,
+            threaded=True,
+            request_handler=_QuietRequestHandler,
+        )
+        thread = Thread(target=server.serve_forever, name="tallyguard-smoke", daemon=True)
+        thread.start()
+        resolved_base_url = f"http://127.0.0.1:{server.server_port}"
+        target = "loopback ephemeral HTTP server"
+    else:
+        resolved_base_url = _normalize_remote_base_url(str(base_url))
+        target = f"public HTTPS deployment at {resolved_base_url}"
     checks: list[dict[str, str]] = []
+    tokens: dict[str, str] = {}
 
     def passed(name: str, detail: str) -> None:
         checks.append({"name": name, "status": "passed", "detail": detail})
 
     try:
-        status, _, body = _request(base_url, "/")
+        status, _, body = _request(resolved_base_url, "/")
         _require(status == 200, "The judge console did not return HTTP 200.")
         _require(b'<div id="root"></div>' in body, "The judge console root marker is missing.")
         passed("judge_console", "Built frontend served over HTTP with the React root marker.")
 
-        status, _, health = _json_request(base_url, "/api/health")
+        status, _, health = _json_request(resolved_base_url, "/api/health")
         _require(status == 200 and health.get("status") == "ok", "Health probe failed.")
         passed("health_probe", "API health probe returned ok.")
 
-        status, _, readiness = _json_request(base_url, "/api/readiness")
+        status, _, readiness = _json_request(resolved_base_url, "/api/readiness")
         _require(status == 200 and readiness.get("status") == "ready", "Readiness failed.")
         _require(readiness.get("database") == "ok", "Database readiness failed.")
         _require(
@@ -138,10 +189,9 @@ def run_deployment_smoke(app: Flask) -> dict[str, Any]:
         _require(readiness.get("mainnet_enabled") is False, "Mainnet must remain disabled.")
         passed("safe_readiness", "Database ready; simulation active; funds and mainnet disabled.")
 
-        tokens: dict[str, str] = {}
         for role in ("operator", "approver", "auditor"):
             status, _, session = _json_request(
-                base_url,
+                resolved_base_url,
                 "/api/demo/session",
                 method="POST",
                 payload={"role": role},
@@ -153,7 +203,7 @@ def run_deployment_smoke(app: Flask) -> dict[str, Any]:
         passed("role_separation", "Operator, approver, and auditor sessions were issued separately.")
 
         status, _, scenario = _json_request(
-            base_url,
+            resolved_base_url,
             "/api/demo/scenarios/clean-payment/run",
             method="POST",
             token=tokens["operator"],
@@ -171,7 +221,7 @@ def run_deployment_smoke(app: Flask) -> dict[str, Any]:
         passed("deterministic_decision", "Three-way evidence produced the expected PAY action.")
 
         status, _, settlement = _json_request(
-            base_url,
+            resolved_base_url,
             f"/api/invoices/{invoice_id}/settle",
             method="POST",
             token=tokens["approver"],
@@ -193,7 +243,7 @@ def run_deployment_smoke(app: Flask) -> dict[str, Any]:
         passed("simulation_settlement", "Approver settled once; receipt confirmed and invoice reconciled.")
 
         status, ledger_headers, ledger_body = _request(
-            base_url,
+            resolved_base_url,
             "/api/accounting/ledger.csv",
             token=tokens["auditor"],
             correlation_id="deployment-smoke-ledger",
@@ -211,17 +261,39 @@ def run_deployment_smoke(app: Flask) -> dict[str, Any]:
         _require(row.get("transaction_hash") == transaction_hash, "Ledger receipt binding failed.")
         _require(row.get("settlement_status") == "CONFIRMED", "Ledger status is not confirmed.")
         passed("accounting_export", "One reconciled row matched invoice, decision, receipt, and SHA-256.")
+
+        for token in tokens.values():
+            status, _, _ = _request(
+                resolved_base_url,
+                "/api/auth/session",
+                method="DELETE",
+                token=token,
+            )
+            _require(status == 200, "A smoke-test session could not be revoked.")
+        tokens.clear()
+        passed("session_revocation", "All temporary finance-role sessions were revoked.")
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+        for token in tokens.values():
+            try:
+                _request(
+                    resolved_base_url,
+                    "/api/auth/session",
+                    method="DELETE",
+                    token=token,
+                )
+            except DeploymentSmokeError:
+                pass
+        if server is not None and thread is not None:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     duration_ms = round((monotonic() - started_at) * 1000, 2)
     return {
         "schema_version": "1.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "classification": "synthetic deployment acceptance; not customer traction",
-        "target": "loopback ephemeral HTTP server",
+        "target": target,
         "safety": {
             "settlement_mode": "simulation",
             "funds_moved": False,
@@ -243,14 +315,24 @@ def main() -> None:
         description="Run the TallyGuard public-safe deployment acceptance over real HTTP."
     )
     parser.add_argument("--output", type=Path, help="Optional JSON report path.")
+    parser.add_argument(
+        "--base-url",
+        help=(
+            "Public HTTPS origin to test in place. Omit to start an ephemeral local app. "
+            "The remote target must report simulation mode with funds and mainnet disabled."
+        ),
+    )
     args = parser.parse_args()
 
-    with TemporaryDirectory(prefix="tallyguard-deployment-smoke-") as directory:
-        app = create_app(database_path=Path(directory) / "smoke.sqlite3")
-        try:
-            report = run_deployment_smoke(app)
-        finally:
-            app.extensions["tallyguard_repository"].close()
+    if args.base_url:
+        report = run_deployment_smoke(base_url=args.base_url)
+    else:
+        with TemporaryDirectory(prefix="tallyguard-deployment-smoke-") as directory:
+            app = create_app(database_path=Path(directory) / "smoke.sqlite3")
+            try:
+                report = run_deployment_smoke(app)
+            finally:
+                app.extensions["tallyguard_repository"].close()
 
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output is not None:

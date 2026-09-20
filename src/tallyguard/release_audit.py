@@ -157,6 +157,41 @@ def _agent_report_valid(report: dict[str, Any]) -> bool:
     )
 
 
+def _deployment_report_valid(report: dict[str, Any]) -> bool:
+    summary = report.get("summary")
+    safety = report.get("safety")
+    checks = report.get("checks")
+    check_names = {
+        str(check.get("name"))
+        for check in checks
+        if isinstance(check, dict) and check.get("status") == "passed"
+    } if isinstance(checks, list) else set()
+    required_checks = {
+        "judge_console",
+        "health_probe",
+        "safe_readiness",
+        "role_separation",
+        "deterministic_decision",
+        "simulation_settlement",
+        "accounting_export",
+        "session_revocation",
+    }
+    return bool(
+        report.get("classification")
+        == "synthetic deployment acceptance; not customer traction"
+        and isinstance(summary, dict)
+        and summary.get("status") == "passed"
+        and summary.get("checks_passed") == 8
+        and summary.get("checks_failed") == 0
+        and isinstance(safety, dict)
+        and safety.get("settlement_mode") == "simulation"
+        and safety.get("funds_moved") is False
+        and safety.get("mainnet_enabled") is False
+        and safety.get("credentials_required") is False
+        and required_checks == check_names
+    )
+
+
 def _url_check(name: str, value: str | None, *, prefix: str | None = None) -> ReleaseCheck:
     if value is None or not value.strip():
         return ReleaseCheck("external", name, "pending", "External evidence has not been supplied.")
@@ -420,6 +455,12 @@ def audit_release(
             root,
             "submission/DEMO_RUNBOOK.md",
             ("1440px", "768px", "390px", "one responsive web product"),
+        ),
+        _check_report(
+            root,
+            "docs/reports/deployment-smoke.json",
+            _deployment_report_valid,
+            "Eight public-safe HTTP checks, including session revocation, verified.",
         ),
         _check_report(
             root,

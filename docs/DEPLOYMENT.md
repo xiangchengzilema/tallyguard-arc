@@ -63,3 +63,18 @@ This report is synthetic deployment acceptance evidence. It is not an Arc
 transaction and must never be represented as customer traction or a live-funds
 test. CI rebuilds the frontend and executes the same command after the full test
 suite.
+
+After the public judge deployment exists, run the same eight checks against its
+actual HTTPS origin from a clean machine:
+
+```bash
+tallyguard-deployment-smoke \
+  --base-url https://your-public-tallyguard.example \
+  --output artifacts/remote-deployment-smoke.json
+```
+
+Remote acceptance refuses non-public origins and URLs containing credentials,
+paths, query strings, or fragments. It also refuses to exercise a deployment
+unless readiness reports simulation settlement, disabled funds movement, and
+disabled mainnet. The run creates disposable demo records through the public API,
+cannot transfer funds, and revokes its temporary role sessions before returning.
