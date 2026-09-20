@@ -194,6 +194,7 @@ Implemented foundation:
 - Authenticated batch settlement accepts at most 25 distinct invoices, isolates item failures, and reuses every completed item's durable receipt on retry
 - Authenticated schedule execution scans only the caller's tenant, reports early items as waiting, and isolates revalidation or settlement failures per invoice
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
+- Anonymous demo-session issuance has a separate source-scoped sliding-window budget keyed by an in-memory address digest, preventing unauthenticated session-table flooding without logging client addresses
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
 - Role-scoped policy-history, policy-diff, active-policy, treasury-snapshot, vendor, and wallet-history APIs

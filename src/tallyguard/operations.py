@@ -12,8 +12,8 @@ from typing import Callable
 class RateLimitExceeded(RuntimeError):
     """Raised when one tenant exceeds its configured request budget."""
 
-    def __init__(self, retry_after_seconds: int) -> None:
-        super().__init__("Tenant request limit exceeded.")
+    def __init__(self, retry_after_seconds: int, *, scope_label: str = "Tenant") -> None:
+        super().__init__(f"{scope_label} request limit exceeded.")
         self.retry_after_seconds = max(1, retry_after_seconds)
 
 
@@ -37,7 +37,7 @@ class TenantRateLimiter:
         self._requests: dict[str, deque[float]] = defaultdict(deque)
         self._lock = RLock()
 
-    def check(self, tenant_id: str) -> None:
+    def check(self, tenant_id: str, *, scope_label: str = "Tenant") -> None:
         now = self._clock()
         cutoff = now - self.window_seconds
         with self._lock:
@@ -46,7 +46,7 @@ class TenantRateLimiter:
                 requests.popleft()
             if len(requests) >= self.limit:
                 retry_after = int(max(1, self.window_seconds - (now - requests[0])))
-                raise RateLimitExceeded(retry_after)
+                raise RateLimitExceeded(retry_after, scope_label=scope_label)
             requests.append(now)
 
 

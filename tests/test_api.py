@@ -159,7 +159,32 @@ def test_authenticated_endpoints_enforce_per_tenant_rate_limit(tmp_path):
 
     assert limited.status_code == 429
     assert limited.get_json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert limited.get_json()["error"]["message"] == "Tenant request limit exceeded."
+
+
+def test_demo_session_issuance_has_a_separate_anonymous_rate_limit(tmp_path):
+    app = create_app(
+        database_path=tmp_path / "demo-rate-limit.sqlite3",
+        testing=True,
+        demo_session_rate_limit_per_minute=2,
+    )
+    client = app.test_client()
+
+    assert client.post("/api/demo/session", json={"role": "operator"}).status_code == 200
+    assert client.post("/api/demo/session", json={"role": "auditor"}).status_code == 200
+    limited = client.post("/api/demo/session", json={"role": "admin"})
+
+    assert limited.status_code == 429
+    assert limited.get_json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert limited.get_json()["error"]["message"] == "Demo session request limit exceeded."
     assert int(limited.headers["Retry-After"]) >= 1
+
+    independent_source = client.post(
+        "/api/demo/session",
+        json={"role": "operator"},
+        environ_base={"REMOTE_ADDR": "192.0.2.25"},
+    )
+    assert independent_source.status_code == 200
 
 
 def test_demo_session_authentication_survives_api_restart(tmp_path):

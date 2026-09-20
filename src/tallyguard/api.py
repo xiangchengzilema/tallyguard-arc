@@ -486,6 +486,7 @@ def create_app(
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
     rate_limit_per_minute: int | None = None,
+    demo_session_rate_limit_per_minute: int | None = None,
     evidence_analyst: EvidenceAnalyst | None = None,
     date_provider: Callable[[], date] | None = None,
     request_logging_enabled: bool | None = None,
@@ -561,6 +562,14 @@ def create_app(
         os.getenv("TALLYGUARD_RATE_LIMIT_PER_MINUTE", "6000")
     )
     rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
+    configured_demo_session_rate_limit = (
+        demo_session_rate_limit_per_minute
+        if demo_session_rate_limit_per_minute is not None
+        else int(os.getenv("TALLYGUARD_DEMO_SESSION_RATE_LIMIT_PER_MINUTE", "120"))
+    )
+    demo_session_rate_limiter = TenantRateLimiter(
+        limit=configured_demo_session_rate_limit
+    )
     request_metrics = RequestMetrics()
     if request_logging_enabled is None:
         request_logging_enabled = os.getenv(
@@ -579,6 +588,7 @@ def create_app(
     app.extensions["tallyguard_settlement_adapter"] = settlement_adapter
     app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
     app.extensions["tallyguard_rate_limiter"] = rate_limiter
+    app.extensions["tallyguard_demo_session_rate_limiter"] = demo_session_rate_limiter
     app.extensions["tallyguard_request_metrics"] = request_metrics
     app.extensions["tallyguard_request_logging_enabled"] = request_logging_enabled
     app.extensions["tallyguard_evidence_analyst"] = evidence_analyst
@@ -804,6 +814,12 @@ def create_app(
                 "Demo identities are disabled while a live settlement adapter is configured.",
                 404,
             )
+        remote_address = request.remote_addr or "unknown"
+        anonymous_scope = sha256(remote_address.encode("utf-8")).hexdigest()
+        demo_session_rate_limiter.check(
+            f"demo-session:{anonymous_scope}",
+            scope_label="Demo session",
+        )
         payload = request.get_json(silent=True) or {}
         role_name = str(payload.get("role", "operator")).lower()
         demo_principals = {
