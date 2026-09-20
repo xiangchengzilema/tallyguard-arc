@@ -32,6 +32,7 @@
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; demo-session issuance has a separate anonymous rate limit; expired and revoked sessions are pruned and active sessions are bounded per principal; no secrets are committed |
 | Live operator identity is silently changed | The local setup command verifies the existing organization name, display name, single role, and active state; any drift fails closed rather than overwriting authorization data |
 | Live browser receives a swapped or cross-tenant role token | The private access gate validates each token through `/api/auth/session`, checks the exact required role, and requires one organization before loading protected data; tokens stay in page memory and reload clears them |
+| Live browser is left authenticated after operator use | A header lock clears all in-memory finance state immediately and revokes the four server sessions; incomplete revocation stays visibly locked and relies on the bounded expiry |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
 | Audit history altered | Per-tenant append-only hash chain with verification endpoint and visible UI state |
 | Request metadata leaks financial or credential data | Structured logs record only the route endpoint name, method, status, duration, and a syntax-validated correlation ID; paths, query strings, bodies, authorization headers, tenant IDs, and record IDs are excluded |

@@ -167,6 +167,26 @@ export async function bootstrapWithSessions(
   return hydrateBootstrap(resolvedContext, sessions);
 }
 
+export async function revokeOperatorSessions(
+  sessions: BootstrapData['sessions'],
+): Promise<void> {
+  const outcomes = await Promise.allSettled(
+    Object.values(sessions).map((token) => request<{ status: string }>(
+      '/api/auth/session',
+      { method: 'DELETE' },
+      token,
+    )),
+  );
+  const failed = outcomes.filter((outcome) => outcome.status === 'rejected');
+  if (failed.length > 0) {
+    throw new ApiError(
+      `${failed.length} role session${failed.length === 1 ? '' : 's'} could not be revoked; let the short expiry elapse before reusing this operator bundle.`,
+      503,
+      'SESSION_REVOCATION_INCOMPLETE',
+    );
+  }
+}
+
 export async function bootstrap(): Promise<BootstrapData> {
   const sessionRoles: Role[] = ['admin', 'operator', 'approver', 'auditor'];
   const context = await fetchBootstrapContext();

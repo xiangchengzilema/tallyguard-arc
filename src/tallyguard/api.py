@@ -819,6 +819,13 @@ def create_app(
             }
         )
 
+    @app.delete("/api/auth/session")
+    @require(Permission.AUDIT_READ)
+    def revoke_current_session():
+        raw_token = request.headers["Authorization"].removeprefix("Bearer ").strip()
+        authenticator.revoke(raw_token)
+        return jsonify({"status": "revoked"})
+
     @app.get("/api/reliability/report")
     @require(Permission.AUDIT_READ)
     def reliability_report():

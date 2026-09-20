@@ -53,6 +53,7 @@ import {
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
+  revokeOperatorSessions,
   runLiveEvidenceWorkflow,
   runUploadedEvidenceWorkflow,
   runScenario,
@@ -1660,6 +1661,45 @@ function App() {
     });
   }, [accessContext, act, installBootstrap]);
 
+  const handleOperatorDisconnect = useCallback(() => {
+    if (!data || data.readiness.demo_sessions_enabled) return;
+    const context: BootstrapContext = {
+      scenarios: data.scenarios,
+      readiness: data.readiness,
+    };
+    const sessions = data.sessions;
+    setData(null);
+    setAccessContext(context);
+    setRun(null);
+    setHistory([]);
+    setApproval(null);
+    setPayment(null);
+    setMode('scenario');
+    setAuditTrail(null);
+    setReplay(null);
+    setOperations(null);
+    setIncidents(null);
+    setGovernance(null);
+    setBatch(null);
+    setScheduleRun(null);
+    setPacketHash(null);
+    setSimulation(null);
+    setPolicyActivation(null);
+    setVendorDirectory([]);
+    setSettlementRetryNeeded(false);
+    setAgentRun(null);
+    setAgentProofHash(null);
+    setLedgerExport(null);
+    setAuditSearch(null);
+    setError(null);
+    void revokeOperatorSessions(sessions).catch((reason: unknown) => {
+      const message = reason instanceof ApiError
+        ? `${reason.code}: ${reason.message}`
+        : 'Private browser access was cleared, but server session revocation did not complete.';
+      setError(message);
+    });
+  }, [data]);
+
   const handleAuditSearch = useCallback((filters: AuditSearchRequest) => {
     if (!data) return;
     void act('Searching the tenant audit ledger', async () => {
@@ -1923,7 +1963,13 @@ function App() {
         <HeaderName prefix="">TallyGuard</HeaderName>
         <div className="header-context">Evidence-bound accounts payable on Arc</div>
         <HeaderGlobalBar>
-          <HeaderGlobalAction aria-label="Role-separated team"><UserMultiple size={20} /></HeaderGlobalAction>
+          {data && !data.readiness.demo_sessions_enabled ? (
+            <HeaderGlobalAction aria-label="Lock private operations" onClick={handleOperatorDisconnect}>
+              <Locked size={20} />
+            </HeaderGlobalAction>
+          ) : (
+            <HeaderGlobalAction aria-label="Role-separated team"><UserMultiple size={20} /></HeaderGlobalAction>
+          )}
         </HeaderGlobalBar>
       </Header>
 

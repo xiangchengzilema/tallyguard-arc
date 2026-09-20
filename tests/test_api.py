@@ -110,6 +110,9 @@ def test_openapi_contract_covers_every_registered_api_operation(tmp_path):
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert "security" not in contract["paths"]["/api/demo/session"]["post"]
+    assert contract["paths"]["/api/auth/session"]["delete"]["security"] == [
+        {"bearerAuth": []}
+    ]
     assert contract["paths"]["/api/invoices/{invoice_id}/settle"]["post"][
         "security"
     ] == [{"bearerAuth": []}]
@@ -225,6 +228,23 @@ def test_session_inspection_rejects_invalid_bearer(tmp_path):
 
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "AUTHENTICATION_DENIED"
+
+
+def test_current_session_can_revoke_itself_without_echoing_token(tmp_path):
+    app = create_app(database_path=tmp_path / "session-revocation.sqlite3", testing=True)
+    client = app.test_client()
+    token = client.post("/api/demo/session", json={"role": "auditor"}).get_json()[
+        "access_token"
+    ]
+
+    revoked = client.delete("/api/auth/session", headers=headers(token))
+
+    assert revoked.status_code == 200
+    assert revoked.get_json() == {"status": "revoked"}
+    assert token not in revoked.get_data(as_text=True)
+    denied = client.get("/api/auth/session", headers=headers(token))
+    assert denied.status_code == 401
+    assert denied.get_json()["error"]["code"] == "AUTHENTICATION_DENIED"
 
 
 def test_metrics_report_aggregate_requests_without_financial_labels(tmp_path):

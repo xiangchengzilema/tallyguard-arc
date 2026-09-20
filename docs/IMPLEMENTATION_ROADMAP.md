@@ -347,7 +347,8 @@ Implemented foundation:
 - In Circle live mode the responsive console replaces public demo login with a
   private four-token gate, validates the exact role and shared tenant before
   fetching protected data, reports the first mismatched role, and keeps bearer
-  values only in page memory
+  values only in page memory; a one-click lock clears finance state and revokes
+  all four server sessions
 - Canonical submission copy, a timed product-first video runbook, and a release checklist now separate complete evidence from explicit external gates so pending URLs or transactions cannot be mistaken for finished proof
 - A content-addressed release-audit command verifies local artifacts and reliability assertions, rejects malformed Testnet or pilot evidence, and reports missing repository, deployment, video, Explorer, and usage proof as pending rather than complete
 
