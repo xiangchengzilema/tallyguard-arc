@@ -333,7 +333,23 @@ function OperationsQueue({
   onRunSchedules: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const payable = overview.work_queue.filter((invoice) => (
+  const [queueQuery, setQueueQuery] = useState('');
+  const [queueView, setQueueView] = useState('ALL');
+  const today = overview.as_of.slice(0, 10);
+  const visibleQueue = overview.work_queue.filter((invoice) => {
+    const searchable = `${invoice.invoice_number} ${invoice.vendor_id} ${invoice.id}`.toLowerCase();
+    if (queueQuery.trim() && !searchable.includes(queueQuery.trim().toLowerCase())) return false;
+    if (queueView === 'PAYABLE') {
+      return invoice.status === 'READY' || (invoice.status === 'SUBMISSION_FAILED' && invoice.settlement_retryable);
+    }
+    if (queueView === 'ATTENTION') {
+      return ['HOLD', 'ESCALATED', 'SUBMISSION_FAILED'].includes(invoice.status);
+    }
+    if (queueView === 'OVERDUE') return invoice.due_date < today;
+    if (queueView === 'SCHEDULED') return invoice.status === 'SCHEDULED';
+    return true;
+  });
+  const payable = visibleQueue.filter((invoice) => (
     invoice.status === 'READY' || (invoice.status === 'SUBMISSION_FAILED' && invoice.settlement_retryable)
   ) && invoice.decision_id);
   const scheduled = overview.work_queue.filter((invoice) => invoice.status === 'SCHEDULED');
@@ -377,6 +393,25 @@ function OperationsQueue({
           ) : null}
         </div>
       </div>
+      {overview.work_queue.length > 0 ? (
+        <div className="operations-queue__filters">
+          <Search
+            id="operations-queue-query"
+            labelText="Search invoice queue"
+            placeholder="Invoice, vendor, or record ID"
+            value={queueQuery}
+            onChange={(event) => setQueueQuery(event.target.value)}
+          />
+          <Select id="operations-queue-view" labelText="Queue view" value={queueView} onChange={(event) => setQueueView(event.target.value)}>
+            <SelectItem value="ALL" text="All open work" />
+            <SelectItem value="PAYABLE" text="Payable now" />
+            <SelectItem value="ATTENTION" text="Needs attention" />
+            <SelectItem value="OVERDUE" text="Overdue" />
+            <SelectItem value="SCHEDULED" text="Scheduled" />
+          </Select>
+          <span>{visibleQueue.length} of {overview.work_queue.length} shown</span>
+        </div>
+      ) : null}
       {ledgerExport ? (
         <div className="ledger-export-proof">
           <CheckmarkFilled size={16} />
@@ -405,12 +440,14 @@ function OperationsQueue({
       ) : null}
       {overview.work_queue.length === 0 ? (
         <div className="operations-queue__empty"><CheckmarkFilled size={20} /><span>No open invoices. Run a control case or upload evidence to populate the durable queue.</span></div>
+      ) : visibleQueue.length === 0 ? (
+        <div className="operations-queue__empty"><CheckmarkFilled size={20} /><span>No invoice matches this queue view. Clear the search or choose another operational filter.</span></div>
       ) : (
         <div className="operations-table" role="table" aria-label="Open invoices sorted by due date">
           <div className="operations-table__head" role="row">
             <span role="columnheader">Select</span><span role="columnheader">Invoice</span><span role="columnheader">Vendor</span><span role="columnheader">Due</span><span role="columnheader">Exposure</span><span role="columnheader">State</span>
           </div>
-          {overview.work_queue.map((invoice) => (
+          {visibleQueue.map((invoice) => (
             <div className="operations-table__row" role="row" key={invoice.id}>
               <label className="batch-select" title={invoice.status === 'READY' || invoice.settlement_retryable ? 'Select for idempotent settlement or retry' : 'This incident is locked for manual investigation'}>
                 <input

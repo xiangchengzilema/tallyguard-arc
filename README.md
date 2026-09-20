@@ -89,6 +89,7 @@ Every payment answers four questions:
 - A vendor trust directory joins legal identity, risk tier, autonomous ceiling, approved Arc payout wallet, invoice-wallet match status, and append-only verification history so wallet-change holds are explainable on screen
 - The governance panel can stage a safer policy, activate it as a new immutable content-addressed version, and show the server-computed before/after diff without rewriting historical decisions
 - Finance operators can select up to 25 `READY` invoices from the durable work queue and settle them as one batch; each item keeps its own authorization, idempotency key, receipt, and failure result, so one exception cannot mask or roll back the rest
+- Finance operators can search the durable queue by invoice, vendor, or record ID and switch instantly between payable, exception, overdue, and scheduled work without changing server-side authorization state
 - A tenant-scoped schedule runner refuses early execution, derives the release date from the sealed policy decision, and revalidates current vendor, policy, treasury, evidence, route, and duplicate controls before any due invoice can settle
 - One-screen evidence review, deterministic rule trace, segregated approval, and settlement receipt flow
 - Real-HTTP synthetic multi-tenant load harness with latency, isolation, duplicate-payment, and shared-treasury contention metrics

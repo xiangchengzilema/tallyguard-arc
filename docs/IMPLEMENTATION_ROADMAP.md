@@ -251,7 +251,7 @@ Implemented foundation:
 - One click loads and plans a mixed queue spanning safe settlement, independent approval, wallet-risk remediation, and a not-yet-due schedule; desktop and 390px browser acceptance show the four outcomes clearly
 
 - Operations overview with payable exposure, due dates, held value, and treasury reserve (summary complete)
-- Invoice work queue with fast filters (durable queue and batch selection complete; interactive filters optional)
+- Invoice work queue with fast filters (durable queue, text search, operational views, and batch selection complete)
 - Evidence match view modeled after mature AP review tools
 - Decision timeline showing evidence, rules, and agent explanation separately
 - Approval inbox for exceptions (complete)

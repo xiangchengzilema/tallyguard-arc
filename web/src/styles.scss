@@ -444,6 +444,9 @@ body {
 .operations-queue__head h2 { margin: .35rem 0 0; font-size: 1.5rem; font-weight: 500; letter-spacing: -.03em; }
 .operations-queue__actions { display: flex; align-items: center; gap: .75rem; }
 .operations-queue__actions .cds--tag { margin: 0; }
+.operations-queue__filters { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(180px, 260px) auto; align-items: end; gap: 1px; margin: 1.5rem -1.5rem 0; padding: 1px 1.5rem; background: var(--tg-line); border-top: 1px solid var(--tg-line); border-bottom: 1px solid var(--tg-line); }
+.operations-queue__filters > .cds--search, .operations-queue__filters > .cds--form-item { background: #fff; }
+.operations-queue__filters > span { display: flex; align-items: center; justify-content: flex-end; min-height: 64px; padding: 0 1rem; background: #f5f8f7; color: var(--tg-muted); font-size: .6875rem; white-space: nowrap; }
 .ledger-export-proof { display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; border-top: 1px solid var(--tg-line); color: var(--tg-accent-dark); font-size: .78rem; }
 .batch-result { margin-top: 1rem; }
 .operations-queue__empty { display: flex; align-items: center; gap: .75rem; margin-top: 1.5rem; padding: 1.25rem; background: #edf7f5; color: var(--tg-accent-dark); font-size: .75rem; }
@@ -651,6 +654,8 @@ body {
   .operations-table__row > div { grid-column: 1 / -1; }
   .batch-select { grid-column: 1; grid-row: 1; justify-self: start; }
   .operations-table__row .cds--tag { justify-self: start; }
+  .operations-queue__filters { grid-template-columns: minmax(0, 1fr) minmax(180px, .65fr); }
+  .operations-queue__filters > span { grid-column: 1 / -1; justify-content: flex-start; min-height: 40px; }
   .incident-list { grid-template-columns: 1fr; }
   .reliability-grid, .reliability-latency, .reliability-agent { grid-template-columns: repeat(2, 1fr); }
   .reliability-grid > div, .reliability-latency > div, .reliability-agent > div { border-bottom: 1px solid #31414b; }
@@ -686,6 +691,8 @@ body {
   .agent-plan-list article { grid-template-columns: 30px minmax(0, 1fr); }
   .agent-run__boundary, .agent-run__empty { padding: 1rem 1.25rem; }
   .operations-queue__head, .operations-queue__actions { align-items: stretch; flex-direction: column; }
+  .operations-queue__filters { grid-template-columns: 1fr; margin-right: -1.25rem; margin-left: -1.25rem; padding-right: 1.25rem; padding-left: 1.25rem; }
+  .operations-queue__filters > span { grid-column: auto; }
   .incident-center__head, .incident-summary { align-items: stretch; flex-direction: column; }
   .incident-summary { display: grid; grid-template-columns: repeat(3, 1fr); }
   .operations-table__row { grid-template-columns: 1fr; }
