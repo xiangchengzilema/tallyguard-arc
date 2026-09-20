@@ -4,6 +4,7 @@ import hashlib
 from io import BytesIO
 import json
 import logging
+import re
 
 from tallyguard.api import create_app
 from tallyguard.audit import canonical_json
@@ -47,6 +48,41 @@ def test_health_and_readiness_are_public(tmp_path):
     assert readiness["arc_rpc_verification"] == "simulated"
     assert readiness["mainnet_enabled"] is False
     assert readiness["demo_sessions_enabled"] is True
+
+
+def test_openapi_contract_covers_every_registered_api_operation(tmp_path):
+    app = create_app(database_path=tmp_path / "openapi.sqlite3", testing=True)
+    response = app.test_client().get("/api/openapi.json")
+
+    assert response.status_code == 200
+    contract = response.get_json()
+    assert contract["openapi"] == "3.1.0"
+    assert contract["servers"] == [{"url": "http://localhost"}]
+    documented = {
+        (path, method.upper())
+        for path, path_item in contract["paths"].items()
+        for method in path_item
+    }
+    registered = {
+        (
+            re.sub(r"<(?:(?:[^:>]+):)?([^>]+)>", r"{\1}", rule.rule),
+            method,
+        )
+        for rule in app.url_map.iter_rules()
+        if rule.rule.startswith("/api/")
+        for method in rule.methods - {"HEAD", "OPTIONS"}
+    }
+    assert documented == registered
+    operation_ids = [
+        operation["operationId"]
+        for path_item in contract["paths"].values()
+        for operation in path_item.values()
+    ]
+    assert len(operation_ids) == len(set(operation_ids))
+    assert "security" not in contract["paths"]["/api/demo/session"]["post"]
+    assert contract["paths"]["/api/invoices/{invoice_id}/settle"]["post"][
+        "security"
+    ] == [{"bearerAuth": []}]
 
 
 def test_public_pdf_judge_sample_is_served_from_built_frontend(tmp_path):

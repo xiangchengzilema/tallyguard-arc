@@ -609,6 +609,8 @@ body {
 .reliability-panel__foot p { margin: 0; text-align: right; }
 .product-footer { display: flex; justify-content: space-between; gap: 1rem; max-width: 1680px; margin: 1.5rem auto 0; color: var(--tg-muted); font-size: .6875rem; }
 .product-footer div { display: flex; align-items: center; gap: .45rem; }
+.product-footer a { color: var(--tg-accent); text-underline-offset: .18rem; }
+.product-footer a:hover { color: var(--tg-text); }
 
 @media (max-width: 1180px) {
   .cds--content { padding: 5.5rem 1.5rem 1.5rem; }

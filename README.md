@@ -98,6 +98,7 @@ Every payment answers four questions:
 - A separate 50-tenant Agent Run test executes 200 mixed queue items, verifies 50 proof packets, denies 50/50 cross-tenant proof reads, and converges 100 simultaneous execution calls onto one durable claim and one provider submission
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics
 - Production-safe structured request logs include only endpoint names, status, duration, and a validated correlation ID; URLs, query strings, authorization headers, tenant IDs, and financial record IDs are intentionally excluded
+- A public OpenAPI 3.1 contract at `/api/openapi.json` is generated from the routes actually registered by Flask, labels role-protected operations with opaque bearer authentication, and cannot silently drift away from the running service
 
 ## Run the judge console
 

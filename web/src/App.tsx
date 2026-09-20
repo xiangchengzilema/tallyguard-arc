@@ -1963,7 +1963,10 @@ function App() {
 
         <footer className="product-footer">
           <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>
-          <span>Built for Tameion Agents Hackathon 2026</span>
+          <span>
+            <a href="/api/openapi.json" target="_blank" rel="noreferrer">OpenAPI 3.1 contract</a>
+            {' · '}Built for Tameion Agents Hackathon 2026
+          </span>
         </footer>
       </Content>
     </Theme>

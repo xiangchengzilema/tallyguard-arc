@@ -196,6 +196,7 @@ Implemented foundation:
 - Tenant-scoped sliding-window request budgets return explicit 429 and retry guidance
 - Anonymous demo-session issuance has a separate source-scoped sliding-window budget keyed by an in-memory address digest, preventing unauthenticated session-table flooding without logging client addresses
 - Session issuance prunes expired/revoked records and retains at most 32 active opaque sessions per principal, bounding durable session growth even during repeated public demos
+- A public OpenAPI 3.1 contract is generated from the live Flask route map and identifies every role-protected operation, request media type, path parameter, shared error envelope, and response format
 - Bounded operational metrics expose endpoint, status-class, and latency aggregates without financial labels
 - Authenticated audit endpoint verifies a persistent per-tenant hash chain across decisions, approvals, and reconciled settlements
 - Role-scoped policy-history, policy-diff, active-policy, treasury-snapshot, vendor, and wallet-history APIs

@@ -55,6 +55,7 @@ from .auth import (
 )
 from .models import Invoice, TreasurySnapshot, Vendor
 from .network import ArcNetworkConfig
+from .openapi import build_openapi_contract
 from .operations import RateLimitExceeded, RequestMetrics, TenantRateLimiter
 from .evidence import (
     EvidencePackage,
@@ -736,6 +737,15 @@ def create_app(
     @app.get("/api/health")
     def health():
         return jsonify({"status": "ok", "service": "tallyguard-api"})
+
+    @app.get("/api/openapi.json")
+    def openapi_contract():
+        return jsonify(
+            build_openapi_contract(
+                app,
+                server_url=request.url_root.rstrip("/"),
+            )
+        )
 
     @app.get("/api/readiness")
     def readiness():
