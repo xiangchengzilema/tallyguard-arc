@@ -32,6 +32,8 @@
 | Public judge drains a funded wallet | Public Blueprint uses simulation; live mode disables demo sessions by default; no secrets are committed |
 | Oversized or disguised upload | Request-size ceiling, extension and MIME signature checks, bounded extracted fields |
 | Audit history altered | Per-tenant append-only hash chain with verification endpoint and visible UI state |
+| Request metadata leaks financial or credential data | Structured logs record only the route endpoint name, method, status, duration, and a syntax-validated correlation ID; paths, query strings, bodies, authorization headers, tenant IDs, and record IDs are excluded |
+| Caller injects control characters or unbounded data into logs | External correlation IDs must match a 128-character allowlist or are replaced with a server-generated identifier before logging or response echo |
 
 ## Secret handling
 

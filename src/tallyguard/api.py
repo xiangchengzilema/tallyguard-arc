@@ -10,8 +10,10 @@ from functools import wraps
 from hashlib import sha256
 from io import BytesIO, StringIO
 import json
+import logging
 import os
 from pathlib import Path
+import re
 from time import monotonic
 from typing import Any, Callable
 from uuid import uuid4
@@ -440,7 +442,12 @@ def _error(code: str, message: str, status: int) -> tuple[Response, int]:
 
 def _correlation_id() -> str:
     if not hasattr(g, "correlation_id"):
-        g.correlation_id = request.headers.get("X-Correlation-ID") or f"req_{uuid4().hex}"
+        candidate = (request.headers.get("X-Correlation-ID") or "").strip()
+        g.correlation_id = (
+            candidate
+            if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", candidate)
+            else f"req_{uuid4().hex}"
+        )
     return g.correlation_id
 
 
@@ -471,6 +478,7 @@ def create_app(
     rate_limit_per_minute: int | None = None,
     evidence_analyst: EvidenceAnalyst | None = None,
     date_provider: Callable[[], date] | None = None,
+    request_logging_enabled: bool | None = None,
 ) -> Flask:
     default_frontend_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
     frontend_dist = Path(
@@ -544,6 +552,13 @@ def create_app(
     )
     rate_limiter = TenantRateLimiter(limit=configured_rate_limit)
     request_metrics = RequestMetrics()
+    if request_logging_enabled is None:
+        request_logging_enabled = os.getenv(
+            "TALLYGUARD_REQUEST_LOGS",
+            "false" if testing else "true",
+        ).strip().lower() == "true"
+    if request_logging_enabled:
+        app.logger.setLevel(logging.INFO)
     evidence_analyst = evidence_analyst or _evidence_analyst_from_env()
     current_date = date_provider or date.today
     app.extensions["tallyguard_repository"] = repository
@@ -555,6 +570,7 @@ def create_app(
     app.extensions["tallyguard_payment_orchestrator"] = payment_orchestrator
     app.extensions["tallyguard_rate_limiter"] = rate_limiter
     app.extensions["tallyguard_request_metrics"] = request_metrics
+    app.extensions["tallyguard_request_logging_enabled"] = request_logging_enabled
     app.extensions["tallyguard_evidence_analyst"] = evidence_analyst
     demo_sessions_enabled = (
         testing
@@ -572,11 +588,25 @@ def create_app(
 
     @app.after_request
     def attach_correlation_id(response: Response) -> Response:
+        elapsed_seconds = monotonic() - g.request_started_monotonic
         request_metrics.observe(
             endpoint=request.endpoint or "unmatched",
             status_code=response.status_code,
-            elapsed_seconds=monotonic() - g.request_started_monotonic,
+            elapsed_seconds=elapsed_seconds,
         )
+        if request_logging_enabled:
+            app.logger.info(
+                canonical_json(
+                    {
+                        "correlation_id": _correlation_id(),
+                        "duration_ms": round(elapsed_seconds * 1000, 3),
+                        "endpoint": request.endpoint or "unmatched",
+                        "event": "http_request",
+                        "method": request.method,
+                        "status_code": response.status_code,
+                    }
+                )
+            )
         response.headers["X-Correlation-ID"] = _correlation_id()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"

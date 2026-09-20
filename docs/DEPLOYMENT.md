@@ -38,6 +38,9 @@ docker run --rm -p 8000:8000 tallyguard-arc
 
 Readiness is available at `/api/readiness`. A ready simulation deployment reports
 the database, Arc network, and settlement adapter without exposing credentials.
+Production request logs are JSON objects controlled by `TALLYGUARD_REQUEST_LOGS`.
+They intentionally contain endpoint names rather than URL paths or query strings,
+and never include authorization headers, tenant IDs, or financial record IDs.
 
 ## Reproducible real-HTTP acceptance
 

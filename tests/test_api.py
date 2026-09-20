@@ -3,6 +3,7 @@ from decimal import Decimal
 import hashlib
 from io import BytesIO
 import json
+import logging
 
 from tallyguard.api import create_app
 from tallyguard.audit import canonical_json
@@ -46,6 +47,54 @@ def test_health_and_readiness_are_public(tmp_path):
     assert readiness["arc_rpc_verification"] == "simulated"
     assert readiness["mainnet_enabled"] is False
     assert readiness["demo_sessions_enabled"] is True
+
+
+def test_request_log_is_structured_and_omits_sensitive_request_data(tmp_path, caplog):
+    app = create_app(
+        database_path=tmp_path / "request-logs.sqlite3",
+        testing=True,
+        request_logging_enabled=True,
+    )
+    caplog.set_level(logging.INFO, logger=app.logger.name)
+
+    response = app.test_client().get(
+        "/api/health?private_invoice=INV-SECRET",
+        headers={
+            "Authorization": "Bearer super-secret-token",
+            "X-Correlation-ID": "judge-request-7",
+        },
+    )
+
+    assert response.headers["X-Correlation-ID"] == "judge-request-7"
+    event = next(
+        json.loads(record.message)
+        for record in reversed(caplog.records)
+        if '"event":"http_request"' in record.message
+    )
+    assert event == {
+        "correlation_id": "judge-request-7",
+        "duration_ms": event["duration_ms"],
+        "endpoint": "health",
+        "event": "http_request",
+        "method": "GET",
+        "status_code": 200,
+    }
+    assert event["duration_ms"] >= 0
+    assert "super-secret-token" not in caplog.text
+    assert "INV-SECRET" not in caplog.text
+
+
+def test_untrusted_correlation_id_is_replaced(tmp_path):
+    app = create_app(database_path=tmp_path / "correlation.sqlite3", testing=True)
+
+    response = app.test_client().get(
+        "/api/health",
+        headers={"X-Correlation-ID": "x" * 129},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-ID"].startswith("req_")
+    assert len(response.headers["X-Correlation-ID"]) == 36
 
 
 def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, monkeypatch):

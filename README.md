@@ -96,6 +96,7 @@ Every payment answers four questions:
 - Auditor-visible reliability panel loads the checked-in 10,000-workflow result through a content-addressed API and labels it explicitly as synthetic engineering evidence rather than customer traction
 - A separate 50-tenant Agent Run test executes 200 mixed queue items, verifies 50 proof packets, denies 50/50 cross-tenant proof reads, and converges 100 simultaneous execution calls onto one durable claim and one provider submission
 - Tenant-scoped sliding-window rate limits and bounded operational request metrics
+- Production-safe structured request logs include only endpoint names, status, duration, and a validated correlation ID; URLs, query strings, authorization headers, tenant IDs, and financial record IDs are intentionally excluded
 
 ## Run the judge console
 
