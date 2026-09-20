@@ -86,6 +86,17 @@ body {
   line-height: .98;
 }
 
+.judge-quickstart {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.judge-quickstart .cds--btn { min-width: 220px; justify-content: space-between; }
+.judge-quickstart__proof { display: flex; align-items: center; gap: .55rem; color: var(--tg-muted); font-family: IBM Plex Mono, monospace; font-size: .6875rem; }
+.judge-quickstart__proof svg { flex: none; color: var(--tg-accent-dark); }
+
 .system-state {
   display: flex;
   align-items: center;
@@ -161,6 +172,7 @@ body {
 .scenario-rail {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 1.5rem;
   border-right: 1px solid var(--tg-line);
   background: #edf2f0;
@@ -629,6 +641,9 @@ body {
   .cds--content { padding: 4.5rem .75rem 1rem; }
   .context-bar { align-items: flex-start; flex-direction: column; }
   .context-bar h1 { font-size: 2.5rem; }
+  .judge-quickstart { align-items: stretch; flex-direction: column; gap: .75rem; }
+  .judge-quickstart .cds--btn { width: 100%; max-width: none; }
+  .judge-quickstart__proof { justify-content: space-between; }
   .system-state { width: 100%; }
   .metrics-band { grid-template-columns: repeat(2, 1fr); }
   .runtime-boundary { grid-template-columns: 1fr; }
@@ -639,6 +654,22 @@ body {
   .metric:nth-child(-n+2) { border-bottom: 1px solid var(--tg-line); }
   .workspace-grid { grid-template-columns: 1fr; }
   .scenario-rail { border-right: 0; border-bottom: 1px solid var(--tg-line); }
+  .scenario-list {
+    display: flex;
+    gap: .5rem;
+    max-width: 100%;
+    margin-right: -.5rem;
+    padding: 0 .5rem .5rem 0;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .scenario-row {
+    flex: 0 0 min(290px, calc(100vw - 5rem));
+    min-height: 104px;
+    border: 1px solid #d4ddda;
+    scroll-snap-align: start;
+  }
+  .scenario-row:last-child { border-bottom: 1px solid #d4ddda; }
   .run-button { margin-top: 0; }
   .rule-table__head { display: none; }
   .rule-table__row { grid-template-columns: 1fr; gap: .5rem; padding: 1rem 0; }

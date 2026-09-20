@@ -81,6 +81,7 @@ Every payment answers four questions:
 - Auditor-only global ledger search filters the tenant chain by event type, object type, literal text, and time window; cursor pagination preserves original sequence numbers while chain validity is always computed over the complete tenant history
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with eight deterministic risk and recovery scenarios and a fresh-evidence workflow
+- The judge landing view exposes an above-the-fold governed-payment quick run; after evaluation it moves keyboard and visual context to the resulting evidence and policy proof, while the mobile scenario library remains compact and horizontally browsable
 - The fresh-evidence path creates tenant-scoped vendor, policy, treasury, invoice, PO, and delivery records; uploads three hashed source files; evaluates them; and can produce a reconciled simulation receipt from one screen
 - A bring-your-own-evidence path accepts three JSON or labelled text-layer PDF files, previews normalized fields and source hashes for human confirmation without persistence, then seals the original bytes and runs the same policy pipeline
 - An auditor-only timeline filters the tenant hash chain to the active invoice and refreshes after evaluation, approval, and settlement so the judge can verify each state mutation on screen

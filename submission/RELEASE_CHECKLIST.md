@@ -71,6 +71,10 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.
 - [ ] Keep the final video under three minutes.
+- [ ] Include a 6–8 second desktop-to-390px comparison of the same governed
+  decision and receipt; describe it as one responsive web app, not three apps.
+- [ ] Include one desktop/mobile comparison frame in the final deck or submission
+  gallery so the responsive work remains visible outside the video.
 - [ ] Include real Explorer proof only after independent verification succeeds.
 - [ ] Upload the video and verify playback without account access.
 

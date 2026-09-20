@@ -1576,7 +1576,7 @@ function App() {
     });
   }, [act, auditSearch, data]);
 
-  const handleRun = useCallback((key: string) => {
+  const handleRun = useCallback((key: string, focusResult = false) => {
     if (!data) return;
     void act('Evaluating immutable evidence and policy rules', async () => {
       const result = await runScenario(key, data.sessions.operator);
@@ -1592,6 +1592,14 @@ function App() {
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
+      if (focusResult) {
+        window.requestAnimationFrame(() => {
+          const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+          const workbench = document.getElementById('evaluation-workbench');
+          workbench?.focus({ preventScroll: true });
+          workbench?.scrollIntoView({ behavior, block: 'start' });
+        });
+      }
     });
   }, [act, data]);
 
@@ -1815,6 +1823,24 @@ function App() {
           <div>
             <span className="eyebrow">Finance control plane / Judge workspace</span>
             <h1>Approve the evidence. Automate the payment.</h1>
+            <div className="judge-quickstart">
+              <Button
+                size="lg"
+                renderIcon={PlayFilled}
+                disabled={!data || busy !== null}
+                aria-controls="evaluation-workbench"
+                onClick={() => handleRun(selectedKey, true)}
+              >
+                Run governed payment
+              </Button>
+              <div className="judge-quickstart__proof" aria-label="Demonstration stages">
+                <span>3 source records</span>
+                <ArrowRight size={14} aria-hidden="true" />
+                <span>13 controls</span>
+                <ArrowRight size={14} aria-hidden="true" />
+                <span>Arc receipt</span>
+              </div>
+            </div>
           </div>
           <div className="system-state">
             <span className="live-dot" aria-hidden="true" />
@@ -1863,7 +1889,7 @@ function App() {
               onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRunLive={handleRunLive}
             />
-            <main className="workbench">
+            <main className="workbench" id="evaluation-workbench" tabIndex={-1}>
               {run ? (
                 <>
                   <div className="run-meta">
