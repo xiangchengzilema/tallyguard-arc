@@ -49,6 +49,7 @@ Every payment answers four questions:
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration
 - Mainnet settlement locked behind an explicit runtime flag and a durable, decision-bound approval requested by an operator and resolved by a different approver
+- A local operator-access command creates or verifies four single-role identities in the live database and prints short-lived opaque sessions once; live Circle mode never needs the public demo-session endpoint
 - The currently active policy kill switch is rechecked immediately before every new settlement; it blocks already-`READY` invoices without creating an intent, while completed receipt replays remain readable and never resubmit
 - Payment-intent creation atomically rechecks the active route, autonomy cap, snapshot freshness, daily limit, and reserve floor while reserving every amount committed since the latest treasury snapshot; concurrent workers cannot spend the same headroom twice
 - Thread-safe idempotent settlement kernel with exact recipient/amount/network reconciliation
@@ -175,6 +176,7 @@ constraint and the production migration boundary.
 - [Frontend reference map](docs/FRONTEND_REFERENCE_MAP.md)
 - [Implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [Circle and Arc settlement boundary](docs/CIRCLE_ARC_SETTLEMENT.md)
+- [Live operator access](docs/LIVE_OPERATOR_ACCESS.md)
 - [Deployment model](docs/DEPLOYMENT.md)
 - [Architecture and trust boundaries](docs/ARCHITECTURE.md)
 - [Security model and live-testing protocol](docs/SECURITY_MODEL.md)

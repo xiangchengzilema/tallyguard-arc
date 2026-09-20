@@ -539,6 +539,42 @@ class SqliteRepository:
             except sqlite3.IntegrityError as exc:
                 raise PersistenceError("Organization ID is already in use.") from exc
 
+    def ensure_organization(
+        self,
+        *,
+        organization_id: str,
+        name: str,
+        created_at: datetime | None = None,
+    ) -> bool:
+        """Create an organization or verify that the durable identity is unchanged."""
+
+        timestamp = created_at or datetime.now(timezone.utc)
+        if not organization_id.strip() or not name.strip():
+            raise PersistenceError("Organization ID and name are required.")
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._connection.execute(
+                    "SELECT name FROM organizations WHERE id = ?",
+                    (organization_id,),
+                ).fetchone()
+                if row is None:
+                    self._connection.execute(
+                        "INSERT INTO organizations (id, name, created_at) VALUES (?, ?, ?)",
+                        (organization_id, name, timestamp.isoformat()),
+                    )
+                    self._connection.execute("COMMIT")
+                    return True
+                if row["name"] != name:
+                    raise PersistenceError(
+                        "Existing organization name does not match the requested identity."
+                    )
+                self._connection.execute("COMMIT")
+                return False
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+
     def create_user(
         self,
         *,
@@ -571,6 +607,70 @@ class SqliteRepository:
                 )
             except sqlite3.IntegrityError as exc:
                 raise PersistenceError("User cannot be created in this organization.") from exc
+
+    def ensure_user(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        display_name: str,
+        roles: tuple[str, ...],
+        active: bool = True,
+        created_at: datetime | None = None,
+    ) -> bool:
+        """Create a user or fail closed if an existing identity differs."""
+
+        timestamp = created_at or datetime.now(timezone.utc)
+        if not user_id.strip() or not display_name.strip() or not roles:
+            raise PersistenceError("User ID, display name, and roles are required.")
+        canonical_roles = canonical_json(roles)
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._connection.execute(
+                    """
+                    SELECT display_name, roles_json, active
+                    FROM users
+                    WHERE organization_id = ? AND id = ?
+                    """,
+                    (organization_id, user_id),
+                ).fetchone()
+                if row is None:
+                    self._connection.execute(
+                        """
+                        INSERT INTO users
+                            (organization_id, id, display_name, roles_json, active, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            organization_id,
+                            user_id,
+                            display_name,
+                            canonical_roles,
+                            int(active),
+                            timestamp.isoformat(),
+                        ),
+                    )
+                    self._connection.execute("COMMIT")
+                    return True
+                if (
+                    row["display_name"] != display_name
+                    or row["roles_json"] != canonical_roles
+                    or bool(row["active"]) is not active
+                ):
+                    raise PersistenceError(
+                        "Existing user does not match the requested identity, roles, or state."
+                    )
+                self._connection.execute("COMMIT")
+                return False
+            except sqlite3.IntegrityError as exc:
+                self._connection.execute("ROLLBACK")
+                raise PersistenceError(
+                    "User cannot be created in this organization."
+                ) from exc
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
 
     def save_session(
         self,

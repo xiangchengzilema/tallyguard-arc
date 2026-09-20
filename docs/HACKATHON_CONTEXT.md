@@ -78,6 +78,9 @@ Strongly encouraged:
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
 - Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations
 - Runtime safety boundary is visible in the judge console and sourced from the readiness API
+- Live Circle operation no longer depends on public demo-session issuance: an
+  explicit local command provisions four durable single-role identities and
+  emits short-lived bearer sessions only to the trusted invoking terminal
 - A durable bounded-autonomy runner plans a mixed tenant AP queue, hashes both observed state and proposed actions, routes policy escalations, releases due schedules through current-policy revalidation, and settles only a current `PAY`, an exactly bound independent approval, or an explicitly retryable attempt under the approver role
 - The judge can export a content-addressed Agent Run Proof Packet with plan-hash verification, execution outcomes, approval bindings, related audit events, and tenant-chain verification
 - A one-click autonomy showcase creates and plans a mixed four-invoice queue so judges and the demo video can show payment, approval routing, wallet-risk remediation, and due-date waiting without repetitive setup
