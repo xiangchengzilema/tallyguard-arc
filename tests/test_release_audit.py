@@ -8,6 +8,7 @@ from tallyguard.release_audit import (
     _acceptance_check,
     _check_png_dimensions,
     _check_responsive_broll,
+    _check_render_blueprint,
     _check_single_pitch_deck,
     _check_text_fragments,
     _check_tracked_markdown_links,
@@ -27,6 +28,73 @@ def test_release_audit_binds_the_current_git_commit():
     assert check.status == "passed"
     assert len(check.detail) == 40
     assert check.evidence_sha256 == sha256(check.detail.encode("ascii")).hexdigest()
+
+
+def test_render_blueprint_requires_public_safe_isolated_simulation(tmp_path):
+    blueprint = tmp_path / "render.yaml"
+    blueprint.write_text(
+        """services:
+  - type: web
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/readiness
+    envVars:
+      - key: TALLYGUARD_MODE
+        value: simulation
+      - key: TALLYGUARD_ARC_NETWORK
+        value: ARC-TESTNET
+      - key: TALLYGUARD_ALLOW_MAINNET
+        value: \"false\"
+      - key: TALLYGUARD_ENABLE_DEMO_SESSIONS
+        value: \"true\"
+      - key: TALLYGUARD_DATABASE_PATH
+        value: /tmp/tallyguard.sqlite3
+      - key: TALLYGUARD_FRONTEND_DIST
+        value: /app/web/dist
+""",
+        encoding="utf-8",
+    )
+
+    assert _check_render_blueprint(tmp_path).status == "passed"
+
+    unsafe = blueprint.read_text(encoding="utf-8").replace(
+        'value: "true"',
+        'value: "false"',
+    )
+    blueprint.write_text(unsafe, encoding="utf-8")
+    failed = _check_render_blueprint(tmp_path)
+    assert failed.status == "failed"
+    assert "TALLYGUARD_ENABLE_DEMO_SESSIONS" in failed.detail
+
+
+def test_render_blueprint_rejects_live_credentials(tmp_path):
+    blueprint = tmp_path / "render.yaml"
+    blueprint.write_text(
+        """runtime: docker
+plan: free
+healthCheckPath: /api/readiness
+envVars:
+  - key: TALLYGUARD_MODE
+    value: simulation
+  - key: TALLYGUARD_ARC_NETWORK
+    value: ARC-TESTNET
+  - key: TALLYGUARD_ALLOW_MAINNET
+    value: false
+  - key: TALLYGUARD_ENABLE_DEMO_SESSIONS
+    value: true
+  - key: TALLYGUARD_DATABASE_PATH
+    value: /tmp/tallyguard.sqlite3
+  - key: TALLYGUARD_FRONTEND_DIST
+    value: /app/web/dist
+  - key: CIRCLE_API_KEY
+    value: forbidden
+""",
+        encoding="utf-8",
+    )
+
+    failed = _check_render_blueprint(tmp_path)
+    assert failed.status == "failed"
+    assert "CIRCLE_API_KEY" in failed.detail
 
 
 def test_external_url_check_distinguishes_pending_invalid_and_public_urls():

@@ -5,7 +5,7 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Repository release gate
 
-- [x] Run `python -m pytest` and preserve the passing total: 268 tests on
+- [x] Run `python -m pytest` and preserve the passing total: 272 tests on
   2026-09-20.
 - [x] Run `python -m compileall -q src tests`.
 - [x] Run `npm ci && npm run build` inside `web/`; npm reported zero

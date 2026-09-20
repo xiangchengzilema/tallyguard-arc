@@ -18,7 +18,7 @@ services:
       - key: TALLYGUARD_MAX_TRANSFER_USDC
         value: "5.00"
       - key: TALLYGUARD_ENABLE_DEMO_SESSIONS
-        value: "false"
+        value: "true"
       - key: TALLYGUARD_RATE_LIMIT_PER_MINUTE
         value: "6000"
       - key: TALLYGUARD_DEMO_SESSION_RATE_LIMIT_PER_MINUTE

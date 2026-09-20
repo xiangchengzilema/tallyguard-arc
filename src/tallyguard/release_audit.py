@@ -43,6 +43,79 @@ def _check_file(root: Path, relative_path: str) -> ReleaseCheck:
     )
 
 
+def _check_render_blueprint(root: Path) -> ReleaseCheck:
+    relative_path = "render.yaml"
+    path = root / relative_path
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ReleaseCheck(
+            "local",
+            "Render public-safety blueprint",
+            "failed",
+            f"Cannot read {relative_path}: {exc}",
+        )
+
+    environment: dict[str, str] = {}
+    current_key: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("- key:"):
+            current_key = line.split(":", 1)[1].strip().strip('"\'')
+            continue
+        if current_key is not None and line.startswith("value:"):
+            environment[current_key] = line.split(":", 1)[1].strip().strip('"\'')
+            current_key = None
+
+    expected_environment = {
+        "TALLYGUARD_MODE": "simulation",
+        "TALLYGUARD_ARC_NETWORK": "ARC-TESTNET",
+        "TALLYGUARD_ALLOW_MAINNET": "false",
+        "TALLYGUARD_ENABLE_DEMO_SESSIONS": "true",
+        "TALLYGUARD_DATABASE_PATH": "/tmp/tallyguard.sqlite3",
+        "TALLYGUARD_FRONTEND_DIST": "/app/web/dist",
+    }
+    invalid = sorted(
+        key
+        for key, expected in expected_environment.items()
+        if environment.get(key) != expected
+    )
+    forbidden = sorted(
+        key
+        for key in environment
+        if key.startswith("CIRCLE_")
+        or key.startswith("TALLYGUARD_CIRCLE_")
+        or key in {"PRIVATE_KEY", "WALLET_PRIVATE_KEY"}
+    )
+    structural_fragments = (
+        "runtime: docker",
+        "healthCheckPath: /api/readiness",
+        "plan: free",
+    )
+    missing_structure = [fragment for fragment in structural_fragments if fragment not in text]
+    if invalid or forbidden or missing_structure:
+        detail: list[str] = []
+        if invalid:
+            detail.append("unsafe or missing values: " + ", ".join(invalid))
+        if forbidden:
+            detail.append("live credential variables present: " + ", ".join(forbidden))
+        if missing_structure:
+            detail.append("missing deployment settings: " + ", ".join(missing_structure))
+        return ReleaseCheck(
+            "local",
+            "Render public-safety blueprint",
+            "failed",
+            "; ".join(detail),
+        )
+    return ReleaseCheck(
+        "local",
+        "Render public-safety blueprint",
+        "passed",
+        "Simulation, Arc Testnet labels, isolated demo workspaces, and disabled Mainnet are enforced without Circle credentials.",
+        _hash_file(path),
+    )
+
+
 def _check_png_dimensions(
     root: Path,
     relative_path: str,
@@ -734,7 +807,7 @@ def audit_release(
         _check_file(root, "README.md"),
         _check_tracked_markdown_links(root, "README.md"),
         _check_file(root, "Dockerfile"),
-        _check_file(root, "render.yaml"),
+        _check_render_blueprint(root),
         _check_file(root, "docs/ARCHITECTURE.md"),
         _check_file(root, "docs/SECURITY_MODEL.md"),
         _check_file(root, "web/dist/index.html"),
