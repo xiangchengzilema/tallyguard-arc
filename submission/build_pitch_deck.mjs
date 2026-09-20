@@ -6,7 +6,7 @@ import { Presentation, PresentationFile } from "@oai/artifact-tool";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_DIR = "C:/Users/55246/.codex/plugins/cache/openai-primary-runtime/presentations/26.909.12148/skills/presentations";
 const BUILD_DIR = path.join(ROOT, ".codex-deck");
-const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v7.pptx");
+const FINAL_PPTX = path.join(ROOT, "submission", "TallyGuard_Tameion_Pitch_v8.pptx");
 const RUNTIME_PYTHON = "C:/Users/55246/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe";
 
 const { resolvePresentationFont, finalizePresentation } = await import(
@@ -363,20 +363,31 @@ function setNotes(slide, text) {
   const slide = presentation.slides.add();
   slide.background.fill = C.ink;
   addText(slide, "TALLYGUARD", 58, 46, 300, 24, { fontSize: 14, bold: true, color: C.aqua });
-  addText(slide, "Approve the evidence.\nAutomate the payment.", 58, 112, 690, 142, { fontSize: 52, color: C.white, lineSpacing: 0.92 });
-  addText(slide, "A finance control plane for AI-operated businesses, built for Circle USDC on Arc.", 62, 290, 660, 60, { fontSize: 22, color: "#B8CFCC" });
-  addRule(slide, 62, 402, 1128, "#28514D", 1);
-  addText(slide, "READY", 62, 434, 100, 18, { fontSize: 11, bold: true, color: C.aqua });
-  addText(slide, "Multi-tenant product, deterministic controls, bounded agent runs, offline verifier, stress evidence", 62, 464, 1100, 30, { fontSize: 20, color: C.white });
-  addText(slide, "NEXT PROOF", 62, 528, 120, 18, { fontSize: 11, bold: true, color: C.amber });
-  addText(slide, "Capped Arc Testnet USDC transfer, external operator feedback, final three-minute walkthrough", 62, 558, 1100, 30, { fontSize: 20, color: C.white });
-  addPill(slide, "TAMEION AGENTS HACKATHON", 62, 626, 236, C.aqua, C.ink);
-  addText(slide, "Submission deadline  ·  October 10, 2026 11:59 PM ET", 328, 630, 600, 22, { fontSize: 14, color: "#7EA09D" });
+  addText(slide, "Approve the evidence.\nAutomate the payment.", 58, 108, 500, 150, { fontSize: 47, color: C.white, lineSpacing: 0.92 });
+  addText(slide, "One responsive finance control plane for Circle USDC on Arc — desktop-first, operable at 390 px.", 62, 290, 474, 78, { fontSize: 20, color: "#B8CFCC" });
+  addPill(slide, "ONE RESPONSIVE WEB APP", 62, 394, 218, C.aqua, C.ink);
+  addText(slide, "Same evidence", 62, 446, 150, 20, { fontSize: 13, bold: true, color: C.aqua });
+  addText(slide, "Same 13 controls", 212, 446, 160, 20, { fontSize: 13, bold: true, color: C.aqua });
+  addText(slide, "Same Arc settlement path", 372, 446, 184, 20, { fontSize: 13, bold: true, color: C.aqua });
+  addRule(slide, 62, 490, 470, "#28514D", 1);
+  addText(slide, "READY", 62, 516, 82, 18, { fontSize: 11, bold: true, color: C.aqua });
+  addText(slide, "Multi-tenant controls · bounded agent runs · offline verifier · stress evidence", 62, 544, 470, 52, { fontSize: 17, color: C.white });
+  addText(slide, "NEXT PROOF", 62, 614, 100, 18, { fontSize: 11, bold: true, color: C.amber });
+  addText(slide, "Capped Arc Testnet transfer + external operator feedback", 164, 610, 370, 32, { fontSize: 15, color: "#B8CFCC" });
+
+  addShape(slide, "roundRect", 588, 84, 626, 502, C.ink2, "#28514D", 1, "rounded-xl");
+  addText(slide, "DESKTOP  /  1440 PX", 612, 104, 220, 18, { fontSize: 10, bold: true, color: C.aqua });
+  await addImage(slide, "responsive-desktop.png", { left: 612, top: 134, width: 566, height: 354 }, { alt: "TallyGuard governed payment on a desktop browser", fit: "cover" });
+  addShape(slide, "roundRect", 1002, 254, 176, 348, C.white, C.white, 5, "rounded-xl");
+  await addImage(slide, "responsive-mobile.png", { left: 1008, top: 260, width: 164, height: 336 }, { alt: "The same TallyGuard decision at 390 pixel mobile width", fit: "cover" });
+  addPill(slide, "MOBILE  /  390 PX", 858, 512, 134, C.ink, C.aqua, C.aqua);
+  addText(slide, "The decision remains inspectable without horizontal overflow.", 612, 530, 372, 44, { fontSize: 15, color: "#B8CFCC" });
+  addText(slide, "Submission deadline  ·  October 10, 2026 11:59 PM ET", 612, 622, 566, 22, { fontSize: 13, color: "#7EA09D", alignment: "right" });
   addFooter(slide, 10, true);
-  setNotes(slide, "Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
+  setNotes(slide, "The desktop and 390 px captures show the same responsive React application and governed-payment path, not separate clients. Captured locally from the current product. Event information: https://tameion.thecanteenapp.com/ and docs/HACKATHON_CONTEXT.md. GitHub and live-demo links should be added only after the user approves publication and deployment.");
 }
 
-const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v7.candidate.pptx");
+const candidatePath = path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v8.candidate.pptx");
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 
 const requirements = {
@@ -404,7 +415,7 @@ const result = await finalizePresentation({
   requiredNativeTableOwnerSlides: requirements.requiredNativeTableOwnerSlides,
   fontPolicy,
   verifyArtifactToolImport: true,
-  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v7.validation.json"),
+  receiptPath: path.join(BUILD_DIR, "TallyGuard_Tameion_Pitch_v8.validation.json"),
 });
 
 console.log(JSON.stringify({ fontFamily, monoFamily, finalPath: FINAL_PPTX, result }, null, 2));

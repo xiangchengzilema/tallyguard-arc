@@ -128,7 +128,7 @@ unless payment and permission to make that claim are separately documented.
 - Public repository: `PENDING_EXTERNAL`
 - Live judge console: `PENDING_EXTERNAL`
 - Demo video under three minutes: `PENDING_EXTERNAL`
-- Pitch deck: `submission/TallyGuard_Tameion_Pitch_v7.pptx`
+- Pitch deck: `submission/TallyGuard_Tameion_Pitch_v8.pptx`
 - Arc Testnet transaction: `PENDING_EXTERNAL`
 - Verified Testnet artifact: `PENDING_EXTERNAL`
 - Pilot evidence: `PENDING_EXTERNAL`

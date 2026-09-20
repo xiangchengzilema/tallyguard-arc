@@ -67,14 +67,14 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Presentation and video
 
-- [ ] Open `TallyGuard_Tameion_Pitch_v7.pptx` and confirm all ten slides.
+- [ ] Open `TallyGuard_Tameion_Pitch_v8.pptx` and confirm all ten slides.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.
 - [ ] Keep the final video under three minutes.
 - [ ] Include a 6–8 second desktop-to-390px comparison of the same governed
   decision and receipt; describe it as one responsive web app, not three apps.
-- [ ] Include one desktop/mobile comparison frame in the final deck or submission
-  gallery so the responsive work remains visible outside the video.
+- [x] Include one desktop/mobile comparison frame in the final deck or submission
+  gallery so the responsive work remains visible outside the video (slide 10).
 - [ ] Include real Explorer proof only after independent verification succeeds.
 - [ ] Upload the video and verify playback without account access.
 
