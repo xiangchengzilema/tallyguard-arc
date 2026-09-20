@@ -896,9 +896,11 @@ function EmptyWorkbench({ scenario }: { scenario?: Scenario }) {
 
 function LiveEvidenceWorkbench({
   busy,
+  operatorToken,
   onEvaluate,
 }: {
   busy: boolean;
+  operatorToken: string;
   onEvaluate: (files: EvidenceFileBundle) => void;
 }) {
   const [files, setFiles] = useState<Partial<EvidenceFileBundle>>({});
@@ -921,14 +923,14 @@ function LiveEvidenceWorkbench({
     setReviewing(true);
     setReview(null);
     setReviewError(null);
-    reviewEvidenceFiles(bundle)
+    reviewEvidenceFiles(bundle, operatorToken)
       .then((result) => { if (!cancelled) setReview(result); })
       .catch((reason: unknown) => {
         if (!cancelled) setReviewError(reason instanceof Error ? reason.message : 'Could not review these files.');
       })
       .finally(() => { if (!cancelled) setReviewing(false); });
     return () => { cancelled = true; };
-  }, [files.delivery, files.invoice, files.purchaseOrder]);
+  }, [files.delivery, files.invoice, files.purchaseOrder, operatorToken]);
 
   const updateFile = (key: keyof EvidenceFileBundle, file?: File) => {
     setFiles((current) => ({ ...current, [key]: file }));
@@ -944,14 +946,14 @@ function LiveEvidenceWorkbench({
         <div>
           <span className="eyebrow">Bring your own evidence</span>
           <h2>Review before the agent decides.</h2>
-          <p>Select three structured JSON documents. They stay in this workflow, are hashed before storage, and cannot be replaced after evaluation begins.</p>
+          <p>Select JSON or labelled text-layer PDF documents. Preview extraction persists nothing; confirmed source bytes are hashed and become immutable when evaluation begins.</p>
         </div>
       </div>
       <div className="upload-grid">
         {([
-          ['invoice', 'Invoice JSON', 'invoice_id · vendor_id · amount · wallet'],
-          ['purchaseOrder', 'Purchase order JSON', 'purchase_order_id · vendor_id · authorized_amount'],
-          ['delivery', 'Delivery JSON', 'delivery_id · purchase_order_id · delivered_value'],
+          ['invoice', 'Invoice', 'JSON / text PDF · invoice ID · vendor · amount · wallet'],
+          ['purchaseOrder', 'Purchase order', 'JSON / text PDF · PO ID · vendor · authorized amount'],
+          ['delivery', 'Delivery evidence', 'JSON / text PDF · delivery ID · PO ID · delivered value'],
         ] as const).map(([key, label, hint]) => (
           <label className={files[key] ? 'upload-slot upload-slot--ready' : 'upload-slot'} key={key}>
             <span>{files[key] ? <CheckmarkFilled size={18} /> : <Document size={18} />}</span>
@@ -959,14 +961,14 @@ function LiveEvidenceWorkbench({
             <small>{files[key]?.name ?? hint}</small>
             <input
               aria-label={`Upload ${label}`}
-              accept="application/json,.json"
+              accept="application/json,application/pdf,.json,.pdf"
               type="file"
               onChange={(event) => updateFile(key, event.target.files?.[0])}
             />
           </label>
         ))}
       </div>
-      {reviewing ? <InlineLoading description="Reading and validating local evidence" status="active" /> : null}
+      {reviewing ? <InlineLoading description="Extracting and validating immutable evidence" status="active" /> : null}
       {reviewError ? (
         <InlineNotification kind="error" title="Evidence review stopped" subtitle={reviewError} lowContrast hideCloseButton />
       ) : null}
@@ -974,7 +976,7 @@ function LiveEvidenceWorkbench({
         <div className="evidence-review" aria-label="Extracted evidence review">
           <div className="evidence-review__head">
             <div><span className="eyebrow">Extraction review</span><h3>{review.invoiceNumber}</h3></div>
-            <Tag type="teal">Schema valid</Tag>
+            <Tag type="teal">{review.extractionMethods.join(' + ')} verified</Tag>
           </div>
           <div className="evidence-review__grid">
             <div><span>Vendor</span><code>{review.vendorId}</code></div>
@@ -983,6 +985,7 @@ function LiveEvidenceWorkbench({
             <div><span>Delivered</span><strong>{formatMoney(review.deliveredValue)} {review.currency}</strong></div>
             <div><span>Due</span><strong>{review.dueDate}</strong></div>
             <div><span>Recipient</span><code>{shorten(review.walletAddress, 10, 8)}</code></div>
+            <div><span>Source hashes</span><code>{review.contentHashes.map((hash) => hash.slice(0, 8)).join(' · ')}</code></div>
           </div>
           <div className="review-action">
             <p>Confirm these extracted values before creating immutable tenant records.</p>
@@ -1858,7 +1861,11 @@ function App() {
                   ) : null}
                 </>
               ) : mode === 'live' ? (
-                <LiveEvidenceWorkbench busy={busy !== null} onEvaluate={handleUploadedEvidence} />
+                <LiveEvidenceWorkbench
+                  busy={busy !== null}
+                  operatorToken={data.sessions.operator}
+                  onEvaluate={handleUploadedEvidence}
+                />
               ) : <EmptyWorkbench scenario={selectedScenario} />}
             </main>
           </div>

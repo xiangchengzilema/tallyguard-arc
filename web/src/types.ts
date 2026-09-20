@@ -101,6 +101,22 @@ export interface EvidenceFileBundle {
   delivery: File;
 }
 
+export type EvidenceExtractionMethod = 'JSON' | 'PDF_TEXT' | 'OCR' | 'MANUAL' | 'SEEDED';
+
+export interface EvidenceFieldPreview {
+  name: string;
+  raw_value: string;
+  normalized_value: string;
+  confidence: string;
+  method: EvidenceExtractionMethod;
+  source: {
+    document_id: string;
+    page_number: number | null;
+    bounding_box: [number, number, number, number] | null;
+    json_pointer: string | null;
+  };
+}
+
 export interface EvidenceFileReview {
   invoiceNumber: string;
   vendorId: string;
@@ -111,6 +127,8 @@ export interface EvidenceFileReview {
   authorizedAmount: string;
   deliveredValue: string;
   walletAddress: string;
+  extractionMethods: EvidenceExtractionMethod[];
+  contentHashes: string[];
 }
 
 export interface AuditEvent {

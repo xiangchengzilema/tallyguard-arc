@@ -259,7 +259,7 @@ Implemented foundation:
 - Vendor risk and wallet-change history (complete)
 - Audit explorer with chain verification (active-invoice timeline and global searchable ledger complete)
 - Seeded scenario switcher for fast judging
-- User-supplied document picker and extraction review before evaluation (structured JSON UI complete; labelled text-PDF extraction preview API complete; scanned-PDF/image OCR UI remains optional)
+- User-supplied document picker and extraction review before evaluation (structured JSON and labelled text-PDF UI complete; scanned-PDF/image OCR remains optional and fails closed)
 
 Exit criteria:
 

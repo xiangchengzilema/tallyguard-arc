@@ -6,6 +6,8 @@ import type {
   AuditSearchResult,
   AuditTrail,
   BootstrapData,
+  EvidenceExtractionMethod,
+  EvidenceFieldPreview,
   EvidenceFileBundle,
   EvidenceFileReview,
   GovernanceOverview,
@@ -291,11 +293,15 @@ interface ParsedEvidenceBundle {
   invoice: JsonEvidence;
   purchaseOrder: JsonEvidence;
   delivery: JsonEvidence;
-  bytes: {
-    invoice: ArrayBuffer;
-    purchaseOrder: ArrayBuffer;
-    delivery: ArrayBuffer;
-  };
+  documents: Record<keyof EvidenceFileBundle, ParsedEvidenceDocument>;
+}
+
+interface ParsedEvidenceDocument {
+  record: JsonEvidence;
+  bytes: ArrayBuffer;
+  mimeType: 'application/json' | 'application/pdf';
+  contentSha256: string;
+  extractionMethods: EvidenceExtractionMethod[];
 }
 
 const requiredField = (record: JsonEvidence, field: string, documentName: string) => {
@@ -304,10 +310,15 @@ const requiredField = (record: JsonEvidence, field: string, documentName: string
   return value;
 };
 
-const parseJsonEvidence = async (file: File, documentName: string): Promise<[JsonEvidence, ArrayBuffer]> => {
-  if (!file.name.toLowerCase().endsWith('.json')) {
-    throw new Error(`${documentName} must be a JSON file for the browser review workflow.`);
-  }
+const evidenceMimeType = (file: File, documentName: string): ParsedEvidenceDocument['mimeType'] => {
+  const filename = file.name.toLowerCase();
+  const mimeType = file.type.toLowerCase();
+  if (mimeType === 'application/json' || filename.endsWith('.json')) return 'application/json';
+  if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) return 'application/pdf';
+  throw new Error(`${documentName} must be JSON or a labelled text-layer PDF.`);
+};
+
+const parseJsonEvidence = async (file: File, documentName: string): Promise<ParsedEvidenceDocument> => {
   const bytes = await file.arrayBuffer();
   let decoded: unknown;
   try {
@@ -322,15 +333,65 @@ const parseJsonEvidence = async (file: File, documentName: string): Promise<[Jso
   for (const [key, value] of Object.entries(decoded)) {
     if (['string', 'number', 'boolean'].includes(typeof value)) normalized[key] = String(value);
   }
-  return [normalized, bytes];
+  return {
+    record: normalized,
+    bytes,
+    mimeType: 'application/json',
+    contentSha256: await sha256(bytes),
+    extractionMethods: ['JSON'],
+  };
 };
 
-const parseEvidenceBundle = async (files: EvidenceFileBundle): Promise<ParsedEvidenceBundle> => {
-  const [[invoice, invoiceBytes], [purchaseOrder, purchaseOrderBytes], [delivery, deliveryBytes]] = await Promise.all([
-    parseJsonEvidence(files.invoice, 'Invoice'),
-    parseJsonEvidence(files.purchaseOrder, 'Purchase order'),
-    parseJsonEvidence(files.delivery, 'Delivery evidence'),
+interface EvidencePreviewResponse {
+  preview: {
+    content_sha256: string;
+    fields: EvidenceFieldPreview[];
+  };
+  persisted: false;
+}
+
+const parseEvidenceFile = async (
+  file: File,
+  documentName: string,
+  evidenceType: 'INVOICE' | 'PURCHASE_ORDER' | 'DELIVERY',
+  operatorToken: string,
+): Promise<ParsedEvidenceDocument> => {
+  const mimeType = evidenceMimeType(file, documentName);
+  if (mimeType === 'application/json') return parseJsonEvidence(file, documentName);
+
+  const bytes = await file.arrayBuffer();
+  const form = new FormData();
+  form.append('evidence_type', evidenceType);
+  form.append('file', new Blob([bytes], { type: mimeType }), file.name);
+  const payload = await request<EvidencePreviewResponse>(
+    '/api/evidence/extract',
+    { method: 'POST', body: form },
+    operatorToken,
+  );
+  const record = Object.fromEntries(
+    payload.preview.fields.map((field) => [field.name, field.normalized_value]),
+  );
+  return {
+    record,
+    bytes,
+    mimeType,
+    contentSha256: payload.preview.content_sha256,
+    extractionMethods: [...new Set(payload.preview.fields.map((field) => field.method))],
+  };
+};
+
+const parseEvidenceBundle = async (
+  files: EvidenceFileBundle,
+  operatorToken: string,
+): Promise<ParsedEvidenceBundle> => {
+  const [invoiceDocument, purchaseOrderDocument, deliveryDocument] = await Promise.all([
+    parseEvidenceFile(files.invoice, 'Invoice', 'INVOICE', operatorToken),
+    parseEvidenceFile(files.purchaseOrder, 'Purchase order', 'PURCHASE_ORDER', operatorToken),
+    parseEvidenceFile(files.delivery, 'Delivery evidence', 'DELIVERY', operatorToken),
   ]);
+  const invoice = invoiceDocument.record;
+  const purchaseOrder = purchaseOrderDocument.record;
+  const delivery = deliveryDocument.record;
   const invoiceId = requiredField(invoice, 'invoice_id', 'Invoice');
   const vendorId = requiredField(invoice, 'vendor_id', 'Invoice');
   const purchaseOrderId = requiredField(purchaseOrder, 'purchase_order_id', 'Purchase order');
@@ -362,12 +423,19 @@ const parseEvidenceBundle = async (files: EvidenceFileBundle): Promise<ParsedEvi
     invoice,
     purchaseOrder,
     delivery,
-    bytes: { invoice: invoiceBytes, purchaseOrder: purchaseOrderBytes, delivery: deliveryBytes },
+    documents: {
+      invoice: invoiceDocument,
+      purchaseOrder: purchaseOrderDocument,
+      delivery: deliveryDocument,
+    },
   };
 };
 
-export async function reviewEvidenceFiles(files: EvidenceFileBundle): Promise<EvidenceFileReview> {
-  const parsed = await parseEvidenceBundle(files);
+export async function reviewEvidenceFiles(
+  files: EvidenceFileBundle,
+  operatorToken: string,
+): Promise<EvidenceFileReview> {
+  const parsed = await parseEvidenceBundle(files, operatorToken);
   return {
     invoiceNumber: parsed.invoice.invoice_number,
     vendorId: parsed.invoice.vendor_id,
@@ -378,6 +446,8 @@ export async function reviewEvidenceFiles(files: EvidenceFileBundle): Promise<Ev
     authorizedAmount: parsed.purchaseOrder.authorized_amount,
     deliveredValue: parsed.delivery.delivered_value,
     walletAddress: parsed.invoice.payment_wallet_address,
+    extractionMethods: [...new Set(Object.values(parsed.documents).flatMap((item) => item.extractionMethods))],
+    contentHashes: Object.values(parsed.documents).map((item) => item.contentSha256),
   };
 }
 
@@ -386,12 +456,12 @@ export async function runUploadedEvidenceWorkflow(
   operatorToken: string,
   files: EvidenceFileBundle,
 ): Promise<RunResult> {
-  const parsed = await parseEvidenceBundle(files);
+  const parsed = await parseEvidenceBundle(files, operatorToken);
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
   const invoiceId = parsed.invoice.invoice_id;
   const vendorId = parsed.invoice.vendor_id;
   const wallet = parsed.invoice.payment_wallet_address;
-  const invoiceHash = await sha256(parsed.bytes.invoice);
+  const invoiceHash = parsed.documents.invoice.contentSha256;
   await Promise.all([
     request('/api/policies', {
       method: 'POST',
@@ -440,15 +510,15 @@ export async function runUploadedEvidenceWorkflow(
       source_document_hash: invoiceHash,
     }),
   }, operatorToken);
-  const uploads: Array<[string, File, ArrayBuffer]> = [
-    ['INVOICE', files.invoice, parsed.bytes.invoice],
-    ['PURCHASE_ORDER', files.purchaseOrder, parsed.bytes.purchaseOrder],
-    ['DELIVERY', files.delivery, parsed.bytes.delivery],
+  const uploads: Array<[string, File, ParsedEvidenceDocument]> = [
+    ['INVOICE', files.invoice, parsed.documents.invoice],
+    ['PURCHASE_ORDER', files.purchaseOrder, parsed.documents.purchaseOrder],
+    ['DELIVERY', files.delivery, parsed.documents.delivery],
   ];
-  await Promise.all(uploads.map(([evidenceType, file, bytes]) => {
+  await Promise.all(uploads.map(([evidenceType, file, document]) => {
     const form = new FormData();
     form.append('evidence_type', evidenceType);
-    form.append('file', new Blob([bytes], { type: 'application/json' }), file.name);
+    form.append('file', new Blob([document.bytes], { type: document.mimeType }), file.name);
     return request(`/api/invoices/${encodeURIComponent(invoiceId)}/evidence`, { method: 'POST', body: form }, operatorToken);
   }));
   return request<RunResult>(`/api/invoices/${encodeURIComponent(invoiceId)}/evaluate`, { method: 'POST' }, operatorToken);
