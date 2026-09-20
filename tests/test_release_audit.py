@@ -7,6 +7,7 @@ from tallyguard.audit import canonical_json
 from tallyguard.release_audit import (
     _acceptance_check,
     _check_png_dimensions,
+    _check_responsive_broll,
     _check_single_pitch_deck,
     _check_text_fragments,
     _check_tracked_markdown_links,
@@ -48,6 +49,66 @@ def test_responsive_capture_check_verifies_png_dimensions(tmp_path):
         == "passed"
     )
     assert _check_png_dimensions(tmp_path, "capture.png", (390, 844)).status == "failed"
+
+
+def test_responsive_broll_check_binds_media_and_source_captures(tmp_path):
+    assets = tmp_path / "submission" / "assets"
+    assets.mkdir(parents=True)
+    media = assets / "tallyguard-responsive-broll.webm"
+    media.write_bytes(b"\x1aE\xdf\xa3" + b"proof-video")
+    sources = {
+        "desktop": ("1440x900", "responsive-desktop.png"),
+        "tablet": ("768x1024", "responsive-tablet.png"),
+        "mobile": ("390x844", "responsive-mobile.png"),
+    }
+    sequence = []
+    for state, (viewport, filename) in sources.items():
+        source = assets / filename
+        source.write_bytes(f"{state}-capture".encode("ascii"))
+        sequence.append(
+            {
+                "state": state,
+                "viewport": viewport,
+                "source": f"submission/assets/{filename}",
+                "source_sha256": sha256(source.read_bytes()).hexdigest(),
+            }
+        )
+    sequence.append(
+        {
+            "state": "all",
+            "viewport": "composite",
+            "sources": [item["source"] for item in sequence],
+        }
+    )
+    manifest = {
+        "schema_version": "1.0",
+        "classification": "responsive product proof; not final submission video",
+        "media": {
+            "path": "submission/assets/tallyguard-responsive-broll.webm",
+            "container": "webm",
+            "width": 1440,
+            "height": 900,
+            "duration_seconds": 9.24,
+            "bytes": media.stat().st_size,
+            "sha256": sha256(media.read_bytes()).hexdigest(),
+        },
+        "sequence": sequence,
+        "review": {
+            "console_errors": 0,
+            "console_warnings": 0,
+            "inspected_frame_seconds": [1.4, 3.4, 5.4, 8.2],
+        },
+    }
+    manifest_path = assets / "tallyguard-responsive-broll.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    relative = "submission/assets/tallyguard-responsive-broll.json"
+    assert _check_responsive_broll(tmp_path, relative).status == "passed"
+
+    media.write_bytes(media.read_bytes() + b"tampered")
+    failed = _check_responsive_broll(tmp_path, relative)
+    assert failed.status == "failed"
+    assert "metadata" in failed.detail
 
 
 def test_video_runbook_check_requires_all_three_widths_and_single_product_claim(tmp_path):

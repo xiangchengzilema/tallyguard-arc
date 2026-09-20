@@ -41,7 +41,9 @@ tablet, and mobile clients. The same governed decision, policy trace, and
 receipt remain inspectable at all three review widths. The prepared
 [9.2-second responsive insert](submission/assets/tallyguard-responsive-broll.webm)
 hard-cuts across these exact states and ends with all three widths together, so
-the work stays visible without interrupting the finance workflow narrative.
+the work stays visible without interrupting the finance workflow narrative. Its
+[media manifest](submission/assets/tallyguard-responsive-broll.json) binds the
+clip to the three source captures, dimensions, duration, and SHA-256.
 
 | Desktop · 1440 × 900 | Tablet · 768 × 1024 | Mobile · 390 × 844 |
 | --- | --- | --- |

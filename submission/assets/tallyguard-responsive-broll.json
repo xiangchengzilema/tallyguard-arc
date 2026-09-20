@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "classification": "responsive product proof; not final submission video",
+  "media": {
+    "path": "submission/assets/tallyguard-responsive-broll.webm",
+    "container": "webm",
+    "width": 1440,
+    "height": 900,
+    "duration_seconds": 9.24,
+    "bytes": 1116328,
+    "sha256": "a9548665337d0ef6870e9568fab68d5901ee9fd3a0600e2e92984cd877845d9e"
+  },
+  "sequence": [
+    {
+      "state": "desktop",
+      "viewport": "1440x900",
+      "source": "submission/assets/responsive-desktop.png",
+      "source_sha256": "874c35a653459b19d1f3518fafffd5d5a908571b4134ba0db2ad093f665cd118"
+    },
+    {
+      "state": "tablet",
+      "viewport": "768x1024",
+      "source": "submission/assets/responsive-tablet.png",
+      "source_sha256": "ec879f3d3612f5cb2656e726cda8a3b38542d75da7f18078968a47e55f0aa71a"
+    },
+    {
+      "state": "mobile",
+      "viewport": "390x844",
+      "source": "submission/assets/responsive-mobile.png",
+      "source_sha256": "beb293676a0e34f4722144d66fa03d0885f00af2eb4a845744d95149e5cfaf96"
+    },
+    {
+      "state": "all",
+      "viewport": "composite",
+      "sources": [
+        "submission/assets/responsive-desktop.png",
+        "submission/assets/responsive-tablet.png",
+        "submission/assets/responsive-mobile.png"
+      ]
+    }
+  ],
+  "review": {
+    "console_errors": 0,
+    "console_warnings": 0,
+    "inspected_frame_seconds": [1.4, 3.4, 5.4, 8.2]
+  }
+}

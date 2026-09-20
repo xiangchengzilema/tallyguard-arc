@@ -79,6 +79,103 @@ def _check_png_dimensions(
     )
 
 
+def _check_responsive_broll(
+    root: Path,
+    manifest_relative_path: str,
+) -> ReleaseCheck:
+    manifest_path = root / manifest_relative_path
+    try:
+        manifest = _load_json(manifest_path)
+        media = manifest.get("media")
+        sequence = manifest.get("sequence")
+        review = manifest.get("review")
+        if not isinstance(media, dict):
+            raise ValueError("media must be an object")
+        media_relative = str(media.get("path", ""))
+        media_path = root / media_relative
+        payload = media_path.read_bytes()
+        duration = Decimal(str(media.get("duration_seconds")))
+        if payload[:4] != b"\x1aE\xdf\xa3":
+            raise ValueError("media is not an EBML/WebM file")
+        if not (
+            manifest.get("classification")
+            == "responsive product proof; not final submission video"
+            and media_relative
+            == "submission/assets/tallyguard-responsive-broll.webm"
+            and media.get("container") == "webm"
+            and media.get("width") == 1440
+            and media.get("height") == 900
+            and Decimal("8") <= duration <= Decimal("10")
+            and media.get("bytes") == len(payload)
+            and media.get("sha256") == sha256(payload).hexdigest()
+            and isinstance(sequence, list)
+            and [item.get("state") for item in sequence if isinstance(item, dict)]
+            == ["desktop", "tablet", "mobile", "all"]
+            and isinstance(review, dict)
+            and review.get("console_errors") == 0
+            and review.get("console_warnings") == 0
+        ):
+            raise ValueError("media metadata or review assertions do not match")
+
+        expected_sources = (
+            (
+                "desktop",
+                "1440x900",
+                "submission/assets/responsive-desktop.png",
+            ),
+            (
+                "tablet",
+                "768x1024",
+                "submission/assets/responsive-tablet.png",
+            ),
+            (
+                "mobile",
+                "390x844",
+                "submission/assets/responsive-mobile.png",
+            ),
+        )
+        for item, (state, viewport, source_relative) in zip(
+            sequence[:3], expected_sources, strict=True
+        ):
+            if not isinstance(item, dict):
+                raise ValueError(f"{state} sequence item is not an object")
+            source_path = root / source_relative
+            if not (
+                item.get("state") == state
+                and item.get("viewport") == viewport
+                and item.get("source") == source_relative
+                and item.get("source_sha256") == _hash_file(source_path)
+            ):
+                raise ValueError(f"{state} source capture is not hash-bound")
+        frames = review.get("inspected_frame_seconds")
+        if not (
+            isinstance(frames, list)
+            and len(frames) == 4
+            and all(Decimal("0") < Decimal(str(frame)) < duration for frame in frames)
+        ):
+            raise ValueError("four inspected frame timestamps are required")
+    except (
+        OSError,
+        json.JSONDecodeError,
+        InvalidOperation,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return ReleaseCheck(
+            "local",
+            manifest_relative_path,
+            "failed",
+            f"Cannot verify responsive product proof: {exc}",
+        )
+    return ReleaseCheck(
+        "local",
+        manifest_relative_path,
+        "passed",
+        f"Verified {duration}-second 1440x900 responsive proof and three source hashes.",
+        _hash_file(media_path),
+    )
+
+
 def _check_text_fragments(
     root: Path,
     relative_path: str,
@@ -657,6 +754,10 @@ def audit_release(
             root,
             "submission/assets/responsive-mobile.png",
             (390, 844),
+        ),
+        _check_responsive_broll(
+            root,
+            "submission/assets/tallyguard-responsive-broll.json",
         ),
         _check_text_fragments(
             root,
