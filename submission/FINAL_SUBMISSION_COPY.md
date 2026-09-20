@@ -144,6 +144,8 @@ Developer-Controlled Wallets, Arc RPC, Docker, Gunicorn, and GitHub Actions.
 
 The public judge deployment runs in clearly labeled simulation mode so anyone
 can exercise the full decision and reconciliation flow without credentials.
+Each browser receives a fresh tenant and four role-separated sessions, so
+concurrent judges cannot see or mutate one another's finance records.
 Simulation receipts do not prove funds movement. SQLite and the in-process rate
 limiter make the free single-process deployment a judge playground rather than
 a horizontally scaled production service. Production migration requires

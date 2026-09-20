@@ -95,6 +95,12 @@ from .workflow import InvoiceStatus, WorkflowError, status_for_decision
 
 
 DEMO_ORGANIZATION_ID = "demo-org"
+DEMO_ROLE_ASSIGNMENTS = (
+    ("admin", "Demo Admin", (Role.ADMIN,)),
+    ("operator", "Demo Operator", (Role.FINANCE_OPERATOR,)),
+    ("approver", "Demo Approver", (Role.APPROVER,)),
+    ("auditor", "Demo Auditor", (Role.AUDITOR,)),
+)
 
 
 def _evidence_json(record: EvidenceRecord) -> dict[str, Any]:
@@ -885,28 +891,10 @@ def create_app(
         )
         payload = request.get_json(silent=True) or {}
         role_name = str(payload.get("role", "operator")).lower()
-        demo_principals = {
-            "admin": Principal(
-                user_id="demo-admin",
-                organization_id=DEMO_ORGANIZATION_ID,
-                roles=(Role.ADMIN,),
-            ),
-            "operator": Principal(
-                user_id="demo-operator",
-                organization_id=DEMO_ORGANIZATION_ID,
-                roles=(Role.FINANCE_OPERATOR,),
-            ),
-            "approver": Principal(
-                user_id="demo-approver",
-                organization_id=DEMO_ORGANIZATION_ID,
-                roles=(Role.APPROVER,),
-            ),
-            "auditor": Principal(
-                user_id="demo-auditor",
-                organization_id=DEMO_ORGANIZATION_ID,
-                roles=(Role.AUDITOR,),
-            ),
-        }
+        demo_principals = _demo_principals(
+            organization_id=DEMO_ORGANIZATION_ID,
+            user_id_prefix="demo",
+        )
         principal = demo_principals.get(role_name)
         if principal is None:
             raise ValueError("Demo role must be admin, operator, approver, or auditor.")
@@ -922,6 +910,45 @@ def create_app(
                     "roles": [role.value for role in principal.roles],
                 },
             }
+        )
+
+    @app.post("/api/demo/workspace")
+    def demo_workspace():
+        if not demo_sessions_enabled:
+            return _error(
+                "DEMO_SESSIONS_DISABLED",
+                "Demo identities are disabled while a live settlement adapter is configured.",
+                404,
+            )
+        remote_address = request.remote_addr or "unknown"
+        anonymous_scope = sha256(remote_address.encode("utf-8")).hexdigest()
+        demo_session_rate_limiter.check(
+            f"demo-session:{anonymous_scope}",
+            scope_label="Demo session",
+        )
+        workspace_id = f"demo-ws-{uuid4().hex[:12]}"
+        principals = _provision_demo_identity(
+            repository,
+            organization_id=workspace_id,
+            organization_name="Isolated TallyGuard Judge Workspace",
+            user_id_prefix=workspace_id,
+        )
+        sessions: dict[str, str] = {}
+        expiries: list[datetime] = []
+        for role_name, principal in principals.items():
+            token, session = authenticator.issue_session(principal)
+            sessions[role_name] = token
+            expiries.append(session.expires_at)
+        return (
+            jsonify(
+                {
+                    "workspace_id": workspace_id,
+                    "sessions": sessions,
+                    "expires_at": min(expiries).isoformat(),
+                    "isolation": "one browser workspace; four role-separated sessions",
+                }
+            ),
+            201,
         )
 
     @app.get("/api/demo/scenarios")
@@ -3423,26 +3450,63 @@ def create_app(
     return app
 
 
-def _seed_demo_identity(repository: SqliteRepository) -> None:
+def _demo_principals(
+    *,
+    organization_id: str,
+    user_id_prefix: str,
+) -> dict[str, Principal]:
+    return {
+        role_name: Principal(
+            user_id=f"{user_id_prefix}-{role_name}",
+            organization_id=organization_id,
+            roles=roles,
+        )
+        for role_name, _display_name, roles in DEMO_ROLE_ASSIGNMENTS
+    }
+
+
+def _provision_demo_identity(
+    repository: SqliteRepository,
+    *,
+    organization_id: str,
+    organization_name: str,
+    user_id_prefix: str,
+) -> dict[str, Principal]:
     try:
-        repository.create_organization(organization_id=DEMO_ORGANIZATION_ID, name="TallyGuard Demo")
+        repository.create_organization(
+            organization_id=organization_id,
+            name=organization_name,
+        )
     except PersistenceError:
         pass
-    for user_id, display_name, roles in (
-        ("demo-admin", "Demo Admin", (Role.ADMIN.value,)),
-        ("demo-operator", "Demo Operator", (Role.FINANCE_OPERATOR.value,)),
-        ("demo-approver", "Demo Approver", (Role.APPROVER.value,)),
-        ("demo-auditor", "Demo Auditor", (Role.AUDITOR.value,)),
-    ):
+    principals = _demo_principals(
+        organization_id=organization_id,
+        user_id_prefix=user_id_prefix,
+    )
+    display_names = {
+        role_name: display_name
+        for role_name, display_name, _roles in DEMO_ROLE_ASSIGNMENTS
+    }
+    for role_name, principal in principals.items():
         try:
             repository.create_user(
-                organization_id=DEMO_ORGANIZATION_ID,
-                user_id=user_id,
-                display_name=display_name,
-                roles=roles,
+                organization_id=organization_id,
+                user_id=principal.user_id,
+                display_name=display_names[role_name],
+                roles=tuple(role.value for role in principal.roles),
             )
         except PersistenceError:
             pass
+    return principals
+
+
+def _seed_demo_identity(repository: SqliteRepository) -> None:
+    _provision_demo_identity(
+        repository,
+        organization_id=DEMO_ORGANIZATION_ID,
+        organization_name="TallyGuard Demo",
+        user_id_prefix="demo",
+    )
 
 
 def main() -> None:

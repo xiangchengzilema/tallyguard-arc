@@ -585,6 +585,7 @@ export interface ReliabilityEvidence {
 }
 
 export interface BootstrapData {
+  workspaceId: string;
   scenarios: Scenario[];
   sessions: Record<'admin' | 'operator' | 'approver' | 'auditor', string>;
   operations: OperationsOverview;

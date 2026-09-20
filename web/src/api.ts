@@ -84,12 +84,11 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   return payload as T;
 }
 
-async function createSession(role: Role): Promise<[Role, string]> {
-  const payload = await request<{ access_token: string }>('/api/demo/session', {
-    method: 'POST',
-    body: JSON.stringify({ role }),
-  });
-  return [role, payload.access_token];
+async function createDemoWorkspace(): Promise<{
+  workspace_id: string;
+  sessions: BootstrapData['sessions'];
+}> {
+  return request('/api/demo/workspace', { method: 'POST' });
 }
 
 export async function fetchBootstrapContext(): Promise<BootstrapContext> {
@@ -103,6 +102,7 @@ export async function fetchBootstrapContext(): Promise<BootstrapContext> {
 async function hydrateBootstrap(
   context: BootstrapContext,
   sessions: BootstrapData['sessions'],
+  workspaceId: string,
 ): Promise<BootstrapData> {
   const { scenarios, readiness } = context;
   const [operations, incidents, agentRun, reliability, governance, vendorDirectory, auditSearch] = await Promise.all([
@@ -115,6 +115,7 @@ async function hydrateBootstrap(
     fetchAuditEvents(sessions.auditor, { limit: 12 }),
   ]);
   return {
+    workspaceId,
     scenarios,
     readiness,
     sessions,
@@ -164,7 +165,10 @@ export async function bootstrapWithSessions(
       );
     }
   }
-  return hydrateBootstrap(resolvedContext, sessions);
+  if (!organizationId) {
+    throw new ApiError('The role bundle did not resolve to an organization.', 403, 'TENANT_SESSION_MISMATCH');
+  }
+  return hydrateBootstrap(resolvedContext, sessions, organizationId);
 }
 
 export async function revokeOperatorSessions(
@@ -188,14 +192,12 @@ export async function revokeOperatorSessions(
 }
 
 export async function bootstrap(): Promise<BootstrapData> {
-  const sessionRoles: Role[] = ['admin', 'operator', 'approver', 'auditor'];
   const context = await fetchBootstrapContext();
   if (!context.readiness.demo_sessions_enabled) {
     throw new OperatorAccessRequired(context);
   }
-  const sessionEntries = await Promise.all(sessionRoles.map(createSession));
-  const sessions = Object.fromEntries(sessionEntries) as BootstrapData['sessions'];
-  return hydrateBootstrap(context, sessions);
+  const workspace = await createDemoWorkspace();
+  return hydrateBootstrap(context, workspace.sessions, workspace.workspace_id);
 }
 
 export async function fetchVendorDirectory(auditorToken: string): Promise<VendorTrustRecord[]> {

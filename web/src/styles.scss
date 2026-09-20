@@ -133,6 +133,7 @@ body {
 .runtime-boundary__marker { display: grid; place-items: center; width: 36px; height: 36px; background: var(--tg-accent-dark); color: #fff; }
 .runtime-boundary--live .runtime-boundary__marker { background: #198038; }
 .runtime-boundary__lead strong, .runtime-boundary__fact strong { font-size: .8125rem; font-weight: 600; }
+.runtime-boundary__lead small { color: var(--tg-muted); font-size: .6875rem; }
 .runtime-boundary__fact { border-left: 1px solid #c8d6d2; }
 .runtime-boundary__fact span { color: var(--tg-muted); font-size: .625rem; letter-spacing: .06em; text-transform: uppercase; }
 .runtime-boundary__fact small { color: var(--tg-muted); font-size: .6875rem; }

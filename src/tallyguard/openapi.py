@@ -16,6 +16,7 @@ PUBLIC_ENDPOINTS = frozenset(
         "metrics",
         "openapi_contract",
         "demo_session",
+        "demo_workspace",
         "demo_scenarios",
     }
 )

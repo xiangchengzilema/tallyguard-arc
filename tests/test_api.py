@@ -110,6 +110,7 @@ def test_openapi_contract_covers_every_registered_api_operation(tmp_path):
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert "security" not in contract["paths"]["/api/demo/session"]["post"]
+    assert "security" not in contract["paths"]["/api/demo/workspace"]["post"]
     assert contract["paths"]["/api/auth/session"]["delete"]["security"] == [
         {"bearerAuth": []}
     ]
@@ -192,9 +193,81 @@ def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, m
     )
 
     response = app.test_client().post("/api/demo/session", json={"role": "admin"})
+    workspace_response = app.test_client().post("/api/demo/workspace")
 
     assert response.status_code == 404
     assert response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
+    assert workspace_response.status_code == 404
+    assert workspace_response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
+
+
+def test_demo_workspaces_issue_isolated_role_bundles(tmp_path):
+    app = create_app(database_path=tmp_path / "isolated-workspaces.sqlite3", testing=True)
+    client = app.test_client()
+
+    first = client.post("/api/demo/workspace")
+    second = client.post("/api/demo/workspace")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    first_payload = first.get_json()
+    second_payload = second.get_json()
+    assert first_payload["workspace_id"].startswith("demo-ws-")
+    assert first_payload["workspace_id"] != second_payload["workspace_id"]
+    assert set(first_payload["sessions"]) == {
+        "admin",
+        "operator",
+        "approver",
+        "auditor",
+    }
+    assert (
+        first_payload["isolation"]
+        == "one browser workspace; four role-separated sessions"
+    )
+
+    expected_roles = {
+        "admin": "ADMIN",
+        "operator": "FINANCE_OPERATOR",
+        "approver": "APPROVER",
+        "auditor": "AUDITOR",
+    }
+    for role_name, expected_role in expected_roles.items():
+        inspected = client.get(
+            "/api/auth/session",
+            headers=headers(
+                first_payload["sessions"][role_name],
+                f"inspect-{role_name}",
+            ),
+        )
+        assert inspected.status_code == 200
+        principal = inspected.get_json()["principal"]
+        assert principal["organization_id"] == first_payload["workspace_id"]
+        assert principal["roles"] == [expected_role]
+
+    run = client.post(
+        "/api/demo/scenarios/clean-payment/run",
+        headers=headers(
+            first_payload["sessions"]["operator"],
+            "workspace-one-run",
+        ),
+    )
+    assert run.status_code == 200
+    first_invoices = client.get(
+        "/api/invoices",
+        headers=headers(
+            first_payload["sessions"]["auditor"],
+            "workspace-one-list",
+        ),
+    ).get_json()["items"]
+    second_invoices = client.get(
+        "/api/invoices",
+        headers=headers(
+            second_payload["sessions"]["auditor"],
+            "workspace-two-list",
+        ),
+    ).get_json()["items"]
+    assert len(first_invoices) == 1
+    assert second_invoices == []
 
 
 def test_authenticated_session_inspection_returns_only_principal_identity(tmp_path):

@@ -249,8 +249,10 @@ flowchart TB
 | Arc Testnet acceptance | Circle + Arc RPC | Isolated local test identities only | Real test USDC and failure-path verification |
 | Arc Mainnet proof | Circle + Arc RPC, low cap, explicit gate and approval | Disabled | A deliberately low-value final proof only |
 
-The public deployment never needs wallet credentials. Live Circle mode disables the demo-session
-endpoint by default.
+The public deployment never needs wallet credentials. Its browser bootstrap creates a fresh
+organization and four distinct role sessions as one bundle, so concurrent reviewers operate in
+separate finance workspaces. Live Circle mode disables both public demo identity endpoints by
+default.
 
 ## Current deployment boundary
 

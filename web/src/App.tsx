@@ -748,7 +748,13 @@ function VendorTrustPanel({
   );
 }
 
-function RuntimeBoundary({ readiness }: { readiness: BootstrapData['readiness'] }) {
+function RuntimeBoundary({
+  readiness,
+  workspaceId,
+}: {
+  readiness: BootstrapData['readiness'];
+  workspaceId: string | null;
+}) {
   const simulated = readiness.settlement_mode === 'simulation';
   return (
     <section className={simulated ? 'runtime-boundary' : 'runtime-boundary runtime-boundary--live'} aria-label="Runtime safety boundary">
@@ -757,6 +763,7 @@ function RuntimeBoundary({ readiness }: { readiness: BootstrapData['readiness'] 
         <div>
           <span className="eyebrow">Runtime boundary</span>
           <strong>{simulated ? 'Judge simulation — no funds move' : 'Circle wallet execution enabled'}</strong>
+          {simulated && workspaceId ? <small>Isolated browser workspace · {shorten(workspaceId, 12, 4)}</small> : null}
         </div>
       </div>
       <div className="runtime-boundary__fact">
@@ -2017,7 +2024,7 @@ function App() {
           />
         ) : null}
 
-        {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} /> : null}
+        {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} workspaceId={data?.workspaceId ?? null} /> : null}
 
         {accessContext ? null : operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : (
           <div className="metrics-band" aria-label="Loading finance operations summary">

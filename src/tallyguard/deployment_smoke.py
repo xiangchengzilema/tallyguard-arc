@@ -189,18 +189,28 @@ def run_deployment_smoke(
         _require(readiness.get("mainnet_enabled") is False, "Mainnet must remain disabled.")
         passed("safe_readiness", "Database ready; simulation active; funds and mainnet disabled.")
 
-        for role in ("operator", "approver", "auditor"):
-            status, _, session = _json_request(
-                resolved_base_url,
-                "/api/demo/session",
-                method="POST",
-                payload={"role": role},
-            )
-            _require(status == 200, f"Could not create the {role} demo session.")
-            token = session.get("access_token")
+        status, _, workspace = _json_request(
+            resolved_base_url,
+            "/api/demo/workspace",
+            method="POST",
+        )
+        _require(status == 201, "Could not create an isolated demo workspace.")
+        workspace_id = workspace.get("workspace_id")
+        issued_sessions = workspace.get("sessions")
+        _require(
+            isinstance(workspace_id, str) and workspace_id.startswith("demo-ws-"),
+            "The isolated workspace identifier is missing.",
+        )
+        _require(isinstance(issued_sessions, dict), "The role session bundle is missing.")
+        for role in ("admin", "operator", "approver", "auditor"):
+            token = issued_sessions.get(role)
             _require(isinstance(token, str) and bool(token), f"The {role} token is missing.")
             tokens[role] = token
-        passed("role_separation", "Operator, approver, and auditor sessions were issued separately.")
+        _require(len(set(tokens.values())) == 4, "Role sessions must use distinct tokens.")
+        passed(
+            "role_separation",
+            "One isolated browser workspace issued four distinct role-scoped sessions.",
+        )
 
         status, _, scenario = _json_request(
             resolved_base_url,
