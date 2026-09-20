@@ -51,14 +51,15 @@ We borrow proven **behavioral patterns**, not implementation or appearance:
 
 The demo must visibly prove all of the following:
 
-- [ ] Same invoice submitted twice is stopped before settlement.
-- [ ] A changed vendor wallet is held even if every other invoice field matches.
-- [ ] Invoice, PO, and delivery evidence can independently agree or disagree.
-- [ ] AI cannot bypass a hard amount, budget, vendor, or wallet rule.
-- [ ] A normal low-risk invoice can complete without manual approval.
-- [ ] A reviewer can see exactly what would unlock a held invoice.
-- [ ] Every completed payment has an Arc/Circle receipt and reconciliation result.
-- [ ] Re-running a decision with the same evidence and policy produces the same policy outcome.
+- [x] Same invoice submitted twice is stopped before settlement.
+- [x] A changed vendor wallet is held even if every other invoice field matches.
+- [x] Invoice, PO, and delivery evidence can independently agree or disagree.
+- [x] AI cannot bypass a hard amount, budget, vendor, or wallet rule.
+- [x] A normal low-risk invoice can complete without manual approval.
+- [x] A reviewer can see exactly what would unlock a held invoice.
+- [x] Every completed payment has a receipt and reconciliation result; real Arc/Circle proof remains the external Testnet acceptance gate.
+- [x] Re-running a decision with the same evidence and policy produces the same policy outcome.
+- [x] An auditor can verify an exported evidence packet without the application server and optionally re-prove a real transfer against Arc RPC.
 
 ## Primary sources
 
@@ -72,4 +73,3 @@ The demo must visibly prove all of the following:
 - Ramp accounts payable: https://ramp.com/accounts-payable
 - Stampli AP automation: https://www.stampli.com/ap-automation/
 - Solana payment channels: https://solana.com/payment-channels
-

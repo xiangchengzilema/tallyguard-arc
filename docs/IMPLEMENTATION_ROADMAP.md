@@ -114,6 +114,7 @@ Implemented foundation:
 - Each decision seals its exact point-in-time evidence, vendor, treasury, policy, duplicate set, settlement route, and date; the auditor endpoint and console recompute and verify 11 independent bindings without consulting mutable current state
 - An admin-only policy what-if endpoint re-evaluates the sealed historical inputs under an allowlisted temporary policy patch; it returns a comparison but never persists a decision, approval, audit event, or payment authorization
 - A downloadable, SHA-256 content-addressed Payment Evidence Packet combines the sealed inputs, replay checks, source metadata, approval, settlement receipt, and invoice audit events into one portable auditor artifact
+- A standalone offline verifier recomputes the packet content address, policy hash, replay input hash, full deterministic rule trace, decision ID, settlement bindings, and included audit-event hashes; an optional online mode independently re-proves the exact USDC transfer through Arc RPC
 
 - Agent-generated evidence summary (credential-free and hosted structured adapters complete)
 - Recommended action with structured reason codes

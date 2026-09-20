@@ -67,6 +67,7 @@ Strongly encouraged:
 - Seven judge scenarios and the segregated large-invoice approval path are available through API
 - Circle's official developer-wallet SDK is isolated behind a live settlement adapter
 - Circle completion is independently reconciled against Arc RPC and the exact USDC transfer event
+- Exported Payment Evidence Packets now have a standalone verifier that needs no application database or server; it recomputes the deterministic decision and can optionally re-prove a real transfer against Arc RPC
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - Automated test suite passing
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented

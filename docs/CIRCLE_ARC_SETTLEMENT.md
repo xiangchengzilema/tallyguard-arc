@@ -127,6 +127,24 @@ This command **does move Arc Testnet USDC**. It refuses mainnet regardless of en
 configuration. Acceptance artifacts are written under `artifacts/acceptance/`, which is excluded
 from Git.
 
+### Independent evidence-packet verification
+
+An auditor can verify an exported Payment Evidence Packet without access to the application
+database or server. The offline command recomputes the packet hash, sealed-input hash, policy
+hash, deterministic rule trace, decision ID, payment bindings, and included audit-event hashes:
+
+```powershell
+tallyguard-verify-packet .\tallyguard-INVOICE-evidence-packet.json
+```
+
+For a real Circle-backed receipt, add `--verify-arc`. This makes read-only JSON-RPC calls and
+requires the exact canonical-USDC Transfer event, sender, recipient, amount, transaction/block
+agreement, and successful receipt already enforced by the live settlement adapter:
+
+```powershell
+tallyguard-verify-packet .\tallyguard-INVOICE-evidence-packet.json --verify-arc
+```
+
 Before any mainnet proof:
 
 - confirm the Circle wallet is on `ARC-TESTNET`;

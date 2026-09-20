@@ -73,6 +73,7 @@ Every payment answers four questions:
 - Every new decision seals the normalized evidence, vendor, treasury, policy, duplicate set, route, and evaluation date into a hashed replay snapshot; auditors can independently recompute all 11 bindings through `GET /api/decisions/<id>/replay`
 - Administrators can run a non-mutating policy what-if against those exact sealed inputs; the simulation cannot change the original decision, create an approval, or reach settlement
 - Auditors can download a content-addressed Payment Evidence Packet containing source metadata and hashes, sealed replay inputs, all 11 replay checks, approval state, reconciled Arc receipt, and invoice-scoped audit events
+- The standalone `tallyguard-verify-packet` command validates that export without database or server access, deterministically replays all controls, checks payment bindings and event hashes, and can optionally re-prove a real transfer through Arc RPC
 - Persistent per-tenant tamper-evident audit chains with an authenticated verification endpoint
 - Credential-free automated unit and fault-injection suite
 - Responsive React judge console built on Carbon, with eight deterministic risk and recovery scenarios and a fresh-evidence workflow
