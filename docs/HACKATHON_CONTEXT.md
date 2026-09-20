@@ -87,10 +87,12 @@ Strongly encouraged:
 - A durable bounded-autonomy runner plans a mixed tenant AP queue, hashes both observed state and proposed actions, routes policy escalations, releases due schedules through current-policy revalidation, and settles only a current `PAY`, an exactly bound independent approval, or an explicitly retryable attempt under the approver role
 - The judge can export a content-addressed Agent Run Proof Packet with plan-hash verification, execution outcomes, approval bindings, related audit events, and tenant-chain verification
 - A one-click autonomy showcase creates and plans a mixed four-invoice queue so judges and the demo video can show payment, approval routing, wallet-risk remediation, and due-date waiting without repetitive setup
-- Desktop and 390px mobile browser acceptance completed the autonomous plan-to-settlement path with no console errors or warnings
-- Final media will keep the desktop finance workflow primary and reserve 6–8
-  seconds for a desktop-to-390px comparison of the same evidence, decision, and
-  receipt; this is one responsive web product rather than separate clients
+- Desktop, 768px tablet, and 390px mobile browser acceptance completed the
+  governed-decision path without horizontal overflow, console errors, or warnings
+- Final media will keep the desktop finance workflow primary and reserve 8–10
+  seconds for a 1440px → 768px → 390px comparison of the same evidence,
+  decision, and receipt; this is one responsive web product rather than
+  separate clients
 
 Milestones 1, 2, 3, 5, and 6 are complete. Milestone 4 awaits the external Circle
 Testnet acceptance transfer; Milestone 7 awaits genuine operator evidence; Milestone 8 awaits

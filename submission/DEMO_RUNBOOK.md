@@ -15,8 +15,9 @@ API credentials, wallet secrets, local environment files, or browser bookmarks.
   after the real acceptance transfer succeeds.
 - Keep the current pitch deck available only as backup. The video should show
   the product, not narrate slides.
-- Prepare one clean 390px-wide browser capture. This is the same responsive web
-  application, not a separate mobile client.
+- Prepare clean 1440px, 768px, and 390px captures anchored on the same completed
+  decision. They are three responsive widths of one web application, not
+  separate desktop, tablet, and mobile clients.
 - Clear old demo data by redeploying or using a clean ephemeral instance so the
   queue starts empty.
 
@@ -109,18 +110,19 @@ Say:
 > fit one shared treasury limit. These are synthetic engineering results, not
 > customer traction.
 
-### 2:30–2:38 — Same controls on a narrow screen
+### 2:30–2:40 — One workflow across three widths
 
-Action: use a short split-screen or hard cut from the desktop decision to a
-390px-wide view of the same invoice, control result, and receipt. Do not replay
-the full workflow.
+Action: hard-cut the same completed decision from 1440px desktop to 768px tablet
+and then 390px mobile. Keep the invoice ID and decision state visible so the
+continuity is obvious. Do not replay the workflow.
 
 Say:
 
-> The same governed workflow remains reviewable on a narrow screen, so an
-> approver can inspect evidence and payment proof without a separate client.
+> This is one responsive web product: a finance team can operate it on desktop,
+> a reviewer can inspect it on tablet, and an approver can verify the same
+> evidence and payment proof from a phone without a separate client.
 
-### 2:38–2:55 — Real Arc proof and close
+### 2:40–2:55 — Real Arc proof and close
 
 Use this segment only after the real Arc Testnet acceptance succeeds.
 
@@ -134,7 +136,7 @@ Say:
 > lets the agent do the work while evidence and policy retain control.
 
 If the Testnet proof is still pending, do not substitute a simulated receipt.
-Show the narrow-screen proof and end at 2:38 by saying:
+Show the responsive proof and end at 2:40 by saying:
 
 > The live Circle adapter and independent Arc verifier are implemented. The
 > public product stays in safe simulation mode until the dedicated Testnet
@@ -143,8 +145,8 @@ Show the narrow-screen proof and end at 2:38 by saying:
 ## Editing notes
 
 - Cut all load waits, pointer hunting, and repeated scrolling.
-- Keep the responsive proof to one short desktop-to-390px comparison; the main
-  product narrative remains the desktop finance workflow.
+- Keep the responsive proof to one 8–10 second desktop → tablet → mobile
+  sequence; the main product narrative remains the desktop finance workflow.
 - Keep captions short: `SEALED EVIDENCE`, `13 CONTROLS`, `ROLE-SEPARATED`,
   `EXACTLY ONCE`, and `ARC VERIFIED` only when each claim is on screen.
 - Never overlay `ARC VERIFIED` on a simulator receipt.

@@ -45,7 +45,9 @@ intent, polls the provider lifecycle, and independently verifies the exact
 canonical-USDC transfer through Arc RPC. The reconciled invoice, policy,
 approval, intent, receipt, audit events, and source hashes can be exported as a
 content-addressed Payment Evidence Packet and verified without the application
-database or server.
+database or server. The same responsive web console keeps the governed decision
+and receipt operable at desktop, tablet, and 390px mobile widths without
+separate clients.
 
 ## Why an agent is necessary
 
