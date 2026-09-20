@@ -65,6 +65,7 @@ from .evidence import (
     ExtractionMethod,
     SourceLocation,
 )
+from .extraction import extract_pdf_text_fields
 from .normalization import EvidenceNormalizer
 from .payments import PaymentOrchestrator, PaymentOutcome
 from .decisions import DecisionRecord, DecisionService
@@ -130,6 +131,7 @@ def _json_pointer_segment(value: str) -> str:
 def _evidence_fields(
     *,
     document_id: str,
+    evidence_type: EvidenceType,
     mime_type: str,
     content: bytes,
     submitted_fields: str | None,
@@ -178,8 +180,16 @@ def _evidence_fields(
             )
         return tuple(fields)
 
+    if mime_type == "application/pdf":
+        return extract_pdf_text_fields(
+            document_id=document_id,
+            evidence_type=evidence_type,
+            content=content,
+        )
     if mime_type != "application/json":
-        raise ValueError("PDF and image evidence require provenance-bound extracted fields.")
+        raise ValueError(
+            "Image evidence requires provenance-bound extracted fields; autonomous OCR is not enabled."
+        )
     parsed = json.loads(content.decode("utf-8"))
     if not isinstance(parsed, dict):
         raise ValueError("JSON evidence must contain a top-level object.")
@@ -1617,6 +1627,50 @@ def create_app(
         stored = repository.create_invoice(invoice)
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()}), 201
 
+    @app.post("/api/evidence/extract")
+    @require(Permission.EVIDENCE_WRITE)
+    def extract_evidence_preview():
+        upload = request.files.get("file")
+        if upload is None:
+            raise ValueError("Evidence extraction requires a multipart file field named 'file'.")
+        filename = secure_filename(upload.filename or "")
+        if not filename:
+            raise ValueError("Evidence filename is required.")
+        mime_type = (upload.mimetype or "").strip().lower()
+        try:
+            evidence_type = EvidenceType(str(request.form.get("evidence_type", "")).upper())
+        except ValueError as exc:
+            raise ValueError(
+                "evidence_type must be INVOICE, PURCHASE_ORDER, or DELIVERY."
+            ) from exc
+        content = upload.read(max_evidence_bytes + 1)
+        if len(content) > max_evidence_bytes:
+            raise RequestEntityTooLarge()
+        document_id = f"preview_{sha256(content).hexdigest()[:24]}"
+        fields = _evidence_fields(
+            document_id=document_id,
+            evidence_type=evidence_type,
+            mime_type=mime_type,
+            content=content,
+            submitted_fields=request.form.get("fields"),
+        )
+        record = EvidenceStore().ingest(
+            document_id=document_id,
+            organization_id=g.principal.organization_id,
+            evidence_type=evidence_type,
+            filename=filename,
+            mime_type=mime_type,
+            content=content,
+            fields=fields,
+        )
+        return jsonify(
+            {
+                "preview": _evidence_json(record),
+                "persisted": False,
+                "correlation_id": _correlation_id(),
+            }
+        )
+
     @app.post("/api/invoices/<invoice_id>/evidence")
     @require(Permission.EVIDENCE_WRITE)
     def upload_invoice_evidence(invoice_id: str):
@@ -1643,6 +1697,7 @@ def create_app(
         document_id = f"evidence_{uuid4().hex}"
         fields = _evidence_fields(
             document_id=document_id,
+            evidence_type=evidence_type,
             mime_type=mime_type,
             content=content,
             submitted_fields=request.form.get("fields"),

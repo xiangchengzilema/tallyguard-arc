@@ -42,6 +42,7 @@ class EvidenceType(StrEnum):
 
 class ExtractionMethod(StrEnum):
     JSON = "JSON"
+    PDF_TEXT = "PDF_TEXT"
     OCR = "OCR"
     MANUAL = "MANUAL"
     SEEDED = "SEEDED"

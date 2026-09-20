@@ -60,8 +60,8 @@ output.
 
 - The public demo uses simulated receipts and labels them visibly.
 - The checked-in 10,000-workflow report is synthetic engineering evidence, not customer traction.
-- Structured JSON extraction is complete; PDF/image ingestion requires provenance-bound fields and
-  does not claim autonomous OCR accuracy.
+- Structured JSON and labelled text-layer PDF extraction are complete. Scanned PDFs and images
+  require provenance-bound OCR or human fields; TallyGuard does not claim autonomous OCR accuracy.
 - SQLite and in-process rate limiting are single-process hackathon choices, not the proposed
   production data plane.
 - Hosted-model recommendations are optional and fall back deterministically; availability or

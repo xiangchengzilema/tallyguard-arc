@@ -69,7 +69,7 @@ Implemented foundation:
 - Independently verified wallet replacements enter a deterministic two-day payment cooldown; matching invoices remain held until a fresh evaluation after expiry
 - Persistent vendor APIs enforce finance-operator RBAC, optimistic current-wallet checks, explicit verification references, tenant isolation, and restart-safe history
 - Authenticated multipart evidence upload persists original bytes and links exactly one invoice, purchase order, and delivery document per invoice
-- Structured JSON is extracted with exact JSON pointers; PDF/image observations require explicit page or bounding-box provenance
+- Structured JSON is extracted with exact JSON pointers; labelled PDF text layers are parsed with page provenance, bounded pages/characters, complete-schema checks, and conflict rejection; scanned PDFs and images still require explicit OCR or human provenance
 - Evidence downloads and metadata lists are tenant-scoped, size-capped, and audit recorded
 
 - Organization and user authentication
@@ -259,7 +259,7 @@ Implemented foundation:
 - Vendor risk and wallet-change history (complete)
 - Audit explorer with chain verification (active-invoice timeline and global searchable ledger complete)
 - Seeded scenario switcher for fast judging
-- User-supplied document picker and extraction review before evaluation (structured JSON complete; PDF/image OCR adapter remains optional)
+- User-supplied document picker and extraction review before evaluation (structured JSON UI complete; labelled text-PDF extraction preview API complete; scanned-PDF/image OCR UI remains optional)
 
 Exit criteria:
 

@@ -13,6 +13,7 @@ authors = [{ name = "TallyGuard contributors" }]
 dependencies = [
   "Flask>=3.0,<4",
   "gunicorn>=23,<24; platform_system != 'Windows'",
+  "pypdf>=5.4,<7",
 ]
 
 [project.scripts]

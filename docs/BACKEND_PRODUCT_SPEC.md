@@ -164,6 +164,7 @@ GET    /api/invoices/{id}
 GET    /api/operations/overview
 GET    /api/invoices/{id}/evidence-packet
 POST   /api/invoices/{id}/evidence
+POST   /api/evidence/extract
 POST   /api/invoices/{id}/evaluate
 POST   /api/invoices/{id}/approve
 POST   /api/invoices/{id}/settle

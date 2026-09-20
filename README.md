@@ -38,6 +38,7 @@ Every payment answers four questions:
 
 - Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
 - Authenticated multipart evidence API persists original PDF, PNG, JPEG, and JSON bytes with signature checks, SHA-256 addressing, invoice binding, and field-level provenance
+- Authenticated extraction preview and ingestion can recover a complete labelled field set from a PDF text layer, normalize amounts, dates, currencies, and EVM wallets, bind every observation to its source page, and reject missing or conflicting values before persistence
 - Persistent vendor directory API requires an explicit verification method and reference for onboarding or wallet replacement, and retains an append-only tenant-scoped wallet history
 - A verified wallet replacement triggers a deterministic two-day cooldown; even a matching new invoice remains held until a fresh post-cooldown evaluation
 - Immutable policy versions, active-policy selection, field-level diffs, and source-referenced treasury snapshots persist across restarts and are exposed through role-scoped APIs

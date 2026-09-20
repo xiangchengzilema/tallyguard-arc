@@ -49,6 +49,13 @@ recipient, amount, network, transaction, or approval value.
 | Circle Wallets | Transaction origination and lifecycle | Final proof that the expected Arc transfer occurred |
 | Arc RPC | Independent onchain receipt and exact Transfer log | Business authorization |
 
+The interpretation boundary supports exact JSON pointers and a fail-closed text-PDF extractor.
+PDF extraction is limited to 20 pages and 200,000 recovered characters, requires a complete set of
+explicitly labelled fields for the selected document type, rejects conflicting values, and records
+the original page for every observation. The preview endpoint returns the source hash and normalized
+fields without persistence. Scanned PDFs and images are never silently treated as successfully read;
+they require separately provenance-bound OCR or human observations.
+
 ## Evidence-to-payment sequence
 
 ```mermaid
