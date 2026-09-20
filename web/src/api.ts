@@ -238,6 +238,36 @@ export async function downloadAgentRunProof(
   return packetHash;
 }
 
+export async function downloadAccountingLedger(
+  auditorToken: string,
+): Promise<{ hash: string; rows: number }> {
+  const response = await fetch('/api/accounting/ledger.csv', {
+    headers: { Authorization: `Bearer ${auditorToken}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.error;
+    throw new ApiError(
+      detail?.message ?? 'TallyGuard could not export the accounting ledger.',
+      response.status,
+      detail?.code,
+    );
+  }
+  const hash = response.headers.get('X-TallyGuard-Ledger-SHA256') ?? '';
+  const rows = Number(response.headers.get('X-TallyGuard-Ledger-Rows') ?? '0');
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'tallyguard-ledger.csv';
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+  return { hash, rows };
+}
+
 const encodeDocument = (value: Record<string, string>): ArrayBuffer => {
   const encoded = new TextEncoder().encode(JSON.stringify(value));
   return encoded.buffer.slice(

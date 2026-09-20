@@ -33,6 +33,7 @@ import {
   activatePolicyVersion,
   bootstrap,
   createAgentRun,
+  downloadAccountingLedger,
   downloadAgentRunProof,
   downloadEvidencePacket,
   executeAgentRun,
@@ -309,6 +310,8 @@ function OperationsQueue({
   batch,
   scheduleRun,
   settlementStopped,
+  ledgerExport,
+  onExportLedger,
   onSettleBatch,
   onRunSchedules,
 }: {
@@ -317,6 +320,8 @@ function OperationsQueue({
   batch: PaymentBatch | null;
   scheduleRun: ScheduleRun | null;
   settlementStopped: boolean;
+  ledgerExport: { hash: string; rows: number } | null;
+  onExportLedger: () => void;
   onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
   onRunSchedules: () => void;
 }) {
@@ -345,6 +350,9 @@ function OperationsQueue({
         <div><span className="eyebrow">Persistent operations</span><h2>Invoice work queue</h2></div>
         <div className="operations-queue__actions">
           <Tag type={overview.overdue_count > 0 ? 'red' : 'cool-gray'}>{overview.overdue_count} overdue</Tag>
+          <Button size="sm" kind="ghost" renderIcon={Download} disabled={busy} onClick={onExportLedger}>
+            Export ledger
+          </Button>
           {scheduled.length > 0 ? (
             <Button size="sm" kind="tertiary" renderIcon={Time} disabled={busy} onClick={onRunSchedules}>
               Check {scheduled.length} schedule{scheduled.length === 1 ? '' : 's'}
@@ -362,6 +370,12 @@ function OperationsQueue({
           ) : null}
         </div>
       </div>
+      {ledgerExport ? (
+        <div className="ledger-export-proof">
+          <CheckmarkFilled size={16} />
+          <span>{ledgerExport.rows} reconciled row{ledgerExport.rows === 1 ? '' : 's'} · SHA-256 {shorten(ledgerExport.hash, 12, 10)}</span>
+        </div>
+      ) : null}
       {batch ? (
         <InlineNotification
           className="batch-result"
@@ -1285,6 +1299,7 @@ function App() {
   const [settlementRetryNeeded, setSettlementRetryNeeded] = useState(false);
   const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
   const [agentProofHash, setAgentProofHash] = useState<string | null>(null);
+  const [ledgerExport, setLedgerExport] = useState<{ hash: string; rows: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1524,6 +1539,13 @@ function App() {
     });
   }, [act, data]);
 
+  const handleExportLedger = useCallback(() => {
+    if (!data) return;
+    void act('Exporting a content-addressed accounting ledger', async () => {
+      setLedgerExport(await downloadAccountingLedger(data.sessions.auditor));
+    });
+  }, [act, data]);
+
   const handleDownloadPacket = useCallback(() => {
     if (!data || !run) return;
     void act('Assembling a content-addressed payment evidence packet', async () => {
@@ -1661,6 +1683,8 @@ function App() {
             batch={batch}
             scheduleRun={scheduleRun}
             settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+            ledgerExport={ledgerExport}
+            onExportLedger={handleExportLedger}
             onSettleBatch={handleSettleBatch}
             onRunSchedules={handleRunSchedules}
           />

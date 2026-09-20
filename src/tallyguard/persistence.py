@@ -97,6 +97,36 @@ class InvoicePage:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountingLedgerRow:
+    invoice_id: str
+    invoice_number: str
+    vendor_id: str
+    vendor_legal_name: str
+    currency: str
+    amount_usdc: Decimal
+    due_date: date
+    invoice_status: str
+    decision_id: str
+    evidence_manifest_hash: str
+    policy_version: str
+    policy_content_hash: str
+    final_action: str
+    approval_id: str | None
+    approval_status: str | None
+    approval_resolved_by: str | None
+    approval_resolved_at: datetime | None
+    payment_intent_id: str
+    recipient: str
+    network: str
+    provider: str
+    provider_reference: str
+    transaction_hash: str
+    block_number: int
+    settlement_status: str
+    confirmed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class StoredTreasurySnapshot:
     sequence: int
     snapshot: TreasurySnapshot
@@ -2402,6 +2432,102 @@ class SqliteRepository:
                 (organization_id, payment_intent_id),
             ).fetchone()
         return self._settlement_receipt(row) if row is not None else None
+
+    def accounting_ledger(self, *, organization_id: str) -> tuple[AccountingLedgerRow, ...]:
+        """Return reconciled payments as a tenant-scoped accounting ledger."""
+
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT
+                    i.id AS invoice_id,
+                    i.invoice_number,
+                    i.vendor_id,
+                    v.legal_name AS vendor_legal_name,
+                    i.currency,
+                    i.amount AS amount_usdc,
+                    i.due_date,
+                    i.status AS invoice_status,
+                    d.id AS decision_id,
+                    d.evidence_manifest_hash,
+                    d.policy_version,
+                    d.policy_content_hash,
+                    d.final_action,
+                    a.id AS approval_id,
+                    a.status AS approval_status,
+                    a.resolved_by_user_id AS approval_resolved_by,
+                    a.resolved_at AS approval_resolved_at,
+                    p.id AS payment_intent_id,
+                    p.recipient,
+                    p.network,
+                    r.provider,
+                    r.provider_reference,
+                    r.transaction_hash,
+                    r.block_number,
+                    r.status AS settlement_status,
+                    r.confirmed_at
+                FROM settlement_receipts AS r
+                INNER JOIN payment_intents AS p
+                    ON p.organization_id = r.organization_id
+                    AND p.id = r.payment_intent_id
+                INNER JOIN invoices AS i
+                    ON i.organization_id = p.organization_id
+                    AND i.id = p.invoice_id
+                INNER JOIN vendors AS v
+                    ON v.organization_id = i.organization_id
+                    AND v.id = i.vendor_id
+                INNER JOIN decisions AS d
+                    ON d.organization_id = p.organization_id
+                    AND d.id = p.decision_id
+                LEFT JOIN approvals AS a
+                    ON a.organization_id = d.organization_id
+                    AND a.decision_id = d.id
+                WHERE r.organization_id = ?
+                ORDER BY r.confirmed_at ASC, i.id ASC
+                """,
+                (organization_id,),
+            ).fetchall()
+        return tuple(
+            AccountingLedgerRow(
+                invoice_id=str(row["invoice_id"]),
+                invoice_number=str(row["invoice_number"]),
+                vendor_id=str(row["vendor_id"]),
+                vendor_legal_name=str(row["vendor_legal_name"]),
+                currency=str(row["currency"]),
+                amount_usdc=Decimal(str(row["amount_usdc"])),
+                due_date=date.fromisoformat(str(row["due_date"])),
+                invoice_status=str(row["invoice_status"]),
+                decision_id=str(row["decision_id"]),
+                evidence_manifest_hash=str(row["evidence_manifest_hash"]),
+                policy_version=str(row["policy_version"]),
+                policy_content_hash=str(row["policy_content_hash"]),
+                final_action=str(row["final_action"]),
+                approval_id=str(row["approval_id"]) if row["approval_id"] is not None else None,
+                approval_status=(
+                    str(row["approval_status"]) if row["approval_status"] is not None else None
+                ),
+                approval_resolved_by=(
+                    str(row["approval_resolved_by"])
+                    if row["approval_resolved_by"] is not None
+                    else None
+                ),
+                approval_resolved_at=(
+                    datetime.fromisoformat(str(row["approval_resolved_at"]))
+                    if row["approval_resolved_at"] is not None
+                    else None
+                ),
+                payment_intent_id=str(row["payment_intent_id"]),
+                recipient=str(row["recipient"]),
+                network=str(row["network"]),
+                provider=str(row["provider"]),
+                provider_reference=str(row["provider_reference"]),
+                transaction_hash=str(row["transaction_hash"]),
+                block_number=int(row["block_number"]),
+                settlement_status=str(row["settlement_status"]),
+                confirmed_at=datetime.fromisoformat(str(row["confirmed_at"])),
+            )
+            for row in rows
+        )
 
     def _insert_wallet_event(self, event: VendorWalletEvent) -> None:
         self._connection.execute(

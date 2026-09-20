@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from hashlib import sha256
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
 import os
 from pathlib import Path
@@ -268,6 +269,15 @@ def _treasury_json(stored: StoredTreasurySnapshot) -> dict[str, Any]:
 
 def _json_scalar(value: Any) -> Any:
     return format(value, "f") if isinstance(value, Decimal) else value
+
+
+def _csv_cell(value: Any) -> str:
+    """Render user-controlled text without spreadsheet formula execution."""
+
+    text = "" if value is None else str(value)
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
 
 
 def _scheduled_for(record: DecisionRecord) -> date | None:
@@ -1886,6 +1896,91 @@ def create_app(
                 "correlation_id": _correlation_id(),
             }
         )
+
+    @app.get("/api/accounting/ledger.csv")
+    @require(Permission.AUDIT_READ)
+    def export_accounting_ledger():
+        rows = repository.accounting_ledger(
+            organization_id=g.principal.organization_id,
+        )
+        output = StringIO(newline="")
+        writer = csv.writer(output, lineterminator="\r\n")
+        writer.writerow(
+            (
+                "invoice_id",
+                "invoice_number",
+                "vendor_id",
+                "vendor_legal_name",
+                "currency",
+                "amount_usdc",
+                "due_date",
+                "invoice_status",
+                "decision_id",
+                "evidence_manifest_hash",
+                "policy_version",
+                "policy_content_hash",
+                "final_action",
+                "approval_id",
+                "approval_status",
+                "approval_resolved_by",
+                "approval_resolved_at",
+                "payment_intent_id",
+                "recipient",
+                "network",
+                "provider",
+                "provider_reference",
+                "transaction_hash",
+                "block_number",
+                "settlement_status",
+                "confirmed_at",
+            )
+        )
+        for row in rows:
+            writer.writerow(
+                tuple(
+                    _csv_cell(value)
+                    for value in (
+                        row.invoice_id,
+                        row.invoice_number,
+                        row.vendor_id,
+                        row.vendor_legal_name,
+                        row.currency,
+                        format(row.amount_usdc, "f"),
+                        row.due_date.isoformat(),
+                        row.invoice_status,
+                        row.decision_id,
+                        row.evidence_manifest_hash,
+                        row.policy_version,
+                        row.policy_content_hash,
+                        row.final_action,
+                        row.approval_id,
+                        row.approval_status,
+                        row.approval_resolved_by,
+                        (
+                            row.approval_resolved_at.isoformat()
+                            if row.approval_resolved_at is not None
+                            else None
+                        ),
+                        row.payment_intent_id,
+                        row.recipient,
+                        row.network,
+                        row.provider,
+                        row.provider_reference,
+                        row.transaction_hash,
+                        row.block_number,
+                        row.settlement_status,
+                        row.confirmed_at.isoformat(),
+                    )
+                )
+            )
+        body = ("\ufeff" + output.getvalue()).encode("utf-8")
+        content_hash = sha256(body).hexdigest()
+        response = Response(body, mimetype="text/csv")
+        response.headers["Content-Disposition"] = 'attachment; filename="tallyguard-ledger.csv"'
+        response.headers["X-TallyGuard-Ledger-SHA256"] = content_hash
+        response.headers["X-TallyGuard-Ledger-Rows"] = str(len(rows))
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/operations/settlement-incidents")
     @require(Permission.AUDIT_READ)

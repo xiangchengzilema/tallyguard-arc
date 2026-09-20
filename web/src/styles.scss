@@ -423,6 +423,7 @@ body {
 .operations-queue__head h2 { margin: .35rem 0 0; font-size: 1.5rem; font-weight: 500; letter-spacing: -.03em; }
 .operations-queue__actions { display: flex; align-items: center; gap: .75rem; }
 .operations-queue__actions .cds--tag { margin: 0; }
+.ledger-export-proof { display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; border-top: 1px solid var(--tg-line); color: var(--tg-accent-dark); font-size: .78rem; }
 .batch-result { margin-top: 1rem; }
 .operations-queue__empty { display: flex; align-items: center; gap: .75rem; margin-top: 1.5rem; padding: 1.25rem; background: #edf7f5; color: var(--tg-accent-dark); font-size: .75rem; }
 .operations-table { margin-top: 1.5rem; border-top: 1px solid var(--tg-line); }

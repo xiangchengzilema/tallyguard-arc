@@ -115,6 +115,7 @@ Implemented foundation:
 - An admin-only policy what-if endpoint re-evaluates the sealed historical inputs under an allowlisted temporary policy patch; it returns a comparison but never persists a decision, approval, audit event, or payment authorization
 - A downloadable, SHA-256 content-addressed Payment Evidence Packet combines the sealed inputs, replay checks, source metadata, approval, settlement receipt, and invoice audit events into one portable auditor artifact
 - A standalone offline verifier recomputes the packet content address, policy hash, replay input hash, full deterministic rule trace, decision ID, settlement bindings, and included audit-event hashes; an optional online mode independently re-proves the exact USDC transfer through Arc RPC
+- A tenant-scoped accounting export emits stable UTF-8 CSV rows only for reconciled payments, binds business evidence and approvals to Circle/Arc proof fields, exposes a SHA-256 response header, and neutralizes spreadsheet formula injection
 
 - Agent-generated evidence summary (credential-free and hosted structured adapters complete)
 - Recommended action with structured reason codes
@@ -236,6 +237,7 @@ Implemented foundation:
 - The decision view includes a visibly non-persistent policy sandbox that can demonstrate an autonomy-cap or kill-switch change against the exact sealed inputs and compare the resulting action and reason codes
 - Persistent operations metrics and a due-date-sorted work queue expose open exposure, blocked value, seven-day due risk, overdue items, and treasury headroom across all durable tenant invoices
 - The work queue supports native selection of `READY` invoices and an idempotent batch-settlement action with explicit partial-success feedback
+- The work queue exposes a one-click, content-addressed accounting ledger export and immediately displays its row count and SHA-256 fingerprint
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
 - The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
