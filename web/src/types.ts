@@ -128,7 +128,16 @@ export interface EvidenceFileReview {
   deliveredValue: string;
   walletAddress: string;
   extractionMethods: EvidenceExtractionMethod[];
-  contentHashes: string[];
+  documents: Array<{
+    evidenceType: 'INVOICE' | 'PURCHASE_ORDER' | 'DELIVERY';
+    filename: string;
+    mimeType: 'application/json' | 'application/pdf';
+    contentHash: string;
+    extractionMethods: EvidenceExtractionMethod[];
+    fieldCount: number;
+    minimumConfidence: string;
+    pageNumbers: number[];
+  }>;
 }
 
 export interface AuditEvent {

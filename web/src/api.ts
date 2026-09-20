@@ -302,6 +302,9 @@ interface ParsedEvidenceDocument {
   mimeType: 'application/json' | 'application/pdf';
   contentSha256: string;
   extractionMethods: EvidenceExtractionMethod[];
+  fieldCount: number;
+  minimumConfidence: string;
+  pageNumbers: number[];
 }
 
 const requiredField = (record: JsonEvidence, field: string, documentName: string) => {
@@ -339,6 +342,9 @@ const parseJsonEvidence = async (file: File, documentName: string): Promise<Pars
     mimeType: 'application/json',
     contentSha256: await sha256(bytes),
     extractionMethods: ['JSON'],
+    fieldCount: Object.keys(normalized).length,
+    minimumConfidence: '1',
+    pageNumbers: [],
   };
 };
 
@@ -377,6 +383,14 @@ const parseEvidenceFile = async (
     mimeType,
     contentSha256: payload.preview.content_sha256,
     extractionMethods: [...new Set(payload.preview.fields.map((field) => field.method))],
+    fieldCount: payload.preview.fields.length,
+    minimumConfidence: payload.preview.fields.reduce(
+      (minimum, field) => Math.min(minimum, Number(field.confidence)),
+      1,
+    ).toFixed(2),
+    pageNumbers: [...new Set(payload.preview.fields.flatMap((field) => (
+      field.source.page_number === null ? [] : [field.source.page_number]
+    )))].sort((left, right) => left - right),
   };
 };
 
@@ -447,7 +461,20 @@ export async function reviewEvidenceFiles(
     deliveredValue: parsed.delivery.delivered_value,
     walletAddress: parsed.invoice.payment_wallet_address,
     extractionMethods: [...new Set(Object.values(parsed.documents).flatMap((item) => item.extractionMethods))],
-    contentHashes: Object.values(parsed.documents).map((item) => item.contentSha256),
+    documents: ([
+      ['INVOICE', files.invoice, parsed.documents.invoice],
+      ['PURCHASE_ORDER', files.purchaseOrder, parsed.documents.purchaseOrder],
+      ['DELIVERY', files.delivery, parsed.documents.delivery],
+    ] as const).map(([evidenceType, file, document]) => ({
+      evidenceType,
+      filename: file.name,
+      mimeType: document.mimeType,
+      contentHash: document.contentSha256,
+      extractionMethods: document.extractionMethods,
+      fieldCount: document.fieldCount,
+      minimumConfidence: document.minimumConfidence,
+      pageNumbers: document.pageNumbers,
+    })),
   };
 }
 

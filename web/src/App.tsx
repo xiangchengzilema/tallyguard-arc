@@ -985,7 +985,23 @@ function LiveEvidenceWorkbench({
             <div><span>Delivered</span><strong>{formatMoney(review.deliveredValue)} {review.currency}</strong></div>
             <div><span>Due</span><strong>{review.dueDate}</strong></div>
             <div><span>Recipient</span><code>{shorten(review.walletAddress, 10, 8)}</code></div>
-            <div><span>Source hashes</span><code>{review.contentHashes.map((hash) => hash.slice(0, 8)).join(' · ')}</code></div>
+          </div>
+          <div className="evidence-review__sources" aria-label="Extraction provenance">
+            {review.documents.map((document) => (
+              <article key={document.evidenceType}>
+                <div>
+                  <span>{document.evidenceType.replaceAll('_', ' ')}</span>
+                  <strong>{document.filename}</strong>
+                </div>
+                <dl>
+                  <div><dt>Method</dt><dd>{document.extractionMethods.join(' + ')}</dd></div>
+                  <div><dt>Fields</dt><dd>{document.fieldCount}</dd></div>
+                  <div><dt>Confidence</dt><dd>{Math.round(Number(document.minimumConfidence) * 100)}% min</dd></div>
+                  <div><dt>Source</dt><dd>{document.pageNumbers.length ? `p. ${document.pageNumbers.join(', ')}` : 'JSON pointers'}</dd></div>
+                </dl>
+                <code>sha256:{shorten(document.contentHash, 10, 10)}</code>
+              </article>
+            ))}
           </div>
           <div className="review-action">
             <p>Confirm these extracted values before creating immutable tenant records.</p>

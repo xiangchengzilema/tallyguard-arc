@@ -267,6 +267,16 @@ body {
 .evidence-review__grid > div:nth-child(3n) { border-right: 0; }
 .evidence-review__grid span { color: var(--tg-muted); font-size: .625rem; text-transform: uppercase; letter-spacing: .06em; }
 .evidence-review__grid strong, .evidence-review__grid code { font-size: .75rem; overflow-wrap: anywhere; }
+.evidence-review__sources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--tg-line); background: #f6f8f7; }
+.evidence-review__sources article { display: grid; gap: .85rem; min-width: 0; padding: 1rem 1.25rem; border-right: 1px solid var(--tg-line); }
+.evidence-review__sources article:last-child { border-right: 0; }
+.evidence-review__sources article > div { display: grid; gap: .25rem; min-width: 0; }
+.evidence-review__sources span, .evidence-review__sources dt { color: var(--tg-muted); font-size: .625rem; letter-spacing: .05em; text-transform: uppercase; }
+.evidence-review__sources strong { overflow: hidden; font-size: .75rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.evidence-review__sources dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0; }
+.evidence-review__sources dl div { display: grid; gap: .2rem; }
+.evidence-review__sources dd { margin: 0; font-size: .6875rem; font-weight: 600; overflow-wrap: anywhere; }
+.evidence-review__sources code { color: var(--tg-accent-dark); font-size: .625rem; overflow-wrap: anywhere; }
 .review-action { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1rem 1.25rem; }
 .review-action .cds--btn { flex: none; }
 .flow-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem; color: var(--tg-muted); font-size: .75rem; }
@@ -638,8 +648,10 @@ body {
   .tenant-audit__filters .cds--search { grid-column: 1 / -1; }
   .tenant-audit__filters .cds--btn { width: 100%; max-width: none; }
   .live-workbench__intro { grid-template-columns: 1fr; }
-  .upload-grid, .evidence-review__grid { grid-template-columns: 1fr; }
+  .upload-grid, .evidence-review__grid, .evidence-review__sources { grid-template-columns: 1fr; }
   .evidence-review__grid > div { border-right: 0; }
+  .evidence-review__sources article { border-right: 0; border-bottom: 1px solid var(--tg-line); }
+  .evidence-review__sources article:last-child { border-bottom: 0; }
   .review-action { align-items: stretch; flex-direction: column; }
   .review-action .cds--btn { width: 100%; max-width: none; }
   .operations-table__head { display: none; }
