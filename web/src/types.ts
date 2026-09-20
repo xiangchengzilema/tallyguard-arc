@@ -338,6 +338,8 @@ export interface OperationsOverview {
   overdue_count: number;
   reconciled_usdc: string;
   treasury_available_usdc: string | null;
+  treasury_committed_since_snapshot_usdc: string | null;
+  unreserved_open_exposure_usdc: string | null;
   minimum_reserve_usdc: string | null;
   projected_after_open_usdc: string | null;
   work_queue: OperationsInvoice[];

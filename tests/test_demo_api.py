@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 import hashlib
 from io import BytesIO
 import json
@@ -211,6 +212,15 @@ def test_provider_timeout_retries_same_durable_intent_without_double_payment(tmp
     assert len(failed_attempts) == 1
     assert failed_attempts[0].outcome.value == "FAILED_RETRYABLE"
     assert failed_attempts[0].retryable is True
+    overview = client.get(
+        "/api/operations/overview", headers=auditor_headers
+    ).get_json()["overview"]
+    amount = Decimal(run["invoice"]["amount"])
+    assert Decimal(overview["treasury_committed_since_snapshot_usdc"]) == amount
+    assert Decimal(overview["unreserved_open_exposure_usdc"]) == Decimal("0")
+    assert Decimal(overview["projected_after_open_usdc"]) == (
+        Decimal("10000") - amount
+    )
     open_incidents = client.get(
         "/api/operations/settlement-incidents", headers=auditor_headers
     ).get_json()

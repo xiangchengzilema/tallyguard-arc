@@ -2130,6 +2130,12 @@ def create_app(
                     "treasury_available_usdc": optional_money(
                         overview.treasury_available_usdc
                     ),
+                    "treasury_committed_since_snapshot_usdc": optional_money(
+                        overview.treasury_committed_since_snapshot_usdc
+                    ),
+                    "unreserved_open_exposure_usdc": optional_money(
+                        overview.unreserved_open_exposure_usdc
+                    ),
                     "minimum_reserve_usdc": optional_money(
                         overview.minimum_reserve_usdc
                     ),

@@ -801,6 +801,13 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert Decimal(overview["blocked_exposure_usdc"]) == wallet_amount + duplicate_amount
     assert {item["status"] for item in overview["work_queue"]} == {"READY", "HOLD"}
     assert overview["treasury_available_usdc"] == "10000"
+    assert overview["treasury_committed_since_snapshot_usdc"] == "0"
+    assert Decimal(overview["unreserved_open_exposure_usdc"]) == (
+        clean_amount + wallet_amount
+    )
+    assert Decimal(overview["projected_after_open_usdc"]) == (
+        Decimal("10000") - clean_amount - wallet_amount
+    )
     assert overview["minimum_reserve_usdc"] == "3000"
 
 
@@ -1023,6 +1030,18 @@ def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
     assert overview["status_counts"]["RECONCILED"] == 2
     assert overview["status_counts"]["HOLD"] == 1
     assert len(overview["work_queue"]) == 1
+    settled_amount = sum(
+        (Decimal(item["invoice"]["amount"]) for item in runs[:2]),
+        Decimal("0"),
+    )
+    held_amount = Decimal(runs[2]["invoice"]["amount"])
+    assert Decimal(overview["treasury_committed_since_snapshot_usdc"]) == (
+        settled_amount
+    )
+    assert Decimal(overview["unreserved_open_exposure_usdc"]) == held_amount
+    assert Decimal(overview["projected_after_open_usdc"]) == (
+        Decimal("10000") - settled_amount - held_amount
+    )
 
 
 def test_vendor_wallet_verification_history_is_durable_tenant_scoped_and_audited(tmp_path):

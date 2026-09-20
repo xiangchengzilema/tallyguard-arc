@@ -158,12 +158,20 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 function OperationsBand({ overview, sessionEvaluations }: { overview: OperationsOverview; sessionEvaluations: number }) {
   const projected = overview.projected_after_open_usdc;
+  const snapshot = overview.treasury_available_usdc;
+  const committed = overview.treasury_committed_since_snapshot_usdc;
   return (
     <div className="metrics-band" aria-label="Persistent finance operations summary">
       <Metric label="Open exposure" value={`${formatMoney(overview.open_exposure_usdc)} USDC`} detail={`${overview.invoice_count} durable invoices · ${sessionEvaluations} this session`} />
       <Metric label="Blocked value" value={`${formatMoney(overview.blocked_exposure_usdc)} USDC`} detail="Held, rejected, or approval-gated" />
       <Metric label="Due within 7 days" value={`${formatMoney(overview.due_next_7_days_usdc)} USDC`} detail={`${overview.due_next_7_days_count} invoices · ${overview.overdue_count} overdue`} />
-      <Metric label="Projected liquidity" value={projected === null ? 'Awaiting treasury' : `${formatMoney(projected)} USDC`} detail={overview.minimum_reserve_usdc === null ? 'Record a treasury snapshot' : `${formatMoney(overview.minimum_reserve_usdc)} USDC minimum reserve`} />
+      <Metric
+        label="Projected liquidity"
+        value={projected === null ? 'Awaiting treasury' : `${formatMoney(projected)} USDC`}
+        detail={snapshot === null || committed === null
+          ? 'Record a treasury snapshot'
+          : `${formatMoney(snapshot)} snapshot · ${formatMoney(committed)} committed`}
+      />
     </div>
   );
 }
@@ -2099,7 +2107,12 @@ function App() {
               onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
               onRunLive={handleRunLive}
             />
-            <main className="workbench" id="evaluation-workbench" tabIndex={-1}>
+            <section
+              className="workbench"
+              id="evaluation-workbench"
+              aria-label="Evidence evaluation workbench"
+              tabIndex={-1}
+            >
               {run ? (
                 <>
                   <div className="run-meta">
@@ -2141,7 +2154,7 @@ function App() {
                   onEvaluate={handleUploadedEvidence}
                 />
               ) : <EmptyWorkbench scenario={selectedScenario} />}
-            </main>
+            </section>
           </div>
         )}
 

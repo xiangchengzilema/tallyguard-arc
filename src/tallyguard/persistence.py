@@ -149,6 +149,8 @@ class OperationsOverview:
     overdue_count: int
     reconciled_usdc: Decimal
     treasury_available_usdc: Decimal | None
+    treasury_committed_since_snapshot_usdc: Decimal | None
+    unreserved_open_exposure_usdc: Decimal | None
     minimum_reserve_usdc: Decimal | None
     projected_after_open_usdc: Decimal | None
     work_queue: tuple[StoredInvoice, ...]
@@ -1545,11 +1547,29 @@ class SqliteRepository:
             return sum((item.invoice.amount for item in items), Decimal("0"))
 
         treasury_available: Decimal | None = None
+        committed_since_snapshot: Decimal | None = None
+        reserved_invoice_ids: set[str] = set()
         minimum_reserve: Decimal | None = None
         try:
-            treasury_available = self.latest_treasury_snapshot(
+            latest_snapshot = self.latest_treasury_snapshot(
                 organization_id=organization_id
-            ).snapshot.available_usdc
+            )
+            treasury_available = latest_snapshot.snapshot.available_usdc
+            with self._guard:
+                reservation_rows = self._connection.execute(
+                    """
+                    SELECT invoice_id, amount_usdc FROM payment_intents
+                    WHERE organization_id = ? AND created_at > ?
+                    """,
+                    (organization_id, latest_snapshot.recorded_at.isoformat()),
+                ).fetchall()
+            committed_since_snapshot = sum(
+                (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
+                Decimal("0"),
+            )
+            reserved_invoice_ids = {
+                str(row["invoice_id"]) for row in reservation_rows
+            }
         except PersistenceError:
             pass
         try:
@@ -1559,6 +1579,17 @@ class SqliteRepository:
         except PolicyRepositoryError:
             pass
         open_exposure = total(open_items)
+        unreserved_open_exposure = (
+            total(
+                tuple(
+                    item
+                    for item in open_items
+                    if item.invoice.id not in reserved_invoice_ids
+                )
+            )
+            if treasury_available is not None
+            else None
+        )
         return OperationsOverview(
             organization_id=organization_id,
             as_of=effective_date,
@@ -1576,9 +1607,13 @@ class SqliteRepository:
                 tuple(item for item in invoices if item.status == InvoiceStatus.RECONCILED)
             ),
             treasury_available_usdc=treasury_available,
+            treasury_committed_since_snapshot_usdc=committed_since_snapshot,
+            unreserved_open_exposure_usdc=unreserved_open_exposure,
             minimum_reserve_usdc=minimum_reserve,
             projected_after_open_usdc=(
-                treasury_available - open_exposure
+                treasury_available
+                - (committed_since_snapshot or Decimal("0"))
+                - (unreserved_open_exposure or Decimal("0"))
                 if treasury_available is not None
                 else None
             ),
