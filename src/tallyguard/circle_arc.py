@@ -49,6 +49,7 @@ FAILED_CIRCLE_STATES = {
     CircleTransactionState.DENIED,
     CircleTransactionState.CANCELLED,
 }
+DEFAULT_MAX_TRANSFER_USDC = Decimal("0.10")
 
 
 class CircleConfigurationError(RuntimeError):
@@ -359,7 +360,7 @@ class CircleArcAdapter:
         config: ArcNetworkConfig,
         circle: CircleGateway,
         arc_rpc: ArcRpcClient,
-        max_transfer_usdc: Decimal = Decimal("5"),
+        max_transfer_usdc: Decimal = DEFAULT_MAX_TRANSFER_USDC,
         max_poll_attempts: int = 20,
         poll_interval_seconds: float = 2,
         sleeper: Callable[[float], None] = time.sleep,
@@ -379,7 +380,9 @@ class CircleArcAdapter:
     @classmethod
     def from_env(cls, config: ArcNetworkConfig | None = None) -> "CircleArcAdapter":
         selected = config or ArcNetworkConfig.from_env()
-        raw_cap = os.getenv("TALLYGUARD_MAX_TRANSFER_USDC", "5")
+        raw_cap = os.getenv(
+            "TALLYGUARD_MAX_TRANSFER_USDC", format(DEFAULT_MAX_TRANSFER_USDC, "f")
+        )
         try:
             hard_cap = Decimal(raw_cap)
         except Exception as exc:

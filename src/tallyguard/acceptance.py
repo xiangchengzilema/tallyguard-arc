@@ -16,7 +16,12 @@ from uuid import uuid4
 from flask.testing import FlaskClient
 
 from .api import create_app
-from .circle_arc import ArcRpcClient, CircleArcAdapter, CircleSdkGateway
+from .circle_arc import (
+    ArcRpcClient,
+    CircleArcAdapter,
+    CircleSdkGateway,
+    DEFAULT_MAX_TRANSFER_USDC,
+)
 from .network import ArcNetwork, ArcNetworkConfig
 from .preflight import run_preflight
 from .environment import load_local_environment
@@ -318,7 +323,12 @@ def main() -> None:
     if not recipient:
         raise SystemExit("Set --recipient or TALLYGUARD_ACCEPTANCE_RECIPIENT.")
     amount = _decimal(args.amount, field="--amount")
-    cap = _decimal(os.getenv("TALLYGUARD_MAX_TRANSFER_USDC", "5"), field="transfer cap")
+    cap = _decimal(
+        os.getenv(
+            "TALLYGUARD_MAX_TRANSFER_USDC", format(DEFAULT_MAX_TRANSFER_USDC, "f")
+        ),
+        field="transfer cap",
+    )
     if amount > cap:
         raise SystemExit("Acceptance amount exceeds TALLYGUARD_MAX_TRANSFER_USDC.")
 

@@ -71,6 +71,7 @@ def _check_render_blueprint(root: Path) -> ReleaseCheck:
         "TALLYGUARD_MODE": "simulation",
         "TALLYGUARD_ARC_NETWORK": "ARC-TESTNET",
         "TALLYGUARD_ALLOW_MAINNET": "false",
+        "TALLYGUARD_MAX_TRANSFER_USDC": "0.10",
         "TALLYGUARD_ENABLE_DEMO_SESSIONS": "true",
         "TALLYGUARD_DATABASE_PATH": "/tmp/tallyguard.sqlite3",
         "TALLYGUARD_FRONTEND_DIST": "/app/web/dist",
@@ -112,7 +113,7 @@ def _check_render_blueprint(root: Path) -> ReleaseCheck:
         "local",
         "Render public-safety blueprint",
         "passed",
-        "Simulation, Arc Testnet labels, isolated demo workspaces, disabled Mainnet, and CI-gated deploys are enforced without Circle credentials.",
+        "Simulation, Arc Testnet labels, a 0.10-USDC hard cap, isolated demo workspaces, disabled Mainnet, and CI-gated deploys are enforced without Circle credentials.",
         _hash_file(path),
     )
 

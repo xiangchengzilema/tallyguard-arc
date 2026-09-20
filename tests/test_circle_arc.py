@@ -179,6 +179,23 @@ def test_live_adapter_has_independent_hard_transfer_cap():
     assert circle.created == 0
 
 
+def test_live_adapter_defaults_to_low_value_transfer_cap():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+    circle = FakeCircle(circle_result(CircleTransactionState.COMPLETE))
+    live_adapter = CircleArcAdapter(
+        config=config,
+        circle=circle,
+        arc_rpc=ArcRpcClient(config=config, transport=valid_rpc_transport),
+        poll_interval_seconds=0,
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(SettlementDenied, match="hard transfer cap"):
+        live_adapter.submit(payment(amount_usdc=Decimal("0.100001")))
+
+    assert circle.created == 0
+
+
 @pytest.mark.parametrize(
     "change, message",
     [

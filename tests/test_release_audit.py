@@ -46,6 +46,8 @@ def test_render_blueprint_requires_public_safe_isolated_simulation(tmp_path):
         value: ARC-TESTNET
       - key: TALLYGUARD_ALLOW_MAINNET
         value: \"false\"
+      - key: TALLYGUARD_MAX_TRANSFER_USDC
+        value: \"0.10\"
       - key: TALLYGUARD_ENABLE_DEMO_SESSIONS
         value: \"true\"
       - key: TALLYGUARD_DATABASE_PATH
@@ -82,6 +84,8 @@ envVars:
     value: ARC-TESTNET
   - key: TALLYGUARD_ALLOW_MAINNET
     value: false
+  - key: TALLYGUARD_MAX_TRANSFER_USDC
+    value: \"0.10\"
   - key: TALLYGUARD_ENABLE_DEMO_SESSIONS
     value: true
   - key: TALLYGUARD_DATABASE_PATH

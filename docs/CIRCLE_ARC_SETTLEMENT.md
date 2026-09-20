@@ -122,8 +122,10 @@ Arc network, and confirms that Circle returns the canonical USDC asset balance. 
 estimates, or submits a transaction. Wallet addresses are redacted in terminal output, and
 secrets are never printed. A full preflight returns a ready verdict only when every check passes.
 
-For mainnet, the preflight additionally requires `TALLYGUARD_ALLOW_MAINNET=true` and refuses a
-hard adapter cap above 5 USDC. This does not bypass the product's separate recorded-approval
+The preflight refuses a hard adapter cap above 0.10 USDC on either network. Mainnet additionally
+requires `TALLYGUARD_ALLOW_MAINNET=true`. The live adapter and acceptance command also default
+to this 0.10-USDC ceiling when the environment value is absent. This does not bypass the
+product's separate recorded-approval
 requirement; it only establishes that the runtime configuration is internally consistent. A
 free-form request string is never accepted as authority: settlement reloads the approved record
 and verifies its tenant, decision, and invoice bindings before creating a payment intent.

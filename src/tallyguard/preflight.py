@@ -20,12 +20,13 @@ from .circle_arc import (
     CircleConfigurationError,
     CircleSdkGateway,
     CircleWalletSnapshot,
+    DEFAULT_MAX_TRANSFER_USDC,
 )
 from .network import ArcNetworkConfig
 from .environment import load_local_environment
 
 
-MAX_MAINNET_TRANSFER_CAP_USDC = Decimal("5")
+MAX_PREFLIGHT_TRANSFER_CAP_USDC = DEFAULT_MAX_TRANSFER_USDC
 
 
 class CheckStatus(StrEnum):
@@ -74,12 +75,12 @@ def run_preflight(
 
     if max_transfer_usdc <= 0:
         checks.append(PreflightCheck("transfer_cap", CheckStatus.FAIL, "Cap must be positive."))
-    elif config.is_mainnet and max_transfer_usdc > MAX_MAINNET_TRANSFER_CAP_USDC:
+    elif max_transfer_usdc > MAX_PREFLIGHT_TRANSFER_CAP_USDC:
         checks.append(
             PreflightCheck(
                 "transfer_cap",
                 CheckStatus.FAIL,
-                f"Mainnet cap exceeds the {MAX_MAINNET_TRANSFER_CAP_USDC} USDC safety ceiling.",
+                f"Live-adapter cap exceeds the {MAX_PREFLIGHT_TRANSFER_CAP_USDC} USDC safety ceiling.",
             )
         )
     else:
@@ -212,7 +213,9 @@ def main() -> None:
 
     config = ArcNetworkConfig.from_env()
     allow_mainnet = os.getenv("TALLYGUARD_ALLOW_MAINNET", "false").strip().lower() == "true"
-    max_transfer = _decimal_env("TALLYGUARD_MAX_TRANSFER_USDC", "5")
+    max_transfer = _decimal_env(
+        "TALLYGUARD_MAX_TRANSFER_USDC", format(DEFAULT_MAX_TRANSFER_USDC, "f")
+    )
     circle: WalletInspector | None = None
     setup_error: str | None = None
     if not args.network_only:

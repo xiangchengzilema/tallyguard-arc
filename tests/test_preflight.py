@@ -49,7 +49,7 @@ def test_full_testnet_preflight_is_ready_without_any_write_operation():
         arc_rpc=ArcRpcClient(config=config, transport=rpc_transport(config.chain_id)),
         circle=FakeCircle(wallet()),
         allow_mainnet=False,
-        max_transfer_usdc=Decimal("1"),
+        max_transfer_usdc=Decimal("0.10"),
     )
 
     assert report.safe_to_enable_live_adapter is True
@@ -64,7 +64,7 @@ def test_network_only_never_claims_live_adapter_is_ready():
         arc_rpc=ArcRpcClient(config=config, transport=rpc_transport(config.chain_id)),
         circle=None,
         allow_mainnet=False,
-        max_transfer_usdc=Decimal("1"),
+        max_transfer_usdc=Decimal("0.10"),
         network_only=True,
     )
 
@@ -79,7 +79,7 @@ def test_preflight_fails_closed_on_wrong_rpc_chain():
         arc_rpc=ArcRpcClient(config=config, transport=rpc_transport(5042)),
         circle=FakeCircle(wallet()),
         allow_mainnet=False,
-        max_transfer_usdc=Decimal("1"),
+        max_transfer_usdc=Decimal("0.10"),
     )
 
     assert report.safe_to_enable_live_adapter is False
@@ -99,6 +99,21 @@ def test_mainnet_requires_explicit_gate_and_low_hard_cap():
     assert report.safe_to_enable_live_adapter is False
     failed = {check.name for check in report.checks if check.status == CheckStatus.FAIL}
     assert failed == {"transfer_cap", "mainnet_gate"}
+
+
+def test_testnet_preflight_also_rejects_an_oversized_live_adapter_cap():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+    report = run_preflight(
+        config=config,
+        arc_rpc=ArcRpcClient(config=config, transport=rpc_transport(config.chain_id)),
+        circle=FakeCircle(wallet()),
+        allow_mainnet=False,
+        max_transfer_usdc=Decimal("0.100001"),
+    )
+
+    assert report.safe_to_enable_live_adapter is False
+    transfer_cap = next(check for check in report.checks if check.name == "transfer_cap")
+    assert transfer_cap.status == CheckStatus.FAIL
 
 
 def test_mainnet_can_be_ready_only_with_explicit_gate_and_safe_cap():
@@ -128,7 +143,7 @@ def test_wallet_network_state_and_canonical_balance_must_match():
             arc_rpc=ArcRpcClient(config=config, transport=rpc_transport(config.chain_id)),
             circle=FakeCircle(snapshot),
             allow_mainnet=False,
-            max_transfer_usdc=Decimal("1"),
+            max_transfer_usdc=Decimal("0.10"),
         )
         assert report.safe_to_enable_live_adapter is False
         assert next(check for check in report.checks if check.name == "circle_wallet").status == CheckStatus.FAIL
