@@ -331,6 +331,7 @@ Implemented foundation:
 - A reproducible real-HTTP deployment smoke starts the production-shaped app on an ephemeral TCP port and verifies the built console, probes, role separation, deterministic decision, simulation settlement, reconciliation, and content-addressed ledger; CI runs the same seven checks and the report explicitly disclaims traction or live-funds evidence
 - Architecture and trust-boundary diagrams document agent authority, tenant isolation, the evidence-to-payment sequence, runtime profiles, and production migration boundary
 - Security model and live-test protocol enumerate protected assets, abuse cases, hard controls, secret handling, and honest demo limitations
+- Canonical submission copy, a timed product-first video runbook, and a release checklist now separate complete evidence from explicit external gates so pending URLs or transactions cannot be mistaken for finished proof
 
 - Public GitHub repository and reproducible setup
 - Architecture and trust-boundary diagrams

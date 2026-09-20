@@ -12,3 +12,9 @@ The live URL, public repository URL, real Arc Testnet transaction, completed
 pilot report, and demo-video URL remain intentionally absent until those
 external actions have actually occurred. Do not insert placeholders that look
 like completed evidence.
+
+Submission working files:
+
+- `FINAL_SUBMISSION_COPY.md`: canonical form answers with explicit pending fields
+- `DEMO_RUNBOOK.md`: timed product-first walkthrough for a sub-three-minute video
+- `RELEASE_CHECKLIST.md`: repository, deployment, Testnet, pilot, media, and form gates
