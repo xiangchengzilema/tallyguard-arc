@@ -18,3 +18,9 @@ Submission working files:
 - `FINAL_SUBMISSION_COPY.md`: canonical form answers with explicit pending fields
 - `DEMO_RUNBOOK.md`: timed product-first walkthrough for a sub-three-minute video
 - `RELEASE_CHECKLIST.md`: repository, deployment, Testnet, pilot, media, and form gates
+
+Run `tallyguard-release-audit --output artifacts/release-audit.json` at any time
+to hash the local package and list the remaining external evidence without
+mistaking a placeholder for a completed submission. Add `--require-complete`
+only for the final gate after the public URLs, Testnet acceptance artifact, and
+genuine pilot report have been supplied.

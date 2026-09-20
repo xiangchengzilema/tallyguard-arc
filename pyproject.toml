@@ -26,6 +26,7 @@ tallyguard-wallet-setup = "tallyguard.wallet_setup:main"
 tallyguard-verify-packet = "tallyguard.packet_verify:main"
 tallyguard-deployment-smoke = "tallyguard.deployment_smoke:main"
 tallyguard-pilot-report = "tallyguard.pilot_report:main"
+tallyguard-release-audit = "tallyguard.release_audit:main"
 
 [project.optional-dependencies]
 circle = [

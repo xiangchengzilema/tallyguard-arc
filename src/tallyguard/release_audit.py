@@ -1,0 +1,346 @@
+"""Generate a fail-closed release audit for the TallyGuard submission package."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import asdict, dataclass
+from decimal import Decimal, InvalidOperation
+from hashlib import sha256
+import json
+from pathlib import Path
+import re
+import subprocess
+from typing import Any, Callable
+from urllib.parse import urlparse
+
+from .audit import canonical_json
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseCheck:
+    category: str
+    name: str
+    status: str
+    detail: str
+    evidence_sha256: str | None = None
+
+
+def _hash_file(path: Path) -> str:
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def _check_file(root: Path, relative_path: str) -> ReleaseCheck:
+    path = root / relative_path
+    if not path.is_file() or path.stat().st_size == 0:
+        return ReleaseCheck("local", relative_path, "failed", "Required file is missing or empty.")
+    return ReleaseCheck(
+        "local",
+        relative_path,
+        "passed",
+        f"Present ({path.stat().st_size} bytes).",
+        _hash_file(path),
+    )
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("Top-level JSON value must be an object.")
+    return value
+
+
+def _check_report(
+    root: Path,
+    relative_path: str,
+    validator: Callable[[dict[str, Any]], bool],
+    success_detail: str,
+) -> ReleaseCheck:
+    path = root / relative_path
+    try:
+        report = _load_json(path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return ReleaseCheck("local", relative_path, "failed", f"Cannot read report: {exc}")
+    if not validator(report):
+        return ReleaseCheck("local", relative_path, "failed", "Report assertions did not pass.")
+    return ReleaseCheck("local", relative_path, "passed", success_detail, _hash_file(path))
+
+
+def _workflow_report_valid(report: dict[str, Any]) -> bool:
+    summary = report.get("summary")
+    return bool(
+        isinstance(summary, dict)
+        and summary.get("successful_workflows") == 10_000
+        and summary.get("failed_workflows") == 0
+        and summary.get("duplicate_payment_count") == 0
+        and summary.get("cross_tenant_attempts_denied")
+        == summary.get("cross_tenant_attempts")
+        and summary.get("treasury_atomic_limit_preserved") is True
+    )
+
+
+def _agent_report_valid(report: dict[str, Any]) -> bool:
+    summary = report.get("summary")
+    return bool(
+        isinstance(summary, dict)
+        and summary.get("successful_agent_workflows") == 50
+        and summary.get("failed_agent_workflows") == 0
+        and summary.get("verified_proof_packets") == 50
+        and summary.get("cross_tenant_attempts_denied")
+        == summary.get("cross_tenant_attempts")
+        and summary.get("orchestration_single_execution_preserved") is True
+    )
+
+
+def _url_check(name: str, value: str | None, *, prefix: str | None = None) -> ReleaseCheck:
+    if value is None or not value.strip():
+        return ReleaseCheck("external", name, "pending", "External evidence has not been supplied.")
+    candidate = value.strip()
+    parsed = urlparse(candidate)
+    if parsed.scheme != "https" or not parsed.netloc or (prefix and not candidate.startswith(prefix)):
+        expectation = f" beginning with {prefix}" if prefix else ""
+        return ReleaseCheck(
+            "external",
+            name,
+            "failed",
+            f"Expected a public HTTPS URL{expectation}.",
+        )
+    return ReleaseCheck("external", name, "passed", candidate)
+
+
+def _acceptance_check(path_value: str | None) -> ReleaseCheck:
+    if not path_value:
+        return ReleaseCheck(
+            "external",
+            "Arc Testnet acceptance artifact",
+            "pending",
+            "No real Testnet acceptance artifact supplied.",
+        )
+    path = Path(path_value)
+    try:
+        report = _load_json(path)
+        amount = Decimal(str(report.get("amount_usdc")))
+        receipt = report.get("receipt")
+        valid = bool(
+            report.get("network") == "ARC-TESTNET"
+            and Decimal("0") < amount <= Decimal("0.10")
+            and report.get("decision_action") == "PAY"
+            and report.get("audit_chain_valid") is True
+            and isinstance(receipt, dict)
+            and re.fullmatch(r"0x[0-9a-fA-F]{64}", str(receipt.get("transaction_hash", "")))
+            and str(receipt.get("explorer_url", "")).startswith(
+                "https://explorer.testnet.arc.io/"
+            )
+            and report.get("idempotent_replay", {}).get("same_receipt") is True
+        )
+    except (OSError, json.JSONDecodeError, ValueError, InvalidOperation) as exc:
+        return ReleaseCheck(
+            "external", "Arc Testnet acceptance artifact", "failed", f"Cannot verify: {exc}"
+        )
+    if not valid:
+        return ReleaseCheck(
+            "external",
+            "Arc Testnet acceptance artifact",
+            "failed",
+            "Artifact does not prove a capped, reconciled, idempotent Arc Testnet payment.",
+        )
+    return ReleaseCheck(
+        "external",
+        "Arc Testnet acceptance artifact",
+        "passed",
+        "Capped real Testnet acceptance evidence is structurally complete.",
+        _hash_file(path),
+    )
+
+
+def _pilot_check(path_value: str | None) -> ReleaseCheck:
+    if not path_value:
+        return ReleaseCheck(
+            "external",
+            "Genuine pilot report",
+            "pending",
+            "No operator-attested pilot report supplied.",
+        )
+    path = Path(path_value)
+    try:
+        envelope = _load_json(path)
+        report = envelope.get("report")
+        expected_hash = envelope.get("report_sha256")
+        valid = bool(
+            isinstance(report, dict)
+            and expected_hash == sha256(canonical_json(report).encode("utf-8")).hexdigest()
+            and report.get("usage_measurement", {}).get("source") == "operator attestation"
+            and report.get("product_evidence", {}).get("packet_verified") is True
+            and report.get("attestation", {}).get("reporting_consent") is True
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return ReleaseCheck("external", "Genuine pilot report", "failed", f"Cannot verify: {exc}")
+    if not valid:
+        return ReleaseCheck(
+            "external",
+            "Genuine pilot report",
+            "failed",
+            "Report hash, packet verification, operator source, or reporting consent is invalid.",
+        )
+    return ReleaseCheck(
+        "external",
+        "Genuine pilot report",
+        "passed",
+        "Content address, product proof, and operator attestation are complete.",
+        _hash_file(path),
+    )
+
+
+def _git_check(root: Path) -> ReleaseCheck:
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ReleaseCheck("repository", "Clean worktree", "failed", result.stderr.strip())
+    if result.stdout.strip():
+        return ReleaseCheck("repository", "Clean worktree", "failed", "Uncommitted files remain.")
+    return ReleaseCheck("repository", "Clean worktree", "passed", "No uncommitted files.")
+
+
+def _secret_check(root: Path) -> ReleaseCheck:
+    listed = subprocess.run(
+        ["git", "ls-files", "*.py"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        return ReleaseCheck("repository", "Python secret scan", "failed", listed.stderr.strip())
+    pattern = re.compile("ghp" + r"_|API" + r"_KEY=.{10}")
+    matches: list[str] = []
+    for relative in listed.stdout.splitlines():
+        content = (root / relative).read_text(encoding="utf-8", errors="replace")
+        if pattern.search(content):
+            matches.append(relative)
+    if matches:
+        return ReleaseCheck(
+            "repository",
+            "Python secret scan",
+            "failed",
+            "Potential secret pattern in: " + ", ".join(matches),
+        )
+    return ReleaseCheck("repository", "Python secret scan", "passed", "No token pattern found.")
+
+
+def audit_release(
+    root: Path,
+    *,
+    repository_url: str | None = None,
+    live_url: str | None = None,
+    video_url: str | None = None,
+    testnet_explorer_url: str | None = None,
+    acceptance_artifact: str | None = None,
+    pilot_report: str | None = None,
+    include_git: bool = True,
+) -> dict[str, Any]:
+    checks = [
+        _check_file(root, "README.md"),
+        _check_file(root, "Dockerfile"),
+        _check_file(root, "render.yaml"),
+        _check_file(root, "docs/ARCHITECTURE.md"),
+        _check_file(root, "docs/SECURITY_MODEL.md"),
+        _check_file(root, "web/dist/index.html"),
+        _check_file(root, "submission/TallyGuard_Tameion_Pitch_v7.pptx"),
+        _check_report(
+            root,
+            "docs/reports/load-test-10000.json",
+            _workflow_report_valid,
+            "10,000 workflows, isolation, idempotency, and treasury contention verified.",
+        ),
+        _check_report(
+            root,
+            "docs/reports/agent-run-load-50.json",
+            _agent_report_valid,
+            "50 tenant agent runs and proof packets verified.",
+        ),
+    ]
+    if include_git:
+        checks.extend((_git_check(root), _secret_check(root)))
+    submission_copy = root / "submission/FINAL_SUBMISSION_COPY.md"
+    pending_placeholders = (
+        submission_copy.read_text(encoding="utf-8").count("PENDING_EXTERNAL")
+        if submission_copy.is_file()
+        else 0
+    )
+    checks.append(
+        ReleaseCheck(
+            "external",
+            "Final submission placeholders",
+            "pending" if pending_placeholders else "passed",
+            f"{pending_placeholders} PENDING_EXTERNAL markers remain.",
+        )
+    )
+    checks.extend(
+        (
+            _url_check(
+                "Public repository URL",
+                repository_url,
+                prefix="https://github.com/",
+            ),
+            _url_check("Live judge console URL", live_url),
+            _url_check("Demo video URL", video_url),
+            _url_check(
+                "Arc Testnet Explorer URL",
+                testnet_explorer_url,
+                prefix="https://explorer.testnet.arc.io/",
+            ),
+            _acceptance_check(acceptance_artifact),
+            _pilot_check(pilot_report),
+        )
+    )
+    counts = {
+        status: sum(check.status == status for check in checks)
+        for status in ("passed", "pending", "failed")
+    }
+    status = "failed" if counts["failed"] else "ready" if not counts["pending"] else "needs-external-evidence"
+    payload = {
+        "schema_version": "1.0",
+        "status": status,
+        "summary": counts,
+        "checks": [asdict(check) for check in checks],
+    }
+    payload["audit_sha256"] = sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return payload
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Audit TallyGuard release and submission evidence")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--repository-url")
+    parser.add_argument("--live-url")
+    parser.add_argument("--video-url")
+    parser.add_argument("--testnet-explorer-url")
+    parser.add_argument("--acceptance-artifact")
+    parser.add_argument("--pilot-report")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--require-complete", action="store_true")
+    args = parser.parse_args()
+    report = audit_release(
+        args.root.resolve(),
+        repository_url=args.repository_url,
+        live_url=args.live_url,
+        video_url=args.video_url,
+        testnet_explorer_url=args.testnet_explorer_url,
+        acceptance_artifact=args.acceptance_artifact,
+        pilot_report=args.pilot_report,
+    )
+    rendered = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
+    if report["status"] == "failed" or (args.require_complete and report["status"] != "ready"):
+        raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    main()

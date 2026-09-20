@@ -337,6 +337,7 @@ Implemented foundation:
 - Architecture and trust-boundary diagrams document agent authority, tenant isolation, the evidence-to-payment sequence, runtime profiles, and production migration boundary
 - Security model and live-test protocol enumerate protected assets, abuse cases, hard controls, secret handling, and honest demo limitations
 - Canonical submission copy, a timed product-first video runbook, and a release checklist now separate complete evidence from explicit external gates so pending URLs or transactions cannot be mistaken for finished proof
+- A content-addressed release-audit command verifies local artifacts and reliability assertions, rejects malformed Testnet or pilot evidence, and reports missing repository, deployment, video, Explorer, and usage proof as pending rather than complete
 
 - Public GitHub repository and reproducible setup
 - Architecture and trust-boundary diagrams
