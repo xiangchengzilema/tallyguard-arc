@@ -44,6 +44,16 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Run the standalone packet verifier with Arc RPC enabled.
 - [ ] Open the Explorer URL in a logged-out browser.
 
+## Optional controlled Mainnet proof
+
+- [ ] Do not begin until every Testnet settlement-evidence item above passes.
+- [ ] Create a dedicated low-balance Arc Mainnet treasury and separate controlled recipient.
+- [ ] Keep `TALLYGUARD_MAX_TRANSFER_USDC` at or below `0.10` and the proof amount at or below `0.01`.
+- [ ] Run the full read-only preflight with `ARC-MAINNET` and the explicit mainnet gate.
+- [ ] Manually invoke `tallyguard-mainnet-acceptance` with the exact consent phrase.
+- [ ] Verify requester and resolver identities differ, replay reuses the same receipt, and the Arc Explorer proof resolves publicly.
+- [ ] Immediately disable the mainnet runtime gate after preserving the content-addressed report.
+
 ## Genuine usage evidence
 
 - [ ] Choose a real self-operated or external pilot workflow.

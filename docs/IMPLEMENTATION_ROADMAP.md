@@ -148,6 +148,7 @@ Implemented foundation:
 - The guarded wallet provisioner can create a dedicated two-wallet Arc Testnet acceptance pair, keeping the funded treasury identity distinct from the controlled recipient and printing no credentials
 - The wallet provisioner now supports an explicitly selected Arc Mainnet wallet or controlled pair only behind the mainnet runtime gate and a distinct mainnet confirmation phrase; provisioning never funds or transfers assets
 - Every direct mainnet `PAY` decision now requires an operator-created durable approval resolved by a different approver and revalidated against the exact tenant, decision, and invoice before an intent can be reserved
+- A separate mainnet acceptance runner is capped at 0.01 USDC, rejects adapter caps above 0.10 USDC and treasury self-transfers, requires the exact mainnet consent phrase plus full read-only preflight, exercises the role-separated approval path, and labels fake-adapter runs as synthetic rather than live proof
 - Operator commands automatically load the Git-ignored local `.env` without overriding explicitly exported process values, so Circle credentials never need to enter chat, source files, or command history
 - Durable payment intents retain the original UUID v4 across process restarts and retries
 - Durable settlement receipts prevent provider resubmission after a completed payment

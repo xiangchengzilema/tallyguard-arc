@@ -488,6 +488,7 @@ def create_app(
     testing: bool = False,
     settlement_adapter: SettlementAdapter | None = None,
     settlement_config: ArcNetworkConfig | None = None,
+    allow_mainnet: bool | None = None,
     rate_limit_per_minute: int | None = None,
     demo_session_rate_limit_per_minute: int | None = None,
     maximum_active_sessions_per_principal: int | None = None,
@@ -554,7 +555,11 @@ def create_app(
             settlement_adapter = CircleArcAdapter.from_env(network_config)
         else:
             raise ValueError("TALLYGUARD_MODE must be simulation or circle.")
-    allow_mainnet = os.getenv("TALLYGUARD_ALLOW_MAINNET", "false").strip().lower() == "true"
+    if allow_mainnet is None:
+        allow_mainnet = (
+            os.getenv("TALLYGUARD_ALLOW_MAINNET", "false").strip().lower()
+            == "true"
+        )
     settlement_service = SettlementService(
         config=network_config,
         adapter=settlement_adapter,

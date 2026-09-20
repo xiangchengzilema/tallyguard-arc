@@ -152,6 +152,32 @@ This command **does move Arc Testnet USDC**. It refuses mainnet regardless of en
 configuration. Acceptance artifacts are written under `artifacts/acceptance/`, which is excluded
 from Git.
 
+## Controlled Mainnet acceptance gate
+
+The mainnet runner is a different command and cannot inherit the Testnet confirmation by mistake.
+It refuses any amount above `0.01 USDC`, refuses an adapter cap above `0.10 USDC`, requires
+`ARC-MAINNET`, requires `TALLYGUARD_ALLOW_MAINNET=true`, rejects a treasury self-transfer, runs the
+full read-only Circle/Arc preflight, then creates a fresh evidence package and deterministic `PAY`
+decision. An operator requests a durable mainnet approval and a separate approver identity resolves
+it before the intent exists. The command then proves that replay returns the same receipt without a
+second provider submission.
+
+Only after Testnet acceptance has passed and the dedicated mainnet treasury contains a deliberately
+small balance, run manually:
+
+```powershell
+tallyguard-mainnet-acceptance `
+  --confirm MOVE-MAINNET-USDC `
+  --recipient 0xYOUR_SEPARATE_CONTROLLED_MAINNET_RECIPIENT `
+  --amount 0.01
+```
+
+This command **does move real Arc Mainnet USDC**. Do not run it merely to test CLI wiring; the unit
+suite exercises the same path with a counting fake adapter. Generated evidence is stored under the
+Git-ignored `artifacts/mainnet-acceptance/`. The summary labels the result as controlled,
+self-operated proof—not customer traction or revenue—and only recognizes the real Circle + Arc RPC
+provider as live evidence.
+
 ### Independent evidence-packet verification
 
 An auditor can verify an exported Payment Evidence Packet without access to the application

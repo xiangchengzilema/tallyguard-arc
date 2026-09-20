@@ -56,6 +56,7 @@ Every payment answers four questions:
 - Circle developer-wallet adapter with UUID v4 idempotency, lifecycle polling, and hard spend cap
 - Read-only Circle/Arc preflight verifies chain ID, USDC contract code, wallet state, network, and balance before live mode
 - Explicit testnet-only acceptance runner proves real settlement, Arc reconciliation, durable receipt replay, and audit-chain integrity with a maximum 0.10 USDC transfer
+- Separate mainnet acceptance runner is locked to Arc Mainnet, a 0.01 USDC transfer, a 0.10 USDC adapter ceiling, an exact consent phrase, full preflight, and role-separated decision approval
 - Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior
 - Transient provider failures return a retryable 503, move the invoice to `SUBMISSION_FAILED`, retain the original intent and idempotency key, recheck current execution controls on retry, and record both failure and recovery in the audit chain
