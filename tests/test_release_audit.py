@@ -9,6 +9,7 @@ from tallyguard.release_audit import (
     _check_png_dimensions,
     _check_single_pitch_deck,
     _check_text_fragments,
+    _check_tracked_markdown_links,
     _deployment_report_valid,
     _git_commit_check,
     _git_history_secret_check,
@@ -63,6 +64,42 @@ def test_video_runbook_check_requires_all_three_widths_and_single_product_claim(
     failed = _check_text_fragments(tmp_path, "runbook.md", required)
     assert failed.status == "failed"
     assert "768px" in failed.detail
+
+
+def test_readme_local_link_check_requires_present_tracked_targets(tmp_path):
+    _initialize_git_repository(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text("guide\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "[Guide](docs/guide.md) [External](https://example.com)\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path, "add linked documentation")
+
+    passed = _check_tracked_markdown_links(tmp_path, "README.md")
+    assert passed.status == "passed"
+    assert "1 local target" in passed.detail
+
+    (tmp_path / "README.md").write_text(
+        "[Missing](docs/missing.md)\n",
+        encoding="utf-8",
+    )
+    failed = _check_tracked_markdown_links(tmp_path, "README.md")
+    assert failed.status == "failed"
+    assert "docs/missing.md" in failed.detail
+
+
+def test_readme_local_link_check_rejects_untracked_target(tmp_path):
+    _initialize_git_repository(tmp_path)
+    (tmp_path / "README.md").write_text("root\n", encoding="utf-8")
+    _commit_all(tmp_path, "add readme")
+    (tmp_path / "preview.png").write_bytes(b"preview")
+    (tmp_path / "README.md").write_text("![Preview](preview.png)\n", encoding="utf-8")
+
+    failed = _check_tracked_markdown_links(tmp_path, "README.md")
+    assert failed.status == "failed"
+    assert "preview.png" in failed.detail
 
 
 def test_pitch_deck_check_rejects_stale_versions(tmp_path):

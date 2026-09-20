@@ -12,7 +12,7 @@ import re
 import struct
 import subprocess
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from .audit import canonical_json
 
@@ -103,7 +103,71 @@ def _check_text_fragments(
         "local",
         relative_path,
         "passed",
-        "Responsive recording sequence is explicitly scripted.",
+        "Required release language is present.",
+        _hash_file(path),
+    )
+
+
+_MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+
+
+def _check_tracked_markdown_links(root: Path, relative_path: str) -> ReleaseCheck:
+    path = root / relative_path
+    if not path.is_file():
+        return ReleaseCheck(
+            "repository",
+            f"{relative_path} local links",
+            "failed",
+            "Markdown source is missing.",
+        )
+    failures: set[str] = set()
+    checked: set[str] = set()
+    for raw_target in _MARKDOWN_LINK.findall(
+        path.read_text(encoding="utf-8", errors="replace")
+    ):
+        target = raw_target.strip()
+        if target.startswith("<") and target.endswith(">"):
+            target = target[1:-1].strip()
+        if not target or target.startswith("#"):
+            continue
+        parsed = urlparse(target)
+        if parsed.scheme or parsed.netloc:
+            continue
+        local_target = unquote(parsed.path)
+        if not local_target:
+            continue
+        candidate = (path.parent / local_target).resolve()
+        try:
+            repository_relative = candidate.relative_to(root.resolve()).as_posix()
+        except ValueError:
+            failures.add(local_target)
+            continue
+        checked.add(repository_relative)
+        if not candidate.is_file():
+            failures.add(repository_relative)
+            continue
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", repository_relative],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            failures.add(repository_relative)
+    if failures:
+        return ReleaseCheck(
+            "repository",
+            f"{relative_path} local links",
+            "failed",
+            "Missing, outside-repository, or untracked target(s): "
+            + ", ".join(sorted(failures)),
+        )
+    return ReleaseCheck(
+        "repository",
+        f"{relative_path} local links",
+        "passed",
+        f"Verified {len(checked)} local target(s) are present and tracked.",
         _hash_file(path),
     )
 
@@ -571,6 +635,7 @@ def audit_release(
 ) -> dict[str, Any]:
     checks = [
         _check_file(root, "README.md"),
+        _check_tracked_markdown_links(root, "README.md"),
         _check_file(root, "Dockerfile"),
         _check_file(root, "render.yaml"),
         _check_file(root, "docs/ARCHITECTURE.md"),
@@ -597,6 +662,16 @@ def audit_release(
             root,
             "submission/DEMO_RUNBOOK.md",
             ("1440px", "768px", "390px", "one responsive web product"),
+        ),
+        _check_text_fragments(
+            root,
+            "README.md",
+            (
+                "One responsive judge product",
+                "responsive-desktop.png",
+                "responsive-tablet.png",
+                "responsive-mobile.png",
+            ),
         ),
         _check_report(
             root,

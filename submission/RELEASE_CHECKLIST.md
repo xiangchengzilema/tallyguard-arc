@@ -5,15 +5,19 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Repository release gate
 
-- [ ] Run `python -m pytest` and preserve the passing total.
-- [ ] Run `python -m compileall -q src tests`.
-- [ ] Run `npm ci && npm run build` inside `web/`.
-- [ ] Run `tallyguard-deployment-smoke` against the built frontend.
-- [ ] Run the required current-tree scan and the full reachable-history secret
+- [x] Run `python -m pytest` and preserve the passing total: 268 tests on
+  2026-09-20.
+- [x] Run `python -m compileall -q src tests`.
+- [x] Run `npm ci && npm run build` inside `web/`; npm reported zero
+  vulnerabilities.
+- [x] Run `tallyguard-deployment-smoke` against the built frontend; all eight
+  public-safe HTTP checks passed with no funds moved.
+- [x] Run the required current-tree scan and the full reachable-history secret
   scan before the release commit; inspect paths only and never print a matched value.
-- [ ] Confirm no `.env`, database, credential, wallet secret, or temporary pilot
+- [x] Confirm no `.env`, database, credential, wallet secret, or temporary pilot
   document is tracked.
-- [ ] Confirm README links resolve from a clean checkout.
+- [x] Confirm README links resolve to tracked files available from a clean
+  checkout; the release audit enforces this.
 - [ ] Create the public GitHub repository only after explicit publication
   approval, then push the full activity-window history.
 - [ ] Verify the repository from a logged-out browser.

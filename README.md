@@ -34,6 +34,18 @@ Every payment answers four questions:
 - Tamper-evident decision receipt and audit event chain
 - Finance operations dashboard
 
+## One responsive judge product
+
+TallyGuard is one responsive web application rather than separate desktop,
+tablet, and mobile clients. The same governed decision, policy trace, and
+receipt remain inspectable at all three review widths. The final video uses an
+8–10 second hard-cut sequence across these exact states so the responsive work
+is visible without interrupting the finance workflow narrative.
+
+| Desktop · 1440 × 900 | Tablet · 768 × 1024 | Mobile · 390 × 844 |
+| --- | --- | --- |
+| ![TallyGuard desktop judge console](submission/assets/responsive-desktop.png) | ![TallyGuard tablet judge console](submission/assets/responsive-tablet.png) | ![TallyGuard mobile judge console](submission/assets/responsive-mobile.png) |
+
 ## Current implementation status
 
 - Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
