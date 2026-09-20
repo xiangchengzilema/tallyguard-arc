@@ -2,6 +2,31 @@
 
 This document is the binding UI reference for the frontend phase. It records which mature interaction to learn from and how it must be adapted to TallyGuard.
 
+## Implemented workspace structure
+
+The judge console is no longer one continuous demo page. It now uses five product-level workspaces while preserving a one-click three-minute path:
+
+| Workspace | Purpose | Implemented modules |
+| --- | --- | --- |
+| Overview | Explain the product, show live boundaries, and start the judge flow | Editorial value proposition, four-stage control flow, runtime boundary, finance metrics, workflow entry points, bounded autonomous run |
+| Payables | Perform day-to-day invoice review and settlement | Scenario/live-evidence rail, document and control workbench, queue, batch actions, schedules, incident recovery |
+| Vendors | Review recipient identity before money moves | Vendor directory, verified Arc wallet, risk/autonomy facts, wallet history and change evidence |
+| Policies | Define agent authority and handle exceptions | Runtime boundary, active policy, capacity, versioned policy editor, independent approval inbox |
+| Audit | Prove what happened across the tenant | Searchable hash-linked event ledger, export/replay evidence, multi-tenant reliability results |
+
+The desktop shell uses a persistent compact navigation rail. At phone widths it becomes a horizontally scrollable workspace switcher; each workspace remains a separate application state rather than an anchor into one long page.
+
+## Extracted competitor observations
+
+The following observations were taken from current public product pages and then translated, not copied:
+
+- **Request Finance:** generous editorial spacing, a left application rail, and invoice/contact context presented together. TallyGuard uses this for the spacious overview and Vendors identity workspace.
+- **Ramp:** a high-contrast primary action, stacked AP work queues, and separate review/payment lifecycle states. TallyGuard uses this for Payables, batch operations, and the approval inbox.
+- **Safe:** an extremely restrained off-white shell with explicit transaction facts and minimal decoration. TallyGuard uses this for policy/settlement review and keeps chain details in receipts instead of the main queue.
+- **Squads:** sparse operational chrome and recipient-oriented views. TallyGuard uses this for its compact navigation and wallet-trust directory.
+
+Shared primitives observed across the references were neutral surfaces, one strong accent, thin separators, and an 8/16/24/32-style spacing rhythm. TallyGuard keeps its own teal evidence-control identity and Arc-specific proof model. Motion is limited to short workspace entry, active-navigation indication, and directional hover feedback; `prefers-reduced-motion` disables it.
+
 ## Visual direction
 
 - Finance-operations product, not a crypto trading terminal.
@@ -121,4 +146,3 @@ The contrast between one autonomous success and one correctly blocked failure is
 - Claiming `PAID` before chain confirmation and reconciliation
 - Fake transaction hashes or unlabeled mock data
 - Copying another product's layout, wording, brand colors, or assets verbatim
-

@@ -19,16 +19,21 @@ import {
 } from '@carbon/react';
 import {
   ArrowRight,
+  Dashboard,
   CheckmarkFilled,
   Document,
+  DocumentSecurity,
   Download,
   Launch,
+  ListChecked,
   Locked,
   Money,
   PlayFilled,
   Renew,
   Rule,
+  SettingsAdjust,
   Time,
+  UserProfile,
   UserMultiple,
   Wallet,
   WarningAltFilled,
@@ -129,6 +134,94 @@ const TEAM_ROLES = [
   ['Approver', 'Independently resolves bound exceptions and authorizes eligible settlement actions.'],
   ['Auditor', 'Reads decisions, receipts, proof packets, and the tenant-wide hash-linked ledger.'],
 ] as const;
+
+type WorkspaceView = 'overview' | 'payables' | 'vendors' | 'policies' | 'audit';
+
+const readWorkspaceView = (): WorkspaceView => {
+  const candidate = window.location.hash.replace('#', '');
+  return ['overview', 'payables', 'vendors', 'policies', 'audit'].includes(candidate)
+    ? candidate as WorkspaceView
+    : 'overview';
+};
+
+const WORKSPACE_VIEWS = [
+  { id: 'overview', label: 'Overview', helper: 'Command center', icon: Dashboard },
+  { id: 'payables', label: 'Payables', helper: 'Evidence & settlement', icon: ListChecked },
+  { id: 'vendors', label: 'Vendors', helper: 'Wallet trust', icon: UserProfile },
+  { id: 'policies', label: 'Policies', helper: 'Controls & approvals', icon: SettingsAdjust },
+  { id: 'audit', label: 'Audit', helper: 'Proof & reliability', icon: DocumentSecurity },
+] as const;
+
+function WorkspaceNavigation({
+  active,
+  disabled,
+  badges,
+  onChange,
+}: {
+  active: WorkspaceView;
+  disabled: boolean;
+  badges: Partial<Record<WorkspaceView, string>>;
+  onChange: (view: WorkspaceView) => void;
+}) {
+  return (
+    <aside className="workspace-navigation">
+      <div className="workspace-navigation__brand" aria-hidden="true">
+        <span>TG</span>
+        <div><strong>Finance OS</strong><small>Arc settlement</small></div>
+      </div>
+      <nav aria-label="Finance workspace">
+        {WORKSPACE_VIEWS.map((view) => {
+          const Icon = view.icon;
+          const isActive = active === view.id;
+          return (
+            <button
+              key={view.id}
+              type="button"
+              className={isActive ? 'workspace-navigation__item is-active' : 'workspace-navigation__item'}
+              aria-current={isActive ? 'page' : undefined}
+              disabled={disabled}
+              onClick={() => onChange(view.id)}
+            >
+              <Icon size={18} aria-hidden="true" />
+              <span><strong>{view.label}</strong><small>{view.helper}</small></span>
+              {badges[view.id] ? <em>{badges[view.id]}</em> : null}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="workspace-navigation__boundary">
+        <span className="live-dot" aria-hidden="true" />
+        <div><strong>Controls online</strong><small>Tenant isolated</small></div>
+      </div>
+    </aside>
+  );
+}
+
+function WorkspacePageHeader({
+  index,
+  title,
+  description,
+  meta,
+}: {
+  index: string;
+  title: string;
+  description: string;
+  meta: string;
+}) {
+  return (
+    <header className="workspace-page-header">
+      <div>
+        <span className="eyebrow">{index} / TallyGuard workspace</span>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      <div className="workspace-page-header__meta">
+        <span>{meta}</span>
+        <small>Evidence-bound · Role-separated</small>
+      </div>
+    </header>
+  );
+}
 
 function StatusTag({ action }: { action: DecisionAction }) {
   return <Tag type={ACTION_TAG[action]}>{ACTION_LABEL[action]}</Tag>;
@@ -1633,6 +1726,7 @@ function App() {
   const [ledgerExport, setLedgerExport] = useState<{ hash: string; rows: number } | null>(null);
   const [auditSearch, setAuditSearch] = useState<AuditSearchResult | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [activeView, setActiveView] = useState<WorkspaceView>(readWorkspaceView);
 
   const installBootstrap = useCallback((result: BootstrapData) => {
     setData(result);
@@ -1662,6 +1756,16 @@ function App() {
       });
     return () => { cancelled = true; };
   }, [installBootstrap]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeView]);
+
+  useEffect(() => {
+    const handleHashChange = () => setActiveView(readWorkspaceView());
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   const act = useCallback(async (label: string, operation: () => Promise<void>) => {
     setBusy(label);
@@ -1716,6 +1820,7 @@ function App() {
     setLedgerExport(null);
     setAuditSearch(null);
     setError(null);
+    setActiveView('overview');
     void revokeOperatorSessions(sessions).catch((reason: unknown) => {
       const message = reason instanceof ApiError
         ? `${reason.code}: ${reason.message}`
@@ -2007,6 +2112,20 @@ function App() {
     [data, selectedKey],
   );
   const visibleReadiness = data?.readiness ?? accessContext?.readiness;
+  const workspaceBadges: Partial<Record<WorkspaceView, string>> = {
+    payables: operations ? String(operations.invoice_count) : undefined,
+    vendors: vendorDirectory.length > 0 ? String(vendorDirectory.length) : undefined,
+    policies: governance?.pendingApprovals.length ? String(governance.pendingApprovals.length) : undefined,
+    audit: auditSearch?.events.length ? String(auditSearch.events.length) : undefined,
+  };
+  const navigateToView = (view: WorkspaceView) => {
+    if (window.location.hash !== `#${view}`) window.location.hash = view;
+    setActiveView(view);
+  };
+  const openPayablesAndRun = () => {
+    navigateToView('payables');
+    handleRun(selectedKey, true);
+  };
   return (
     <Theme theme="g10">
       <a className="skip-link" href="#main-content">Skip to main content</a>
@@ -2058,192 +2177,275 @@ function App() {
       </Modal>
 
       <Content id="main-content" tabIndex={-1}>
-        <div className="context-bar">
-          <div>
-            <span className="eyebrow">Finance control plane / Judge workspace</span>
-            <h1>Approve the evidence. Automate the payment.</h1>
-            {!accessContext ? <div className="judge-quickstart">
-              <Button
-                size="lg"
-                renderIcon={PlayFilled}
-                disabled={!data || busy !== null}
-                aria-controls="evaluation-workbench"
-                onClick={() => handleRun(selectedKey, true)}
-              >
-                Run governed payment
-              </Button>
-              <div className="judge-quickstart__proof" aria-label="Demonstration stages">
-                <span>3 source records</span>
-                <ArrowRight size={14} aria-hidden="true" />
-                <span>13 controls</span>
-                <ArrowRight size={14} aria-hidden="true" />
-                <span>Arc receipt</span>
-              </div>
-            </div> : null}
-          </div>
-          <div className="system-state">
-            <span className="live-dot" aria-hidden="true" />
-            <div>
-              <strong>{visibleReadiness?.status === 'ready' ? 'Controls online' : 'Connecting'}</strong>
-              <small>{visibleReadiness?.network ?? 'ARC-TESTNET'} · {visibleReadiness?.settlement_adapter ?? 'checking adapter'} · {visibleReadiness?.evidence_analyst ?? 'checking analyst'}</small>
-            </div>
-          </div>
-        </div>
-
-        {error ? (
-          <InlineNotification
-            className="error-notice"
-            kind="error"
-            title="Action stopped"
-            subtitle={error}
-            lowContrast
-            onCloseButtonClick={() => setError(null)}
+        <div className="product-shell">
+          <WorkspaceNavigation
+            active={activeView}
+            disabled={!data}
+            badges={workspaceBadges}
+            onChange={navigateToView}
           />
-        ) : null}
 
-        {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} workspaceId={data?.workspaceId ?? null} /> : null}
+          <main className="workspace-main">
+            {error ? (
+              <InlineNotification
+                className="error-notice"
+                kind="error"
+                title="Action stopped"
+                subtitle={error}
+                lowContrast
+                onCloseButtonClick={() => setError(null)}
+              />
+            ) : null}
 
-        {accessContext ? null : operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : (
-          <div className="metrics-band" aria-label="Loading finance operations summary">
-            <Metric label="Open exposure" value="—" detail="Loading durable invoices" />
-            <Metric label="Blocked value" value="—" detail="Loading control outcomes" />
-            <Metric label="Due within 7 days" value="—" detail="Loading due dates" />
-            <Metric label="Projected liquidity" value="—" detail="Loading treasury state" />
-          </div>
-        )}
-
-        {accessContext ? (
-          <OperatorAccessGate
-            context={accessContext}
-            busy={busy !== null}
-            onConnect={handleOperatorConnect}
-          />
-        ) : !data ? (
-          <div className="loading-layout" aria-label="Loading judge console">
-            <SkeletonText heading width="32%" /><SkeletonText paragraph lineCount={8} />
-          </div>
-        ) : (
-          <div className="workspace-grid">
-            <ScenarioRail
-              scenarios={data.scenarios}
-              activeKey={selectedKey}
-              busy={busy !== null}
-              onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
-              onRun={handleRun}
-              mode={mode}
-              onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
-              onRunLive={handleRunLive}
-            />
-            <section
-              className="workbench"
-              id="evaluation-workbench"
-              aria-label="Evidence evaluation workbench"
-              tabIndex={-1}
-            >
-              {run ? (
-                <>
-                  <div className="run-meta">
-                    <span><CheckmarkFilled size={16} /> Evaluation complete</span>
-                    <code>{run.correlation_id}</code>
-                  </div>
-                  <div className="decision-grid">
-                    <EvidencePanel run={run} />
-                    <DecisionPanel
-                      run={run}
-                      approval={approval}
-                      payment={payment}
-                      busy={busy}
-                      replay={replay}
-                      simulation={simulation}
-                      settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
-                      settlementRetryNeeded={settlementRetryNeeded}
-                      onRequestApproval={handleRequestApproval}
-                      onApprove={handleApprove}
-                      onSettle={handleSettle}
-                      onVerifyReplay={handleVerifyReplay}
-                      onSimulatePolicy={handleSimulatePolicy}
-                    />
-                  </div>
-                  {payment ? <ReceiptPanel payment={payment} /> : null}
-                  {auditTrail ? (
-                    <AuditTimeline
-                      trail={auditTrail}
-                      packetHash={packetHash}
-                      busy={busy !== null}
-                      onDownloadPacket={handleDownloadPacket}
-                    />
-                  ) : null}
-                </>
-              ) : mode === 'live' ? (
-                <LiveEvidenceWorkbench
-                  busy={busy !== null}
-                  operatorToken={data.sessions.operator}
-                  onEvaluate={handleUploadedEvidence}
+            {accessContext ? (
+              <div className="workspace-page">
+                <WorkspacePageHeader
+                  index="Secure access"
+                  title="Connect the finance team"
+                  description="Four role-separated sessions unlock one isolated operating workspace without putting credentials into the interface."
+                  meta="Private operator mode"
                 />
-              ) : <EmptyWorkbench scenario={selectedScenario} />}
-            </section>
-          </div>
-        )}
+                <OperatorAccessGate
+                  context={accessContext}
+                  busy={busy !== null}
+                  onConnect={handleOperatorConnect}
+                />
+              </div>
+            ) : !data ? (
+              <div className="loading-layout" aria-label="Loading judge console">
+                <SkeletonText heading width="32%" /><SkeletonText paragraph lineCount={8} />
+              </div>
+            ) : (
+              <div className="workspace-page workspace-page--animated" key={activeView}>
+                {activeView === 'overview' ? (
+                  <>
+                    <section className="overview-hero">
+                      <div className="overview-hero__copy">
+                        <span className="eyebrow">Autonomous finance / Arc settlement</span>
+                        <h1>Approve the evidence.<br />Automate the payment.</h1>
+                        <p>
+                          TallyGuard turns invoice evidence into deterministic payment decisions, then settles
+                          approved USDC with a receipt finance teams can replay and audit.
+                        </p>
+                        <div className="judge-quickstart">
+                          <Button
+                            size="lg"
+                            renderIcon={PlayFilled}
+                            disabled={busy !== null}
+                            aria-controls="evaluation-workbench"
+                            onClick={openPayablesAndRun}
+                          >
+                            Run judge flow
+                          </Button>
+                          <button type="button" className="text-action" onClick={() => navigateToView('audit')}>
+                            Inspect proof system <ArrowRight size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="overview-hero__signal" aria-label="Live control flow">
+                        <div className="overview-hero__status">
+                          <span className="live-dot" aria-hidden="true" />
+                          <span>{visibleReadiness?.status === 'ready' ? 'System ready' : 'Connecting'}</span>
+                          <code>{visibleReadiness?.network ?? 'ARC-TESTNET'}</code>
+                        </div>
+                        <div className="control-flow">
+                          <article><span>01</span><strong>Evidence</strong><small>Invoice · PO · receipt</small></article>
+                          <article><span>02</span><strong>Policy</strong><small>13 deterministic controls</small></article>
+                          <article><span>03</span><strong>Settlement</strong><small>USDC on Arc</small></article>
+                          <article><span>04</span><strong>Proof</strong><small>Hash-linked audit trail</small></article>
+                        </div>
+                        <div className="overview-hero__proofline">
+                          <span>Evidence hash</span><code>sha256: sealed before evaluation</code>
+                        </div>
+                      </div>
+                    </section>
 
-        {operations ? (
-          <AutonomousRunPanel
-            run={agentRun}
-            busy={busy !== null}
-            settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
-            onPlan={handlePlanAgentRun}
-            onExecute={handleExecuteAgentRun}
-            onDownloadProof={handleDownloadAgentProof}
-            onSeedShowcase={handleSeedAgentShowcase}
-            proofHash={agentProofHash}
-          />
-        ) : null}
+                    {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} workspaceId={data.workspaceId} /> : null}
+                    {operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : null}
 
-        {operations ? (
-          <OperationsQueue
-            overview={operations}
-            busy={busy !== null}
-            batch={batch}
-            scheduleRun={scheduleRun}
-            settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
-            ledgerExport={ledgerExport}
-            onExportLedger={handleExportLedger}
-            onSettleBatch={handleSettleBatch}
-            onRunSchedules={handleRunSchedules}
-          />
-        ) : null}
+                    <section className="overview-workflows" aria-label="Core product workspaces">
+                      <button type="button" onClick={() => navigateToView('payables')}>
+                        <span>01 / Decide</span><strong>Review payable evidence</strong>
+                        <small>Match source records, evaluate controls, and settle only eligible invoices.</small>
+                        <ArrowRight size={18} aria-hidden="true" />
+                      </button>
+                      <button type="button" onClick={() => navigateToView('policies')}>
+                        <span>02 / Govern</span><strong>Control agent authority</strong>
+                        <small>Version policy, separate approvals, and stop settlement without stopping analysis.</small>
+                        <ArrowRight size={18} aria-hidden="true" />
+                      </button>
+                      <button type="button" onClick={() => navigateToView('audit')}>
+                        <span>03 / Prove</span><strong>Replay every outcome</strong>
+                        <small>Trace evidence, policy, intent, Arc confirmation, and accounting export.</small>
+                        <ArrowRight size={18} aria-hidden="true" />
+                      </button>
+                    </section>
 
-        {incidents ? <SettlementIncidentCenter overview={incidents} /> : null}
+                    {operations ? (
+                      <AutonomousRunPanel
+                        run={agentRun}
+                        busy={busy !== null}
+                        settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+                        onPlan={handlePlanAgentRun}
+                        onExecute={handleExecuteAgentRun}
+                        onDownloadProof={handleDownloadAgentProof}
+                        onSeedShowcase={handleSeedAgentShowcase}
+                        proofHash={agentProofHash}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
 
-        {governance ? (
-          <GovernancePanel
-            governance={governance}
-            busy={busy !== null}
-            policyActivation={policyActivation}
-            onActivatePolicy={handleActivatePolicy}
-            onResolve={handleResolveInboxApproval}
-          />
-        ) : null}
+                {activeView === 'payables' ? (
+                  <>
+                    <WorkspacePageHeader
+                      index="01"
+                      title="Payables"
+                      description="A review-first queue for ingesting source evidence, resolving exceptions, and moving approved USDC on Arc."
+                      meta={`${operations?.invoice_count ?? 0} invoices in workspace`}
+                    />
+                    {operations ? <OperationsBand overview={operations} sessionEvaluations={history.length} /> : null}
+                    <div className="workspace-grid">
+                      <ScenarioRail
+                        scenarios={data.scenarios}
+                        activeKey={selectedKey}
+                        busy={busy !== null}
+                        onSelect={(key) => { setSelectedKey(key); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
+                        onRun={handleRun}
+                        mode={mode}
+                        onModeChange={(nextMode) => { setMode(nextMode); setRun(null); setApproval(null); setPayment(null); setSettlementRetryNeeded(false); setReplay(null); setSimulation(null); setAuditTrail(null); setPacketHash(null); }}
+                        onRunLive={handleRunLive}
+                      />
+                      <section
+                        className="workbench"
+                        id="evaluation-workbench"
+                        aria-label="Evidence evaluation workbench"
+                        tabIndex={-1}
+                      >
+                        {run ? (
+                          <>
+                            <div className="run-meta">
+                              <span><CheckmarkFilled size={16} /> Evaluation complete</span>
+                              <code>{run.correlation_id}</code>
+                            </div>
+                            <div className="decision-grid">
+                              <EvidencePanel run={run} />
+                              <DecisionPanel
+                                run={run}
+                                approval={approval}
+                                payment={payment}
+                                busy={busy}
+                                replay={replay}
+                                simulation={simulation}
+                                settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+                                settlementRetryNeeded={settlementRetryNeeded}
+                                onRequestApproval={handleRequestApproval}
+                                onApprove={handleApprove}
+                                onSettle={handleSettle}
+                                onVerifyReplay={handleVerifyReplay}
+                                onSimulatePolicy={handleSimulatePolicy}
+                              />
+                            </div>
+                            {payment ? <ReceiptPanel payment={payment} /> : null}
+                            {auditTrail ? (
+                              <AuditTimeline
+                                trail={auditTrail}
+                                packetHash={packetHash}
+                                busy={busy !== null}
+                                onDownloadPacket={handleDownloadPacket}
+                              />
+                            ) : null}
+                          </>
+                        ) : mode === 'live' ? (
+                          <LiveEvidenceWorkbench
+                            busy={busy !== null}
+                            operatorToken={data.sessions.operator}
+                            onEvaluate={handleUploadedEvidence}
+                          />
+                        ) : <EmptyWorkbench scenario={selectedScenario} />}
+                      </section>
+                    </div>
+                    {operations ? (
+                      <OperationsQueue
+                        overview={operations}
+                        busy={busy !== null}
+                        batch={batch}
+                        scheduleRun={scheduleRun}
+                        settlementStopped={governance?.activePolicy?.kill_switch_enabled ?? false}
+                        ledgerExport={ledgerExport}
+                        onExportLedger={handleExportLedger}
+                        onSettleBatch={handleSettleBatch}
+                        onRunSchedules={handleRunSchedules}
+                      />
+                    ) : null}
+                    {incidents ? <SettlementIncidentCenter overview={incidents} /> : null}
+                  </>
+                ) : null}
 
-        {data ? <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} /> : null}
+                {activeView === 'vendors' ? (
+                  <>
+                    <WorkspacePageHeader
+                      index="02"
+                      title="Vendors"
+                      description="Treat recipient identity as a control: verified wallets, change history, risk tiers, and bounded autonomy in one directory."
+                      meta={`${vendorDirectory.length} trust records`}
+                    />
+                    <VendorTrustPanel records={vendorDirectory} activeInvoice={run?.invoice ?? null} />
+                  </>
+                ) : null}
 
-        {auditSearch ? (
-          <AuditExplorer
-            result={auditSearch}
-            busy={busy !== null}
-            onSearch={handleAuditSearch}
-            onLoadMore={handleLoadMoreAudit}
-          />
-        ) : null}
+                {activeView === 'policies' ? (
+                  <>
+                    <WorkspacePageHeader
+                      index="03"
+                      title="Policies & approvals"
+                      description="Define the authority an agent can exercise, test changes against sealed evidence, and route exceptions to an independent approver."
+                      meta={`${governance?.pendingApprovals.length ?? 0} decisions need review`}
+                    />
+                    {visibleReadiness ? <RuntimeBoundary readiness={visibleReadiness} workspaceId={data.workspaceId} /> : null}
+                    {governance ? (
+                      <GovernancePanel
+                        governance={governance}
+                        busy={busy !== null}
+                        policyActivation={policyActivation}
+                        onActivatePolicy={handleActivatePolicy}
+                        onResolve={handleResolveInboxApproval}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
 
-        {data ? <ReliabilityPanel evidence={data.reliability} /> : null}
+                {activeView === 'audit' ? (
+                  <>
+                    <WorkspacePageHeader
+                      index="04"
+                      title="Audit & proof"
+                      description="Search the tenant ledger, replay decision inputs, and verify the operational path from source evidence to Arc confirmation."
+                      meta={`${auditSearch?.events.length ?? 0} recent ledger events`}
+                    />
+                    {auditSearch ? (
+                      <AuditExplorer
+                        result={auditSearch}
+                        busy={busy !== null}
+                        onSearch={handleAuditSearch}
+                        onLoadMore={handleLoadMoreAudit}
+                      />
+                    ) : null}
+                    <ReliabilityPanel evidence={data.reliability} />
+                  </>
+                ) : null}
+              </div>
+            )}
 
-        <footer className="product-footer">
-          <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>
-          <span>
-            <a href="/api/openapi.json" target="_blank" rel="noreferrer">OpenAPI 3.1 contract</a>
-            {' · '}Built for Tameion Agents Hackathon 2026
-          </span>
-        </footer>
+            <footer className="product-footer">
+              <div><Locked size={16} /> Tenant scoped · Versioned policy · Idempotent settlement · Independent Arc RPC proof</div>
+              <span>
+                <a href="/api/openapi.json" target="_blank" rel="noreferrer">OpenAPI 3.1 contract</a>
+                {' · '}Built for Tameion Agents Hackathon 2026
+              </span>
+            </footer>
+          </main>
+        </div>
       </Content>
     </Theme>
   );
