@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from tallyguard.api import create_app
 from tallyguard.auth import Principal, Role
@@ -172,3 +172,35 @@ def test_audit_search_rejects_unbounded_or_invalid_filters(tmp_path):
         "/api/audit/events?created_after=2026-09-20T14:00:00Z&created_before=2026-09-20T13:00:00Z",
         headers=headers(auditor, "audit-inverted-time"),
     ).status_code == 400
+
+
+def test_audit_search_compares_instants_across_timezone_offsets(tmp_path):
+    app = create_app(database_path=tmp_path / "audit-search-offset.sqlite3", testing=True)
+    client = app.test_client()
+    auditor = session(app, organization_id="org-offset", user_id="auditor-offset")
+    append_event(
+        app,
+        organization_id="org-offset",
+        aggregate_type="payment",
+        aggregate_id="payment-offset",
+        event_type="SETTLEMENT_RECONCILED",
+        marker="offset-window",
+        created_at=datetime(
+            2026,
+            9,
+            19,
+            16,
+            30,
+            tzinfo=timezone(timedelta(hours=-7)),
+        ),
+    )
+
+    response = client.get(
+        "/api/audit/events?created_after=2026-09-19T23:00:00Z&created_before=2026-09-19T23:45:00Z",
+        headers=headers(auditor, "audit-offset-window"),
+    )
+
+    assert response.status_code == 200
+    assert [item["aggregate_id"] for item in response.get_json()["items"]] == [
+        "payment-offset"
+    ]

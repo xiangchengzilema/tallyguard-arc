@@ -2062,10 +2062,10 @@ class SqliteRepository:
             clauses.append("sequence < ?")
             parameters.append(before_sequence)
         if created_after is not None:
-            clauses.append("created_at >= ?")
+            clauses.append("julianday(created_at) >= julianday(?)")
             parameters.append(created_after.isoformat())
         if created_before is not None:
-            clauses.append("created_at <= ?")
+            clauses.append("julianday(created_at) <= julianday(?)")
             parameters.append(created_before.isoformat())
         normalized_query = (query or "").strip()
         if normalized_query:
