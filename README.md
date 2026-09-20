@@ -168,4 +168,5 @@ constraint and the production migration boundary.
 - [Deployment model](docs/DEPLOYMENT.md)
 - [Architecture and trust boundaries](docs/ARCHITECTURE.md)
 - [Security model and live-testing protocol](docs/SECURITY_MODEL.md)
+- [Genuine pilot protocol and claim boundaries](docs/PILOT_PROTOCOL.md)
 - [Hackathon context and submission checklist](docs/HACKATHON_CONTEXT.md)

@@ -71,6 +71,7 @@ Strongly encouraged:
 - Reconciled payments can be exported as a content-addressed, spreadsheet-safe accounting CSV from the judge console
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - The locked Testnet acceptance command uses the just-observed Circle wallet balance and will emit both JSON and reviewer-friendly Explorer proof artifacts after the first real transfer
+- A genuine-pilot protocol and content-addressed report command bind operator-attested timing and predeclared acceptance criteria to a verified Payment Evidence Packet without calling self-operated usage a customer or simulation an onchain transfer
 - Automated test suite passing
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
 - Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations

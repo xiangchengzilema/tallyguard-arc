@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "pilot_id": "replace-with-a-unique-pilot-id",
+  "classification": "self-operated",
+  "organization_alias": "anonymized-operator",
+  "operator_role": "owner-operator",
+  "started_at": "2026-09-20T09:00:00+08:00",
+  "completed_at": "2026-09-20T09:15:00+08:00",
+  "workflow": {
+    "baseline_process": "Describe the actual prior invoice-review and payment process.",
+    "baseline_minutes": "15",
+    "tallyguard_minutes": "5",
+    "acceptance_criteria": [
+      "Replace this with a criterion chosen before the pilot.",
+      "Replace this with another criterion chosen before the pilot."
+    ],
+    "criteria_met": [
+      "Copy only criteria that were actually met, using exactly the same text."
+    ]
+  },
+  "consent": {
+    "authorized_for_anonymized_hackathon_reporting": true,
+    "attested_by": "replace-with-an-anonymized-role-or-initials",
+    "attested_at": "2026-09-20T09:20:00+08:00"
+  }
+}

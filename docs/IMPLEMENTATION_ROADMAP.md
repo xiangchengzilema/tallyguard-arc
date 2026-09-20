@@ -310,6 +310,13 @@ Synthetic load suite:
 
 The public report and console call this a multi-tenant engineering load test. It is not represented as genuine customer traction. For traction, the goal is at least one real business or self-operated business workflow, which the event rules explicitly allow.
 
+A checked-in pilot protocol and `tallyguard-pilot-report` command now bind a
+truthful operator attestation to a standalone-verified Payment Evidence Packet.
+The content-addressed output calculates operator-attested timing and acceptance
+criteria while preventing simulation, provider-only, and Arc-RPC-verified
+settlement evidence from being conflated. No completed pilot report is checked
+in until a real operator actually performs and attests to the workflow.
+
 ### Milestone 8 — Submission package
 
 Status: in progress.
