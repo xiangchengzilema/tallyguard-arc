@@ -82,6 +82,9 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Include an 8–10 second 1440px → 768px → 390px comparison of the same
   governed decision and receipt; describe it as one responsive web app, not
   three apps.
+- [x] Render and visually inspect the responsive insert at 1440 × 900
+  (`assets/tallyguard-responsive-broll.webm`, 9.2 seconds, desktop → tablet →
+  mobile → all three widths). Final-video assembly and upload remain pending.
 - [x] Include one desktop/mobile comparison frame in the final deck or submission
   gallery so the responsive work remains visible outside the video (slide 10).
 - [ ] Include real Explorer proof only after independent verification succeeds.

@@ -18,6 +18,9 @@ API credentials, wallet secrets, local environment files, or browser bookmarks.
 - Prepare clean 1440px, 768px, and 390px captures anchored on the same completed
   decision. They are three responsive widths of one web application, not
   separate desktop, tablet, and mobile clients.
+- Use the checked-in 9.2-second `assets/tallyguard-responsive-broll.webm` as
+  the responsive insert. It uses real product captures, ends with all three
+  widths together, and keeps the main workflow footage focused on desktop.
 - Clear old demo data by redeploying or using a clean ephemeral instance so the
   queue starts empty.
 
@@ -146,7 +149,8 @@ Show the responsive proof and end at 2:40 by saying:
 
 - Cut all load waits, pointer hunting, and repeated scrolling.
 - Keep the responsive proof to one 8–10 second desktop → tablet → mobile
-  sequence; the main product narrative remains the desktop finance workflow.
+  sequence plus a brief three-width end frame; the prepared insert is 9.2
+  seconds and the main product narrative remains the desktop finance workflow.
 - Keep captions short: `SEALED EVIDENCE`, `13 CONTROLS`, `ROLE-SEPARATED`,
   `EXACTLY ONCE`, and `ARC VERIFIED` only when each claim is on screen.
 - Never overlay `ARC VERIFIED` on a simulator receipt.

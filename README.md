@@ -38,9 +38,10 @@ Every payment answers four questions:
 
 TallyGuard is one responsive web application rather than separate desktop,
 tablet, and mobile clients. The same governed decision, policy trace, and
-receipt remain inspectable at all three review widths. The final video uses an
-8–10 second hard-cut sequence across these exact states so the responsive work
-is visible without interrupting the finance workflow narrative.
+receipt remain inspectable at all three review widths. The prepared
+[9.2-second responsive insert](submission/assets/tallyguard-responsive-broll.webm)
+hard-cuts across these exact states and ends with all three widths together, so
+the work stays visible without interrupting the finance workflow narrative.
 
 | Desktop · 1440 × 900 | Tablet · 768 × 1024 | Mobile · 390 × 844 |
 | --- | --- | --- |
