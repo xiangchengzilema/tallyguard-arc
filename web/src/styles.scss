@@ -395,11 +395,11 @@ body {
 .decision-panel__hero p { margin: 0; color: var(--tg-muted); font-family: IBM Plex Mono, monospace; font-size: .6875rem; line-height: 1.5; }
 .policy-binding { display: grid; gap: .75rem; padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
 .policy-binding div { display: flex; justify-content: space-between; gap: 1rem; }
-.replay-proof { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
+.replay-proof { display: grid; grid-template-columns: 1fr; align-items: center; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
 .replay-proof > div { display: grid; gap: .25rem; }
 .replay-proof strong { font-size: .8125rem; }
 .replay-proof small { color: var(--tg-muted); font-size: .6875rem; line-height: 1.4; }
-.replay-proof .cds--btn { white-space: nowrap; }
+.replay-proof .cds--btn { width: 100%; max-width: none; white-space: nowrap; }
 .schedule-boundary { display: grid; grid-template-columns: auto 1fr; gap: .75rem; padding: 1rem 0; border-bottom: 1px solid var(--tg-line); color: var(--tg-accent-dark); }
 .schedule-boundary div { display: grid; gap: .25rem; }
 .schedule-boundary span { font-size: .625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -407,11 +407,12 @@ body {
 .schedule-boundary small { max-width: 46ch; color: var(--tg-muted); font-size: .6875rem; line-height: 1.45; }
 .policy-sandbox { padding: 1.25rem 0; border-bottom: 1px solid var(--tg-line); }
 .policy-sandbox__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.policy-sandbox__head > div { display: grid; gap: .3rem; }
+.policy-sandbox__head > div { display: grid; min-width: 0; gap: .3rem; }
 .policy-sandbox__head span { color: var(--tg-accent-dark); font-size: .625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .policy-sandbox__head strong { max-width: 38ch; font-size: .75rem; line-height: 1.45; }
-.policy-sandbox__head .cds--tag { margin: 0; }
+.policy-sandbox__head .cds--tag { flex: none; max-width: none; margin: 0; white-space: nowrap; }
 .policy-sandbox__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.policy-sandbox__actions .cds--btn { width: 100%; max-width: none; }
 .policy-sandbox__result { display: grid; gap: .65rem; margin-top: 1rem; padding: 1rem; border-left: 3px solid var(--tg-accent); background: #edf7f5; }
 .policy-sandbox__result > div { display: flex; align-items: center; gap: .5rem; }
 .policy-sandbox__result .cds--tag { margin: 0; }
