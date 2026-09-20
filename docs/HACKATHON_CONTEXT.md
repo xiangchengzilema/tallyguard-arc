@@ -70,6 +70,7 @@ Strongly encouraged:
 - Exported Payment Evidence Packets now have a standalone verifier that needs no application database or server; it recomputes the deterministic decision and can optionally re-prove a real transfer against Arc RPC
 - Reconciled payments can be exported as a content-addressed, spreadsheet-safe accounting CSV from the judge console
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
+- The locked Testnet acceptance command uses the just-observed Circle wallet balance and will emit both JSON and reviewer-friendly Explorer proof artifacts after the first real transfer
 - Automated test suite passing
 - Architecture, trust-boundary, evidence-to-payment, and tenant-isolation diagrams documented
 - Security model covers agent prompt injection, wallet substitution, tenant isolation, idempotency, provider mismatch, mainnet gating, secret handling, and honest demo limitations

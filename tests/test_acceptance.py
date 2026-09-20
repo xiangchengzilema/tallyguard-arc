@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from tallyguard.acceptance import run_testnet_acceptance
+from tallyguard.acceptance import run_testnet_acceptance, write_acceptance_artifacts
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.settlement import PaymentIntent, ProviderSubmission
 
@@ -43,6 +43,7 @@ def test_acceptance_exercises_real_api_and_proves_exactly_once_replay(tmp_path):
     assert report["receipt"]["status"] == "CONFIRMED"
     assert report["idempotent_replay"]["second_request_reused_receipt"] is True
     assert report["audit_chain_valid"] is True
+    assert report["treasury_available_usdc"] == "1"
     assert adapter.submissions == 1
 
 
@@ -66,4 +67,39 @@ def test_acceptance_refuses_mainnet_even_with_fake_adapter(tmp_path):
             settlement_adapter=CountingAdapter(),
             recipient=RECIPIENT,
             amount_usdc=Decimal("0.01"),
+        )
+
+
+def test_acceptance_uses_observed_circle_balance_and_writes_review_artifacts(tmp_path):
+    report = run_testnet_acceptance(
+        database_path=tmp_path / "acceptance.sqlite3",
+        config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+        settlement_adapter=CountingAdapter(),
+        recipient=RECIPIENT,
+        amount_usdc=Decimal("0.01"),
+        treasury_available_usdc=Decimal("12.345678"),
+        run_id="balance-bound-run",
+    )
+
+    json_path, markdown_path, report_hash = write_acceptance_artifacts(
+        output_dir=tmp_path / "artifacts",
+        acceptance=report,
+    )
+
+    assert report["treasury_available_usdc"] == "12.345678"
+    assert len(report_hash) == 64
+    assert report_hash in markdown_path.read_text(encoding="utf-8")
+    assert '"treasury_available_usdc": "12.345678"' in json_path.read_text(encoding="utf-8")
+    assert "not mainnet revenue or customer traction" in markdown_path.read_text(encoding="utf-8")
+
+
+def test_acceptance_refuses_amount_above_observed_circle_balance(tmp_path):
+    with pytest.raises(ValueError, match="balance"):
+        run_testnet_acceptance(
+            database_path=tmp_path / "acceptance.sqlite3",
+            config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+            settlement_adapter=CountingAdapter(),
+            recipient=RECIPIENT,
+            amount_usdc=Decimal("0.01"),
+            treasury_available_usdc=Decimal("0.009999"),
         )

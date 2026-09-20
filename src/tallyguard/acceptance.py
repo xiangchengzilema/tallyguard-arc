@@ -33,6 +33,7 @@ def run_testnet_acceptance(
     settlement_adapter: SettlementAdapter,
     recipient: str,
     amount_usdc: Decimal,
+    treasury_available_usdc: Decimal = Decimal("1"),
     run_id: str | None = None,
 ) -> dict[str, Any]:
     """Exercise evidence -> decision -> settlement -> replay against an adapter."""
@@ -43,6 +44,8 @@ def run_testnet_acceptance(
         raise ValueError(f"Acceptance amount must be above 0 and at most {MAX_ACCEPTANCE_AMOUNT_USDC} USDC.")
     if amount_usdc * Decimal(1_000_000) != (amount_usdc * Decimal(1_000_000)).to_integral_value():
         raise ValueError("Acceptance amount supports at most six decimal places.")
+    if treasury_available_usdc < amount_usdc:
+        raise ValueError("Observed Circle wallet balance is below the acceptance amount.")
 
     identity = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     invoice_id = f"acceptance-{identity}"
@@ -110,7 +113,7 @@ def run_testnet_acceptance(
             client,
             "/api/treasury/snapshots",
             {
-                "available_usdc": "1",
+                "available_usdc": format(treasury_available_usdc, "f"),
                 "spent_today_usdc": "0",
                 "source_reference": f"circle-preflight-{identity}",
             },
@@ -196,6 +199,7 @@ def run_testnet_acceptance(
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "network": config.name.value,
             "amount_usdc": amount,
+            "treasury_available_usdc": format(treasury_available_usdc, "f"),
             "invoice_id": invoice_id,
             "decision_id": decision["id"],
             "decision_action": decision["final_action"],
@@ -211,6 +215,49 @@ def run_testnet_acceptance(
         }
     finally:
         app.extensions["tallyguard_repository"].close()
+
+
+def write_acceptance_artifacts(
+    *,
+    output_dir: Path,
+    acceptance: dict[str, Any],
+) -> tuple[Path, Path, str]:
+    """Write a machine report and reviewer-friendly summary without secrets."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_id = str(acceptance["run_id"])
+    report_path = output_dir / f"{run_id}.json"
+    report_bytes = (
+        json.dumps(acceptance, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    report_path.write_bytes(report_bytes)
+    report_hash = hashlib.sha256(report_bytes).hexdigest()
+    receipt = dict(acceptance["receipt"])
+    replay = dict(acceptance["idempotent_replay"])
+    summary_path = output_dir / f"{run_id}.md"
+    summary = f"""# TallyGuard Arc Testnet acceptance
+
+- Run: `{run_id}`
+- Completed: `{acceptance['completed_at']}`
+- Network: `{acceptance['network']}`
+- Amount: `{acceptance['amount_usdc']} USDC`
+- Observed treasury balance: `{acceptance['treasury_available_usdc']} USDC`
+- Decision: `{acceptance['decision_action']}` (`{acceptance['decision_id']}`)
+- Evidence manifest: `{acceptance['evidence_manifest_hash']}`
+- Transaction: `{receipt['transaction_hash']}`
+- Block: `{receipt['block_number']}`
+- Provider reference: `{receipt['provider_reference']}`
+- Explorer: {receipt['explorer_url']}
+- Idempotent replay: `same receipt = {str(replay['same_receipt']).lower()}`; `second request reused = {str(replay['second_request_reused_receipt']).lower()}`
+- Tenant audit chain: `valid = {str(acceptance['audit_chain_valid']).lower()}` across `{acceptance['audit_event_count']}` events
+- JSON report SHA-256: `{report_hash}`
+
+This is an Arc Testnet acceptance artifact. It is not mainnet revenue or customer traction.
+The transfer was originated through Circle Developer-Controlled Wallets and accepted only after
+TallyGuard independently matched the canonical USDC event through Arc JSON-RPC.
+"""
+    summary_path.write_text(summary, encoding="utf-8")
+    return report_path, summary_path, report_hash
 
 
 def _json_bytes(value: dict[str, str]) -> bytes:
@@ -304,12 +351,17 @@ def main() -> None:
         settlement_adapter=adapter,
         recipient=recipient,
         amount_usdc=amount,
+        treasury_available_usdc=wallet.usdc_balance,
         run_id=run_id,
     )
-    report_path = output_dir / f"{run_id}.json"
-    report_path.write_text(json.dumps(acceptance, indent=2), encoding="utf-8")
+    report_path, summary_path, report_hash = write_acceptance_artifacts(
+        output_dir=output_dir,
+        acceptance=acceptance,
+    )
     print(json.dumps(acceptance, indent=2))
     print(f"Acceptance report: {report_path.resolve()}")
+    print(f"Reviewer summary: {summary_path.resolve()}")
+    print(f"Report SHA-256: {report_hash}")
 
 
 if __name__ == "__main__":

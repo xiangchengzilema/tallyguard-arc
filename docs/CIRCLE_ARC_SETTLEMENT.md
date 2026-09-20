@@ -112,7 +112,9 @@ an exact confirmation phrase. It creates a fresh isolated SQLite database, submi
 invoice/PO/delivery evidence through the real API, obtains a deterministic `PAY` decision,
 settles once through Circle, retries the same request, and verifies that the retry returns the
 same durable receipt without a second provider submission. It then verifies the tenant audit
-hash chain and writes an ignored JSON report alongside the temporary database.
+hash chain. The treasury snapshot is bound to the balance observed from Circle immediately before
+the run rather than a hard-coded demo value. The command writes both an ignored JSON report and a
+reviewer-friendly Markdown summary containing the Arc Explorer link and JSON SHA-256.
 
 After the full read-only preflight succeeds, run:
 

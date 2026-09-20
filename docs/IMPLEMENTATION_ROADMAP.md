@@ -144,6 +144,7 @@ Implemented foundation:
 - Independent Arc RPC verification of chain ID, receipt success, canonical USDC contract, recipient, and six-decimal amount
 - Circle/Arc block-height agreement check and fault-injection coverage
 - Read-only settlement preflight checks Arc RPC health, canonical USDC code, Circle wallet state/network/balance, explicit mainnet enablement, and an independent maximum transfer cap without signing or submitting a transaction
+- The explicit low-value Testnet acceptance runner binds its treasury snapshot to the just-observed Circle balance and emits machine-readable plus reviewer-facing, SHA-256-addressed proof artifacts
 - Durable payment intents retain the original UUID v4 across process restarts and retries
 - Durable settlement receipts prevent provider resubmission after a completed payment
 - Invoice settlement advances through submitting, submitted, confirmed, and reconciled states
