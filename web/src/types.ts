@@ -92,6 +92,18 @@ export interface RunResult {
   scenario?: Pick<Scenario, 'key' | 'title'>;
   invoice: Invoice;
   decision: Decision;
+  autopay?: {
+    requested: boolean;
+    status: 'NOT_REQUESTED' | 'SETTLED' | 'HUMAN_APPROVAL_REQUIRED' | 'SCHEDULED' | 'POLICY_BLOCKED';
+    enabled_by_finance: boolean;
+    effective_per_payment_limit_usdc: string;
+    organization_per_payment_limit_usdc: string;
+    vendor_per_payment_limit_usdc: string;
+    daily_autonomous_limit_usdc: string;
+    daily_autonomous_remaining_usdc: string;
+    hard_daily_payment_limit_usdc: string;
+    payment: Payment | null;
+  };
   correlation_id: string;
 }
 
@@ -100,6 +112,8 @@ export interface EvidenceFileBundle {
   purchaseOrder: File;
   delivery: File;
 }
+
+export type EvidenceFieldOverrides = Partial<Record<keyof EvidenceFileBundle, Record<string, string>>>;
 
 export type EvidenceExtractionMethod = 'JSON' | 'PDF_TEXT' | 'OCR' | 'MANUAL' | 'SEEDED';
 
@@ -118,13 +132,16 @@ export interface EvidenceFieldPreview {
 }
 
 export interface EvidenceFileReview {
+  invoiceId: string;
   invoiceNumber: string;
   vendorId: string;
   amount: string;
   currency: string;
   dueDate: string;
   purchaseOrderNumber: string;
+  purchaseOrderId: string;
   authorizedAmount: string;
+  deliveryId: string;
   deliveredValue: string;
   walletAddress: string;
   extractionMethods: EvidenceExtractionMethod[];
@@ -138,6 +155,18 @@ export interface EvidenceFileReview {
     minimumConfidence: string;
     pageNumbers: number[];
   }>;
+}
+
+export interface EvidenceDocument {
+  id: string;
+  organization_id: string;
+  evidence_type: 'INVOICE' | 'PURCHASE_ORDER' | 'DELIVERY';
+  filename: string;
+  mime_type: string;
+  content_sha256: string;
+  byte_size: number;
+  ingested_at: string;
+  fields: EvidenceFieldPreview[];
 }
 
 export interface AuditEvent {
@@ -197,6 +226,7 @@ export interface Approval {
   requested_by_user_id?: string;
   requested_at?: string;
   resolved_by_user_id?: string;
+  resolved_at?: string;
   resolution_note?: string;
   authorized_action?: DecisionAction;
 }
@@ -205,6 +235,8 @@ export interface ActivePolicy {
   version: string;
   organization_id: string;
   daily_payment_limit_usdc: string;
+  daily_autonomous_payment_limit_usdc: string;
+  autonomous_payments_enabled: boolean;
   minimum_cash_reserve_usdc: string;
   maximum_autonomous_payment_usdc: string;
   po_amount_tolerance_usdc: string;
@@ -271,12 +303,16 @@ export interface SettlementCapacity {
   effective_available_usdc: string;
   daily_payment_limit_usdc: string;
   daily_remaining_usdc: string;
+  daily_autonomous_payment_limit_usdc: string;
+  autonomous_daily_remaining_usdc: string;
   minimum_cash_reserve_usdc: string;
   maximum_new_payment_usdc: string;
 }
 
 export interface PolicyDraft {
   daily_payment_limit_usdc: string;
+  daily_autonomous_payment_limit_usdc: string;
+  autonomous_payments_enabled: boolean;
   minimum_cash_reserve_usdc: string;
   maximum_autonomous_payment_usdc: string;
   po_amount_tolerance_usdc: string;
@@ -296,6 +332,33 @@ export interface PolicyActivation {
   policy: ActivePolicy;
   previousVersion: string | null;
   changes: PolicyFieldChange[];
+}
+
+export interface TreasurySnapshotRecord {
+  sequence: number;
+  organization_id: string;
+  available_usdc: string;
+  spent_today_usdc: string;
+  source_reference: string;
+  recorded_by_user_id: string;
+  recorded_at: string;
+}
+
+export interface VendorOnboardingDraft {
+  id: string;
+  legal_name: string;
+  approved_wallet_address: string;
+  autopay_limit: string;
+  risk_tier: string;
+  active: boolean;
+  verification_method: 'SIGNED_CHALLENGE' | 'OUT_OF_BAND_CALL' | 'MANUAL_REVIEW';
+  verification_reference: string;
+}
+
+export interface VendorWalletRotationDraft {
+  new_wallet: string;
+  verification_method: 'SIGNED_CHALLENGE' | 'OUT_OF_BAND_CALL' | 'MANUAL_REVIEW';
+  verification_reference: string;
 }
 
 export interface Payment {
@@ -343,6 +406,7 @@ export interface OperationsOverview {
   minimum_reserve_usdc: string | null;
   projected_after_open_usdc: string | null;
   work_queue: OperationsInvoice[];
+  recent_requests: OperationsInvoice[];
 }
 
 export interface OperationsInvoice extends Invoice {
@@ -350,6 +414,14 @@ export interface OperationsInvoice extends Invoice {
   decision_action: DecisionAction | null;
   scheduled_for: string | null;
   settlement_retryable: boolean;
+  settlement_status: string;
+  settled_amount_usdc: string | null;
+  settlement_transaction_hash: string | null;
+  settlement_confirmed_at: string | null;
+  settlement_provider: string | null;
+  settlement_network: string | null;
+  settlement_block_number: number | null;
+  settlement_explorer_url: string | null;
 }
 
 export interface SettlementAttempt {
@@ -595,6 +667,7 @@ export interface BootstrapData {
   agentRun: AgentRun | null;
   reliability: ReliabilityEvidence;
   governance: GovernanceOverview;
+  policyHistory: ActivePolicy[];
   vendorDirectory: VendorTrustRecord[];
   auditSearch: AuditSearchResult;
   readiness: {

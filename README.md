@@ -51,6 +51,8 @@ clip to the three source captures, dimensions, duration, and SHA-256.
 
 ## Current implementation status
 
+- Two role-separated browser products now sit on the same evidence-bound backend: a requester User portal for invoice submission, progress tracking, correction reasons, and receipt visibility; and a Finance backend for evidence review, independent approval, vendor and policy administration, Arc settlement, and audit replay
+- The public landing page explains those responsibilities before entry, while demo access remains honestly labelled as role-intent access rather than production authentication; production deployments can replace it with organization SSO without merging requester and finance authority
 - Multi-tenant domain boundary enforced across invoices, vendors, purchase orders, delivery evidence, treasury snapshots, and policy versions
 - Authenticated multipart evidence API persists original PDF, PNG, JPEG, and JSON bytes with signature checks, SHA-256 addressing, invoice binding, and field-level provenance
 - Authenticated extraction preview and ingestion can recover a complete labelled field set from a PDF text layer, normalize amounts, dates, currencies, and EVM wallets, bind every observation to its source page, and reject missing or conflicting values before persistence

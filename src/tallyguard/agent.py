@@ -172,6 +172,10 @@ class OpenAICompatibleEvidenceAnalyst:
             "policy": {
                 "version": policy.version,
                 "daily_limit_usdc": format(policy.daily_payment_limit_usdc, "f"),
+                "daily_autonomous_limit_usdc": format(
+                    policy.daily_autonomous_payment_limit_usdc, "f"
+                ),
+                "autonomous_payments_enabled": policy.autonomous_payments_enabled,
                 "minimum_reserve_usdc": format(policy.minimum_cash_reserve_usdc, "f"),
                 "maximum_autonomous_payment_usdc": format(
                     policy.maximum_autonomous_payment_usdc, "f"

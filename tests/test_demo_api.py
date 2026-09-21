@@ -80,9 +80,11 @@ def _seed_mainnet_pay_decision(client, *, admin_headers, operator_headers):
         "/api/policies",
         headers=admin_headers,
         json_body={
-            "version": "mainnet-policy-v1",
-            "daily_payment_limit_usdc": "1",
-            "minimum_cash_reserve_usdc": "0",
+                "version": "mainnet-policy-v1",
+                "daily_payment_limit_usdc": "1",
+                "daily_autonomous_payment_limit_usdc": "1",
+                "autonomous_payments_enabled": True,
+                "minimum_cash_reserve_usdc": "0",
             "maximum_autonomous_payment_usdc": "0.10",
             "po_amount_tolerance_usdc": "0",
             "allowed_asset": "USDC",
@@ -627,6 +629,14 @@ def test_global_approval_inbox_is_role_scoped_and_rejection_closes_invoice(tmp_p
         headers=operator_headers,
     ).get_json()["approval"]
 
+    linked = client.get(
+        f"/api/decisions/{run['decision']['id']}/approval",
+        headers=operator_headers,
+    )
+    assert linked.status_code == 200
+    assert linked.get_json()["approval"]["id"] == approval["id"]
+    assert linked.get_json()["approval"]["status"] == "PENDING"
+
     assert client.get("/api/approvals/pending", headers=operator_headers).status_code == 403
     pending = client.get("/api/approvals/pending", headers=approver_headers)
     assert pending.status_code == 200
@@ -647,6 +657,12 @@ def test_global_approval_inbox_is_role_scoped_and_rejection_closes_invoice(tmp_p
     )
     assert rejected.status_code == 200
     assert rejected.get_json()["approval"]["status"] == "REJECTED"
+    linked_after_rejection = client.get(
+        f"/api/decisions/{run['decision']['id']}/approval",
+        headers=operator_headers,
+    ).get_json()["approval"]
+    assert linked_after_rejection["status"] == "REJECTED"
+    assert linked_after_rejection["resolution_note"] == "Contract owner rejected this exception."
     invoice = client.get(
         f"/api/invoices/{run['invoice']['id']}",
         headers=approver_headers,
@@ -900,6 +916,8 @@ def test_execution_time_daily_limit_blocks_an_older_pay_decision(tmp_path):
     reduced_payload = {
         key: active[key]
         for key in (
+            "daily_autonomous_payment_limit_usdc",
+            "autonomous_payments_enabled",
             "minimum_cash_reserve_usdc",
             "maximum_autonomous_payment_usdc",
             "po_amount_tolerance_usdc",

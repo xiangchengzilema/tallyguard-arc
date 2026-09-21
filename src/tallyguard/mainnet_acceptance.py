@@ -160,6 +160,8 @@ def run_mainnet_acceptance(
             {
                 "version": f"mainnet-acceptance-policy-{identity}",
                 "daily_payment_limit_usdc": amount,
+                "daily_autonomous_payment_limit_usdc": amount,
+                "autonomous_payments_enabled": True,
                 "minimum_cash_reserve_usdc": "0",
                 "maximum_autonomous_payment_usdc": amount,
                 "po_amount_tolerance_usdc": "0",

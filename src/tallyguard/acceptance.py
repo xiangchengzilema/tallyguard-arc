@@ -105,8 +105,10 @@ def run_testnet_acceptance(
             "/api/policies",
             {
                 "version": f"acceptance-policy-{identity}",
-                "daily_payment_limit_usdc": "1",
-                "minimum_cash_reserve_usdc": "0",
+                    "daily_payment_limit_usdc": "1",
+                    "daily_autonomous_payment_limit_usdc": "1",
+                    "autonomous_payments_enabled": True,
+                    "minimum_cash_reserve_usdc": "0",
                 "maximum_autonomous_payment_usdc": format(MAX_ACCEPTANCE_AMOUNT_USDC, "f"),
                 "po_amount_tolerance_usdc": "0",
                 "allowed_asset": "USDC",

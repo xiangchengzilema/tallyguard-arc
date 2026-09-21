@@ -65,6 +65,7 @@ def case():
         daily_payment_limit_usdc=Decimal("5000"),
         minimum_cash_reserve_usdc=Decimal("1000"),
         maximum_autonomous_payment_usdc=Decimal("2000"),
+        autonomous_payments_enabled=True,
     )
     return evidence, vendor, treasury, policy
 

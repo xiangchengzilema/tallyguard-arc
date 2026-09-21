@@ -573,7 +573,7 @@ def test_evidence_upload_rejects_bad_signature_and_oversized_file(tmp_path, monk
     assert oversized.get_json()["error"]["code"] == "REQUEST_TOO_LARGE"
 
 
-def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_path):
+def test_real_evidence_policy_and_treasury_can_autopay_an_idempotent_pay_decision(tmp_path):
     app = create_app(database_path=tmp_path / "api.sqlite3", testing=True)
     client = app.test_client()
     admin = client.post(
@@ -592,6 +592,8 @@ def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_p
         json={
             "version": "payables-v1",
             "daily_payment_limit_usdc": "5000",
+            "daily_autonomous_payment_limit_usdc": "2000",
+            "autonomous_payments_enabled": True,
             "minimum_cash_reserve_usdc": "1000",
             "maximum_autonomous_payment_usdc": "2000",
             "po_amount_tolerance_usdc": "0",
@@ -692,12 +694,18 @@ def test_real_evidence_policy_and_treasury_produce_idempotent_pay_decision(tmp_p
         assert uploaded.status_code == 201
 
     first = client.post(
-        "/api/invoices/invoice-live/evaluate", headers=headers(operator, "evaluate-1")
+        "/api/invoices/invoice-live/evaluate?auto_settle=true",
+        headers=headers(operator, "evaluate-1"),
     )
     assert first.status_code == 200
     result = first.get_json()
     assert result["decision"]["final_action"] == "PAY"
-    assert result["invoice"]["status"] == "READY"
+    assert result["invoice"]["status"] == "RECONCILED"
+    assert result["autopay"]["status"] == "SETTLED"
+    assert result["autopay"]["payment"]["receipt"]["confirmed_amount_usdc"] == "1200"
+    assert result["autopay"]["payment"]["intent"]["approval_reference"] is None
+    assert result["autopay"]["daily_autonomous_remaining_usdc"] == "300"
+    assert result["autopay"]["hard_daily_payment_limit_usdc"] == "5000"
     assert result["decision"]["reason_codes"] == []
     assert result["decision"]["agent_recommendation"]["action"] == "PAY"
     assert result["decision"]["agent_recommendation"]["evidence_refs"] == [
@@ -800,6 +808,18 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert Decimal(overview["open_exposure_usdc"]) == clean_amount + wallet_amount
     assert Decimal(overview["blocked_exposure_usdc"]) == wallet_amount + duplicate_amount
     assert {item["status"] for item in overview["work_queue"]} == {"READY", "HOLD"}
+    assert {item["status"] for item in overview["recent_requests"]} == {
+        "READY",
+        "HOLD",
+        "REJECTED",
+    }
+    assert all(item["settlement_status"] == "NOT_STARTED" for item in overview["recent_requests"])
+    assert all(item["settled_amount_usdc"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_transaction_hash"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_provider"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_network"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_block_number"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_explorer_url"] is None for item in overview["recent_requests"])
     assert overview["treasury_available_usdc"] == "10000"
     assert overview["treasury_committed_since_snapshot_usdc"] == "0"
     assert Decimal(overview["unreserved_open_exposure_usdc"]) == (
@@ -1030,6 +1050,19 @@ def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
     assert overview["status_counts"]["RECONCILED"] == 2
     assert overview["status_counts"]["HOLD"] == 1
     assert len(overview["work_queue"]) == 1
+    settled_requests = [
+        item
+        for item in overview["recent_requests"]
+        if item["settlement_status"] == "CONFIRMED"
+    ]
+    assert len(settled_requests) == 2
+    assert all(item["settlement_provider"] == "arc-simulator" for item in settled_requests)
+    assert all(item["settlement_network"] == "ARC-TESTNET" for item in settled_requests)
+    assert all(item["settlement_block_number"] is not None for item in settled_requests)
+    assert all(
+        item["settlement_explorer_url"].startswith("https://explorer.testnet.arc.io/tx/")
+        for item in settled_requests
+    )
     settled_amount = sum(
         (Decimal(item["invoice"]["amount"]) for item in runs[:2]),
         Decimal("0"),
@@ -1165,6 +1198,7 @@ def test_policy_and_treasury_apis_are_versioned_role_scoped_and_audited(tmp_path
 
     base = {
         "daily_payment_limit_usdc": "5000",
+        "daily_autonomous_payment_limit_usdc": "1000",
         "minimum_cash_reserve_usdc": "1000",
         "maximum_autonomous_payment_usdc": "2000",
         "po_amount_tolerance_usdc": "10",
@@ -1189,6 +1223,7 @@ def test_policy_and_treasury_apis_are_versioned_role_scoped_and_audited(tmp_path
     )
     assert first.status_code == 201
     assert second.status_code == 201
+    assert first.get_json()["policy"]["autonomous_payments_enabled"] is False
     assert first.get_json()["policy"]["content_hash"] != second.get_json()["policy"][
         "content_hash"
     ]

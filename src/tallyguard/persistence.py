@@ -172,6 +172,8 @@ class SettlementCapacity:
     effective_available_usdc: Decimal
     daily_payment_limit_usdc: Decimal
     daily_remaining_usdc: Decimal
+    daily_autonomous_payment_limit_usdc: Decimal
+    autonomous_daily_remaining_usdc: Decimal
     minimum_cash_reserve_usdc: Decimal
     maximum_new_payment_usdc: Decimal
 
@@ -216,6 +218,8 @@ CREATE TABLE IF NOT EXISTS policies (
     version TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     daily_payment_limit_usdc TEXT NOT NULL,
+    daily_autonomous_payment_limit_usdc TEXT NOT NULL,
+    autonomous_payments_enabled INTEGER NOT NULL CHECK (autonomous_payments_enabled IN (0, 1)),
     minimum_cash_reserve_usdc TEXT NOT NULL,
     maximum_autonomous_payment_usdc TEXT NOT NULL,
     po_amount_tolerance_usdc TEXT NOT NULL,
@@ -517,6 +521,21 @@ class SqliteRepository:
             if self.path != ":memory:":
                 self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.executescript(SCHEMA)
+            policy_columns = {
+                str(row["name"])
+                for row in self._connection.execute("PRAGMA table_info(policies)").fetchall()
+            }
+            if "daily_autonomous_payment_limit_usdc" not in policy_columns:
+                self._connection.execute(
+                    "ALTER TABLE policies ADD COLUMN "
+                    "daily_autonomous_payment_limit_usdc TEXT NOT NULL DEFAULT '1000'"
+                )
+            if "autonomous_payments_enabled" not in policy_columns:
+                self._connection.execute(
+                    "ALTER TABLE policies ADD COLUMN "
+                    "autonomous_payments_enabled INTEGER NOT NULL DEFAULT 0 "
+                    "CHECK (autonomous_payments_enabled IN (0, 1))"
+                )
 
     def close(self) -> None:
         with self._guard:
@@ -793,18 +812,22 @@ class SqliteRepository:
                     """
                     INSERT INTO policies
                         (organization_id, version, content_hash,
-                         daily_payment_limit_usdc, minimum_cash_reserve_usdc,
+                         daily_payment_limit_usdc, daily_autonomous_payment_limit_usdc,
+                         autonomous_payments_enabled,
+                         minimum_cash_reserve_usdc,
                          maximum_autonomous_payment_usdc, po_amount_tolerance_usdc,
                          allowed_asset, allowed_network, kill_switch_enabled,
                          schedule_payments_before_due_days, activated_by_user_id,
                          activated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         policy.organization_id,
                         policy.version,
                         stored.content_hash,
                         format(policy.daily_payment_limit_usdc, "f"),
+                        format(policy.daily_autonomous_payment_limit_usdc, "f"),
+                        int(policy.autonomous_payments_enabled),
                         format(policy.minimum_cash_reserve_usdc, "f"),
                         format(policy.maximum_autonomous_payment_usdc, "f"),
                         format(policy.po_amount_tolerance_usdc, "f"),
@@ -1006,9 +1029,16 @@ class SqliteRepository:
         available = Decimal(str(snapshot_row["available_usdc"]))
         spent_today = Decimal(str(snapshot_row["spent_today_usdc"]))
         daily_limit = Decimal(str(policy_row["daily_payment_limit_usdc"]))
+        daily_autonomous_limit = Decimal(
+            str(policy_row["daily_autonomous_payment_limit_usdc"])
+        )
         reserve_floor = Decimal(str(policy_row["minimum_cash_reserve_usdc"]))
         effective_available = available - committed
         daily_remaining = max(daily_limit - spent_today - committed, Decimal("0"))
+        autonomous_daily_remaining = max(
+            daily_autonomous_limit - spent_today - committed,
+            Decimal("0"),
+        )
         balance_headroom = max(effective_available - reserve_floor, Decimal("0"))
         age = timestamp.astimezone(timezone.utc) - recorded_at.astimezone(timezone.utc)
         return SettlementCapacity(
@@ -1026,6 +1056,8 @@ class SqliteRepository:
             effective_available_usdc=effective_available,
             daily_payment_limit_usdc=daily_limit,
             daily_remaining_usdc=daily_remaining,
+            daily_autonomous_payment_limit_usdc=daily_autonomous_limit,
+            autonomous_daily_remaining_usdc=autonomous_daily_remaining,
             minimum_cash_reserve_usdc=reserve_floor,
             maximum_new_payment_usdc=min(daily_remaining, balance_headroom),
         )
@@ -2419,6 +2451,12 @@ class SqliteRepository:
             )
 
         autonomous_limit = Decimal(str(policy_row["maximum_autonomous_payment_usdc"]))
+        if not bool(policy_row["autonomous_payments_enabled"]) and not intent.approval_reference:
+            raise SettlementExecutionBlocked(
+                "AUTONOMOUS_PAYMENTS_DISABLED",
+                "No-touch settlement is disabled and this payment has no approval reference.",
+                details=policy_details,
+            )
         if intent.amount_usdc > autonomous_limit and not intent.approval_reference:
             raise SettlementExecutionBlocked(
                 "AUTONOMY_LIMIT_EXCEEDED",
@@ -2471,6 +2509,9 @@ class SqliteRepository:
         available = Decimal(str(snapshot_row["available_usdc"]))
         spent_today = Decimal(str(snapshot_row["spent_today_usdc"]))
         daily_limit = Decimal(str(policy_row["daily_payment_limit_usdc"]))
+        daily_autonomous_limit = Decimal(
+            str(policy_row["daily_autonomous_payment_limit_usdc"])
+        )
         reserve_floor = Decimal(str(policy_row["minimum_cash_reserve_usdc"]))
         projected_daily_spend = spent_today + committed_since_snapshot + intent.amount_usdc
         projected_available = available - committed_since_snapshot - intent.amount_usdc
@@ -2482,6 +2523,9 @@ class SqliteRepository:
             "requested_amount_usdc": format(intent.amount_usdc, "f"),
             "projected_daily_spend_usdc": format(projected_daily_spend, "f"),
             "daily_payment_limit_usdc": format(daily_limit, "f"),
+            "daily_autonomous_payment_limit_usdc": format(
+                daily_autonomous_limit, "f"
+            ),
             "projected_available_usdc": format(projected_available, "f"),
             "minimum_cash_reserve_usdc": format(reserve_floor, "f"),
         }
@@ -2489,6 +2533,15 @@ class SqliteRepository:
             raise SettlementExecutionBlocked(
                 "DAILY_LIMIT_EXCEEDED",
                 "Settlement would exceed the active policy's durable daily payment limit.",
+                details=treasury_details,
+            )
+        if (
+            not intent.approval_reference
+            and projected_daily_spend > daily_autonomous_limit
+        ):
+            raise SettlementExecutionBlocked(
+                "DAILY_AUTONOMY_LIMIT_EXCEEDED",
+                "Settlement exceeds the daily no-touch ceiling and has no approval reference.",
                 details=treasury_details,
             )
         if projected_available < reserve_floor:
@@ -2833,6 +2886,10 @@ class SqliteRepository:
                 version=row["version"],
                 organization_id=row["organization_id"],
                 daily_payment_limit_usdc=Decimal(row["daily_payment_limit_usdc"]),
+                daily_autonomous_payment_limit_usdc=Decimal(
+                    row["daily_autonomous_payment_limit_usdc"]
+                ),
+                autonomous_payments_enabled=bool(row["autonomous_payments_enabled"]),
                 minimum_cash_reserve_usdc=Decimal(row["minimum_cash_reserve_usdc"]),
                 maximum_autonomous_payment_usdc=Decimal(
                     row["maximum_autonomous_payment_usdc"]

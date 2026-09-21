@@ -81,7 +81,7 @@ from .persistence import (
     StoredTreasurySnapshot,
 )
 from .policies import PolicyRepositoryError, StoredPolicy
-from .policy import Policy
+from .policy import DecisionAction, Policy
 from .settlement import (
     SettlementAdapter,
     SettlementAttempt,
@@ -261,6 +261,10 @@ def _policy_json(stored: StoredPolicy) -> dict[str, Any]:
         "version": policy.version,
         "organization_id": policy.organization_id,
         "daily_payment_limit_usdc": format(policy.daily_payment_limit_usdc, "f"),
+        "daily_autonomous_payment_limit_usdc": format(
+            policy.daily_autonomous_payment_limit_usdc, "f"
+        ),
+        "autonomous_payments_enabled": policy.autonomous_payments_enabled,
         "minimum_cash_reserve_usdc": format(policy.minimum_cash_reserve_usdc, "f"),
         "maximum_autonomous_payment_usdc": format(
             policy.maximum_autonomous_payment_usdc, "f"
@@ -982,12 +986,24 @@ def create_app(
             isinstance(schedule_days, bool) or not isinstance(schedule_days, int)
         ):
             raise ValueError("schedule_payments_before_due_days must be an integer or null.")
+        autonomous_payments_enabled = payload.get("autonomous_payments_enabled", False)
+        if not isinstance(autonomous_payments_enabled, bool):
+            raise ValueError("autonomous_payments_enabled must be a JSON boolean.")
         policy = Policy(
             version=str(payload["version"]),
             organization_id=g.principal.organization_id,
             daily_payment_limit_usdc=Decimal(
                 str(payload["daily_payment_limit_usdc"])
             ),
+            daily_autonomous_payment_limit_usdc=Decimal(
+                str(
+                    payload.get(
+                        "daily_autonomous_payment_limit_usdc",
+                        payload["daily_payment_limit_usdc"],
+                    )
+                )
+            ),
+            autonomous_payments_enabled=autonomous_payments_enabled,
             minimum_cash_reserve_usdc=Decimal(
                 str(payload["minimum_cash_reserve_usdc"])
             ),
@@ -1336,6 +1352,29 @@ def create_app(
             )
             for index, scenario_key in enumerate(scenario_keys)
         ]
+        approvals = []
+        for item in items:
+            if item["decision"]["final_action"] != DecisionAction.ESCALATE.value:
+                continue
+            decision = decision_service.repository.get_decision(
+                organization_id=g.principal.organization_id,
+                decision_id=item["decision"]["id"],
+            )
+            approval = approval_inbox.request(decision, requested_by=g.principal)
+            repository.append(
+                aggregate_type="approval",
+                aggregate_id=approval.id,
+                event_type="APPROVAL_REQUESTED",
+                payload={
+                    "organization_id": approval.organization_id,
+                    "invoice_id": approval.invoice_id,
+                    "decision_id": approval.decision_id,
+                    "requested_by_user_id": approval.requested_by_user_id,
+                    "source": "AUTONOMY_SHOWCASE",
+                },
+                created_at=approval.requested_at,
+            )
+            approvals.append(_approval_json(approval))
         repository.append(
             aggregate_type="demo_showcase",
             aggregate_id=showcase_id,
@@ -1353,6 +1392,7 @@ def create_app(
                 "showcase": {
                     "id": showcase_id,
                     "items": items,
+                    "approvals": approvals,
                     "expected_actions": [
                         "SETTLE",
                         "REQUIRE_APPROVAL",
@@ -1461,6 +1501,26 @@ def create_app(
             )
         return jsonify({"items": items, "correlation_id": _correlation_id()})
 
+    @app.get("/api/decisions/<decision_id>/approval")
+    @require(Permission.INVOICE_READ)
+    def get_decision_approval(decision_id: str):
+        # Resolve the decision first so tenant isolation is enforced before the
+        # related approval record is exposed to an invoice reader.
+        decision_service.repository.get_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        approval = repository.find_approval_for_decision(
+            organization_id=g.principal.organization_id,
+            decision_id=decision_id,
+        )
+        return jsonify(
+            {
+                "approval": _approval_json(approval) if approval is not None else None,
+                "correlation_id": _correlation_id(),
+            }
+        )
+
     @app.get("/api/governance/overview")
     @require(Permission.PAYMENT_APPROVE)
     def get_governance_overview():
@@ -1495,6 +1555,12 @@ def create_app(
                 "effective_available_usdc": format(capacity.effective_available_usdc, "f"),
                 "daily_payment_limit_usdc": format(capacity.daily_payment_limit_usdc, "f"),
                 "daily_remaining_usdc": format(capacity.daily_remaining_usdc, "f"),
+                "daily_autonomous_payment_limit_usdc": format(
+                    capacity.daily_autonomous_payment_limit_usdc, "f"
+                ),
+                "autonomous_daily_remaining_usdc": format(
+                    capacity.autonomous_daily_remaining_usdc, "f"
+                ),
                 "minimum_cash_reserve_usdc": format(capacity.minimum_cash_reserve_usdc, "f"),
                 "maximum_new_payment_usdc": format(capacity.maximum_new_payment_usdc, "f"),
             }
@@ -1588,6 +1654,8 @@ def create_app(
             raise ValueError("Policy simulation body must be a JSON object.")
         allowed = {
             "daily_payment_limit_usdc",
+            "daily_autonomous_payment_limit_usdc",
+            "autonomous_payments_enabled",
             "minimum_cash_reserve_usdc",
             "maximum_autonomous_payment_usdc",
             "po_amount_tolerance_usdc",
@@ -1601,7 +1669,11 @@ def create_app(
             raise ValueError("Policy simulation requires at least one changed field.")
 
         changes: dict[str, Any] = {"version": f"{inputs.policy.version}:simulation"}
-        monetary_fields = allowed - {"kill_switch_enabled", "schedule_payments_before_due_days"}
+        monetary_fields = allowed - {
+            "autonomous_payments_enabled",
+            "kill_switch_enabled",
+            "schedule_payments_before_due_days",
+        }
         try:
             for field_name in monetary_fields:
                 if field_name in payload:
@@ -1612,6 +1684,12 @@ def create_app(
             if not isinstance(payload["kill_switch_enabled"], bool):
                 raise ValueError("kill_switch_enabled must be a boolean.")
             changes["kill_switch_enabled"] = payload["kill_switch_enabled"]
+        if "autonomous_payments_enabled" in payload:
+            if not isinstance(payload["autonomous_payments_enabled"], bool):
+                raise ValueError("autonomous_payments_enabled must be a boolean.")
+            changes["autonomous_payments_enabled"] = payload[
+                "autonomous_payments_enabled"
+            ]
         if "schedule_payments_before_due_days" in payload:
             value = payload["schedule_payments_before_due_days"]
             if isinstance(value, bool):
@@ -1906,6 +1984,11 @@ def create_app(
     @app.post("/api/invoices/<invoice_id>/evaluate")
     @require(Permission.DECISION_RUN)
     def evaluate_invoice(invoice_id: str):
+        auto_settle_requested = request.args.get("auto_settle", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         stored = repository.get_invoice(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
@@ -1991,10 +2074,60 @@ def create_app(
             actor_user_id="tallyguard-policy-engine",
             correlation_id=_correlation_id(),
         )
+        autopay_status = "NOT_REQUESTED"
+        autopay_payment: dict[str, Any] | None = None
+        if auto_settle_requested:
+            if decision.final_action.value == "PAY" and not network_config.is_mainnet:
+                outcome = execute_settlement(
+                    invoice_id=invoice_id,
+                    payload={"decision_id": decision.id},
+                    actor_user_id="tallyguard-autopay-worker",
+                    correlation_id=_correlation_id(),
+                )
+                stored = outcome.invoice
+                autopay_payment = _payment_json(outcome, network_config)
+                autopay_status = "SETTLED"
+            elif decision.final_action.value == "ESCALATE" or network_config.is_mainnet:
+                autopay_status = "HUMAN_APPROVAL_REQUIRED"
+            elif decision.final_action.value == "SCHEDULE":
+                autopay_status = "SCHEDULED"
+            else:
+                autopay_status = "POLICY_BLOCKED"
+        capacity = repository.settlement_capacity(
+            organization_id=g.principal.organization_id,
+        )
+        effective_per_payment_limit = min(
+            vendor.autopay_limit,
+            policy.maximum_autonomous_payment_usdc,
+        )
         return jsonify(
             {
                 "invoice": _invoice_json(stored),
                 "decision": _decision_json(decision),
+                "autopay": {
+                    "requested": auto_settle_requested,
+                    "status": autopay_status,
+                    "enabled_by_finance": policy.autonomous_payments_enabled,
+                    "effective_per_payment_limit_usdc": format(
+                        effective_per_payment_limit, "f"
+                    ),
+                    "organization_per_payment_limit_usdc": format(
+                        policy.maximum_autonomous_payment_usdc, "f"
+                    ),
+                    "vendor_per_payment_limit_usdc": format(
+                        vendor.autopay_limit, "f"
+                    ),
+                    "daily_autonomous_limit_usdc": format(
+                        policy.daily_autonomous_payment_limit_usdc, "f"
+                    ),
+                    "daily_autonomous_remaining_usdc": format(
+                        capacity.autonomous_daily_remaining_usdc, "f"
+                    ),
+                    "hard_daily_payment_limit_usdc": format(
+                        policy.daily_payment_limit_usdc, "f"
+                    ),
+                    "payment": autopay_payment,
+                },
                 "correlation_id": _correlation_id(),
             }
         )
@@ -2070,9 +2203,20 @@ def create_app(
         def optional_money(value: Decimal | None) -> str | None:
             return format(value, "f") if value is not None else None
 
-        work_queue: list[dict[str, Any]] = []
-        for item in overview.work_queue:
+        def operation_invoice_json(item):
             item_json = _invoice_json(item)
+            item_json.update(
+                {
+                    "settlement_status": "NOT_STARTED",
+                    "settled_amount_usdc": None,
+                    "settlement_transaction_hash": None,
+                    "settlement_confirmed_at": None,
+                    "settlement_provider": None,
+                    "settlement_network": None,
+                    "settlement_block_number": None,
+                    "settlement_explorer_url": None,
+                }
+            )
             try:
                 decision = repository.latest_decision_for_invoice(
                     organization_id=g.principal.organization_id,
@@ -2100,6 +2244,32 @@ def create_app(
                     item_json["settlement_retryable"] = (
                         latest_attempt.retryable if latest_attempt is not None else False
                     )
+                    receipt = repository.find_settlement_receipt(
+                        organization_id=g.principal.organization_id,
+                        payment_intent_id=intent.id,
+                    )
+                    if receipt is not None:
+                        item_json.update(
+                            {
+                                "settlement_status": receipt.status.value,
+                                "settled_amount_usdc": format(
+                                    receipt.confirmed_amount_usdc, "f"
+                                ),
+                                "settlement_transaction_hash": receipt.transaction_hash,
+                                "settlement_confirmed_at": receipt.confirmed_at.isoformat(),
+                                "settlement_provider": receipt.provider,
+                                "settlement_network": receipt.network.value,
+                                "settlement_block_number": receipt.block_number,
+                                "settlement_explorer_url": (
+                                    f"{network_config.explorer_url.rstrip('/')}/tx/"
+                                    f"{receipt.transaction_hash}"
+                                ),
+                            }
+                        )
+                    elif latest_attempt is not None:
+                        item_json["settlement_status"] = latest_attempt.outcome.value
+                    else:
+                        item_json["settlement_status"] = "AUTHORIZED_NOT_SENT"
                 except PersistenceError:
                     item_json["settlement_retryable"] = False
             except PersistenceError:
@@ -2111,7 +2281,14 @@ def create_app(
                         "settlement_retryable": False,
                     }
                 )
-            work_queue.append(item_json)
+            return item_json
+
+        work_queue = [operation_invoice_json(item) for item in overview.work_queue]
+        recent_page = repository.list_invoices(
+            organization_id=g.principal.organization_id,
+            limit=int(request.args.get("recent_limit", "20")),
+        )
+        recent_requests = [operation_invoice_json(item) for item in recent_page.items]
 
         return jsonify(
             {
@@ -2143,6 +2320,10 @@ def create_app(
                         overview.projected_after_open_usdc
                     ),
                     "work_queue": work_queue,
+                    # The finance work queue intentionally excludes terminal records.
+                    # Requesters still need a durable history so a rejection and its
+                    # remediation note do not disappear after finance resolves it.
+                    "recent_requests": recent_requests,
                 },
                 "correlation_id": _correlation_id(),
             }

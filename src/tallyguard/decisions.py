@@ -119,6 +119,10 @@ class DecisionReplayInputs:
                 "version": self.policy.version,
                 "organization_id": self.policy.organization_id,
                 "daily_payment_limit_usdc": format(self.policy.daily_payment_limit_usdc, "f"),
+                "daily_autonomous_payment_limit_usdc": format(
+                    self.policy.daily_autonomous_payment_limit_usdc, "f"
+                ),
+                "autonomous_payments_enabled": self.policy.autonomous_payments_enabled,
                 "minimum_cash_reserve_usdc": format(self.policy.minimum_cash_reserve_usdc, "f"),
                 "maximum_autonomous_payment_usdc": format(
                     self.policy.maximum_autonomous_payment_usdc, "f"
@@ -215,6 +219,17 @@ class DecisionReplayInputs:
                 version=str(policy_data["version"]),
                 organization_id=str(policy_data["organization_id"]),
                 daily_payment_limit_usdc=Decimal(str(policy_data["daily_payment_limit_usdc"])),
+                daily_autonomous_payment_limit_usdc=Decimal(
+                    str(
+                        policy_data.get(
+                            "daily_autonomous_payment_limit_usdc",
+                            policy_data["daily_payment_limit_usdc"],
+                        )
+                    )
+                ),
+                autonomous_payments_enabled=bool(
+                    policy_data.get("autonomous_payments_enabled", True)
+                ),
                 minimum_cash_reserve_usdc=Decimal(str(policy_data["minimum_cash_reserve_usdc"])),
                 maximum_autonomous_payment_usdc=Decimal(
                     str(policy_data["maximum_autonomous_payment_usdc"])

@@ -57,6 +57,7 @@ def case():
         daily_payment_limit_usdc=Decimal("5000"),
         minimum_cash_reserve_usdc=Decimal("3000"),
         maximum_autonomous_payment_usdc=Decimal("2000"),
+        autonomous_payments_enabled=True,
     )
     return vendor, invoice, po, delivery, treasury, policy
 
@@ -79,6 +80,21 @@ def test_clean_invoice_can_pay_autonomously(case):
     decision = evaluate(case)
     assert decision.action == DecisionAction.PAY
     assert decision.reason_codes == ()
+
+
+def test_autonomous_payments_are_disabled_by_default(case):
+    policy = Policy(
+        version="default-off",
+        organization_id="org-1",
+        daily_payment_limit_usdc=Decimal("5000"),
+        minimum_cash_reserve_usdc=Decimal("3000"),
+        maximum_autonomous_payment_usdc=Decimal("2000"),
+    )
+
+    decision = evaluate(case, policy=policy)
+
+    assert decision.action == DecisionAction.ESCALATE
+    assert "AUTONOMOUS_PAYMENTS_DISABLED" in decision.reason_codes
 
 
 def test_duplicate_invoice_is_rejected(case):
@@ -187,6 +203,19 @@ def test_large_valid_invoice_escalates(case):
     )
     assert decision.action == DecisionAction.ESCALATE
     assert "AUTONOMY_LIMIT_EXCEEDED" in decision.reason_codes
+
+
+def test_daily_no_touch_ceiling_routes_an_otherwise_valid_payment_to_human_review(case):
+    policy = replace(
+        case[-1],
+        daily_autonomous_payment_limit_usdc=Decimal("1500"),
+    )
+
+    decision = evaluate(case, policy=policy)
+
+    assert decision.action == DecisionAction.ESCALATE
+    assert "DAILY_AUTONOMY_LIMIT_EXCEEDED" in decision.reason_codes
+    assert "DAILY_LIMIT_EXCEEDED" not in decision.reason_codes
 
 
 def test_minimum_reserve_blocks_payment(case):

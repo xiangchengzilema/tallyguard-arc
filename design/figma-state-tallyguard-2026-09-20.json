@@ -1,0 +1,107 @@
+{
+  "fileKey": "NEjc8rYG930a9dI7yQdmIN",
+  "fileUrl": "https://www.figma.com/design/NEjc8rYG930a9dI7yQdmIN",
+  "phase": "P4-ready-for-user-review",
+  "pages": {
+    "visualReferences": "0:1",
+    "foundations": "2:7",
+    "landing": "2:8",
+    "payables": "2:9",
+    "invoiceReview": "2:10",
+    "responsive": "2:11"
+  },
+  "referenceNodes": {
+    "invoiceReview": "1:2",
+    "landing": "1:3",
+    "payables": "1:4"
+  },
+  "decisions": {
+    "fonts": {
+      "marketing": "Instrument Serif",
+      "product": "Inter",
+      "technical": "IBM Plex Mono"
+    },
+    "navigation": [
+      "Overview",
+      "Payables",
+      "Vendors",
+      "Approvals",
+      "Policies",
+      "Audit"
+    ],
+    "paymentFlow": [
+      "Review invoice",
+      "Create payment intent",
+      "Approve",
+      "Settle on Arc",
+      "View receipt"
+    ],
+    "demoData": {
+      "operator": "Jordan Singh",
+      "invoice": "INV-2048",
+      "vendor": "Atlas Compute",
+      "amount": "2,480.00 USDC",
+      "invoiceDate": "Sep 10, 2026",
+      "dueDate": "Sep 24, 2026",
+      "terms": "Net 14",
+      "purchaseOrder": "PO-7781",
+      "delivery": "DLV-9321",
+      "wallet": "0x7e4a...9c21",
+      "policy": "AP-v1.4",
+      "network": "Arc Testnet",
+      "mode": "SIMULATION"
+    },
+    "reuseDecision": "Do not import Simple Design System wholesale; create TallyGuard-native variables and components, reusing only neutral icons if useful."
+  },
+  "tokenCollections": {
+    "Primitives": "VariableCollectionId:4:2",
+    "Color": "VariableCollectionId:4:3",
+    "Spacing": "VariableCollectionId:4:4",
+    "Radius": "VariableCollectionId:4:5",
+    "Size": "VariableCollectionId:4:6"
+  },
+  "validation": {
+    "variableCount": 69,
+    "textStyleCount": 13,
+    "effectStyleCount": 3,
+    "brokenAliasCount": 0,
+    "missingCodeSyntaxCount": 0
+  },
+  "components": {
+    "buttonPrimary": "6:3",
+    "buttonSecondary": "6:5",
+    "buttonGhost": "6:7",
+    "badgeReady": "6:9",
+    "badgeArc": "6:11",
+    "badgeSimulation": "6:13",
+    "navActive": "6:15",
+    "navDefault": "6:18"
+  },
+  "screenNodes": {
+    "foundations": "5:2",
+    "landingDesktop": "7:2",
+    "payablesDesktop": "11:2",
+    "invoiceReviewDesktop": "12:2",
+    "confirmedReceiptDesktop": "18:9",
+    "payablesTablet": "15:2",
+    "invoiceReviewMobile": "15:133"
+  },
+  "qaPreviews": {
+    "foundations": "design/figma-foundations-preview.png",
+    "components": "design/figma-components-preview.png",
+    "landing": "design/figma-landing-preview.png",
+    "payables": "design/figma-payables-preview.png",
+    "invoiceReview": "design/figma-invoice-review-preview.png",
+    "confirmedReceipt": "design/figma-confirmed-receipt-preview.png",
+    "tablet": "design/figma-tablet-preview.png",
+    "mobile": "design/figma-mobile-preview.png"
+  },
+  "phaseChecklist": {
+    "P0": ["P0.a", "P0.b", "P0.c", "P0.d", "P0.e", "P0.f"],
+    "P1": ["P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h"],
+    "P3": ["P3.a", "P3.b", "P3.c"],
+    "P4": ["P4.a", "P4.b", "P4.c", "P4.d", "P4.e"]
+  },
+  "createdNodeIds": [],
+  "updatedAt": "2026-09-20"
+}

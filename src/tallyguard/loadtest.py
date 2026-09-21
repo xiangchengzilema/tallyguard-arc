@@ -464,6 +464,8 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 body={
                     "version": f"contention-{uuid4().hex}",
                     "daily_payment_limit_usdc": "5000",
+                    "daily_autonomous_payment_limit_usdc": "5000",
+                    "autonomous_payments_enabled": True,
                     "minimum_cash_reserve_usdc": "3000",
                     "maximum_autonomous_payment_usdc": "2000",
                     "po_amount_tolerance_usdc": "0",

@@ -54,6 +54,8 @@ class Policy:
     daily_payment_limit_usdc: Decimal
     minimum_cash_reserve_usdc: Decimal
     maximum_autonomous_payment_usdc: Decimal
+    daily_autonomous_payment_limit_usdc: Decimal | None = None
+    autonomous_payments_enabled: bool = False
     po_amount_tolerance_usdc: Decimal = Decimal("0")
     allowed_asset: str = "USDC"
     allowed_network: str = "ARC-TESTNET"
@@ -63,8 +65,15 @@ class Policy:
     def __post_init__(self) -> None:
         if not self.version.strip() or not self.organization_id.strip():
             raise ValueError("Policy version and organization ID are required.")
+        if self.daily_autonomous_payment_limit_usdc is None:
+            object.__setattr__(
+                self,
+                "daily_autonomous_payment_limit_usdc",
+                Decimal(str(self.daily_payment_limit_usdc)),
+            )
         for field_name in (
             "daily_payment_limit_usdc",
+            "daily_autonomous_payment_limit_usdc",
             "minimum_cash_reserve_usdc",
             "maximum_autonomous_payment_usdc",
             "po_amount_tolerance_usdc",
@@ -74,6 +83,7 @@ class Policy:
             getattr(self, field_name) < 0
             for field_name in (
                 "daily_payment_limit_usdc",
+                "daily_autonomous_payment_limit_usdc",
                 "minimum_cash_reserve_usdc",
                 "maximum_autonomous_payment_usdc",
                 "po_amount_tolerance_usdc",
@@ -141,7 +151,9 @@ class PolicyEngine:
             self._asset_and_network(asset, network, policy),
             self._purchase_order(invoice, vendor, purchase_order, policy),
             self._delivery(invoice, purchase_order, delivery, policy),
+            self._autonomous_payments_enabled(policy),
             self._autonomy_limit(invoice, vendor, policy),
+            self._daily_autonomy_limit(invoice, treasury, policy),
             self._daily_limit(invoice, treasury, policy),
             self._cash_reserve(invoice, treasury, policy),
             self._payment_timing(invoice, policy, resolved_evaluation_date),
@@ -360,6 +372,44 @@ class PolicyEngine:
                 remediation="Obtain the configured human approval before settlement.",
             )
         return PolicyEngine._pass("AUTONOMY_LIMIT_OK", "Invoice is within the autonomous payment limit.")
+
+    @staticmethod
+    def _autonomous_payments_enabled(policy: Policy) -> RuleResult:
+        if not policy.autonomous_payments_enabled:
+            return RuleResult(
+                code="AUTONOMOUS_PAYMENTS_DISABLED",
+                disposition=RuleDisposition.ESCALATE,
+                message="Finance has not enabled no-touch settlement for this policy.",
+                remediation="Obtain finance approval, or activate a policy that explicitly enables no-touch settlement.",
+            )
+        return PolicyEngine._pass(
+            "AUTONOMOUS_PAYMENTS_ENABLED",
+            "Finance has explicitly enabled no-touch settlement for this policy.",
+        )
+
+    @staticmethod
+    def _daily_autonomy_limit(
+        invoice: Invoice,
+        treasury: TreasurySnapshot,
+        policy: Policy,
+    ) -> RuleResult:
+        projected = treasury.spent_today_usdc + invoice.amount
+        limit = policy.daily_autonomous_payment_limit_usdc
+        assert limit is not None
+        if projected > limit:
+            return RuleResult(
+                code="DAILY_AUTONOMY_LIMIT_EXCEEDED",
+                disposition=RuleDisposition.ESCALATE,
+                message=(
+                    "Payment would exceed the organization's daily no-touch payment ceiling "
+                    f"of {limit} USDC."
+                ),
+                remediation="Obtain the configured human approval before settlement.",
+            )
+        return PolicyEngine._pass(
+            "DAILY_AUTONOMY_LIMIT_OK",
+            "Projected autonomous spend remains within the daily no-touch ceiling.",
+        )
 
     @staticmethod
     def _daily_limit(invoice: Invoice, treasury: TreasurySnapshot, policy: Policy) -> RuleResult:

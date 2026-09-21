@@ -150,6 +150,7 @@ def test_active_policy_and_treasury_snapshot_survive_restart(tmp_path):
         version="v1",
         organization_id="org-1",
         daily_payment_limit_usdc=Decimal("5000"),
+        daily_autonomous_payment_limit_usdc=Decimal("1000"),
         minimum_cash_reserve_usdc=Decimal("1000"),
         maximum_autonomous_payment_usdc=Decimal("2000"),
     )
@@ -157,6 +158,7 @@ def test_active_policy_and_treasury_snapshot_survive_restart(tmp_path):
         version="v2",
         organization_id="org-1",
         daily_payment_limit_usdc=Decimal("7500"),
+        daily_autonomous_payment_limit_usdc=Decimal("1000"),
         minimum_cash_reserve_usdc=Decimal("1000"),
         maximum_autonomous_payment_usdc=Decimal("2000"),
         kill_switch_enabled=True,

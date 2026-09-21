@@ -1,4 +1,5 @@
 import type {
+  ActivePolicy,
   Approval,
   AgentRun,
   AuditEvent,
@@ -7,11 +8,14 @@ import type {
   AuditTrail,
   BootstrapContext,
   BootstrapData,
+  EvidenceDocument,
   EvidenceExtractionMethod,
   EvidenceFieldPreview,
   EvidenceFileBundle,
+  EvidenceFieldOverrides,
   EvidenceFileReview,
   GovernanceOverview,
+  Invoice,
   OperationsOverview,
   PaymentBatch,
   Payment,
@@ -23,9 +27,12 @@ import type {
   RunResult,
   ScheduleRun,
   SettlementIncidentOverview,
+  TreasurySnapshotRecord,
+  VendorOnboardingDraft,
   VendorRecord,
   VendorTrustRecord,
   VendorWalletEvent,
+  VendorWalletRotationDraft,
 } from './types';
 
 type Role = keyof BootstrapData['sessions'];
@@ -105,12 +112,13 @@ async function hydrateBootstrap(
   workspaceId: string,
 ): Promise<BootstrapData> {
   const { scenarios, readiness } = context;
-  const [operations, incidents, agentRun, reliability, governance, vendorDirectory, auditSearch] = await Promise.all([
+  const [operations, incidents, agentRun, reliability, governance, policyHistory, vendorDirectory, auditSearch] = await Promise.all([
     fetchOperationsOverview(sessions.auditor),
     fetchSettlementIncidents(sessions.auditor),
     fetchLatestAgentRun(sessions.auditor),
     fetchReliabilityReport(sessions.auditor),
     fetchGovernanceOverview(sessions.approver),
+    fetchPolicyHistory(sessions.auditor),
     fetchVendorDirectory(sessions.auditor),
     fetchAuditEvents(sessions.auditor, { limit: 12 }),
   ]);
@@ -124,6 +132,7 @@ async function hydrateBootstrap(
     agentRun,
     reliability,
     governance,
+    policyHistory,
     vendorDirectory,
     auditSearch,
   };
@@ -216,6 +225,67 @@ export async function fetchVendorDirectory(auditorToken: string): Promise<Vendor
   }));
 }
 
+export async function fetchPolicyHistory(readerToken: string): Promise<ActivePolicy[]> {
+  const payload = await request<{ items: ActivePolicy[] }>(
+    '/api/policies',
+    { method: 'GET' },
+    readerToken,
+  );
+  return payload.items;
+}
+
+export async function recordTreasurySnapshot(
+  availableUsdc: string,
+  spentTodayUsdc: string,
+  sourceReference: string,
+  operatorToken: string,
+): Promise<TreasurySnapshotRecord> {
+  const payload = await request<{ treasury: TreasurySnapshotRecord }>(
+    '/api/treasury/snapshots',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        available_usdc: availableUsdc,
+        spent_today_usdc: spentTodayUsdc,
+        source_reference: sourceReference,
+      }),
+    },
+    operatorToken,
+  );
+  return payload.treasury;
+}
+
+export async function onboardVendor(
+  draft: VendorOnboardingDraft,
+  operatorToken: string,
+): Promise<VendorRecord> {
+  const payload = await request<{ vendor: VendorRecord }>(
+    '/api/vendors',
+    { method: 'POST', body: JSON.stringify(draft) },
+    operatorToken,
+  );
+  return payload.vendor;
+}
+
+export async function rotateVendorWallet(
+  vendor: VendorRecord,
+  draft: VendorWalletRotationDraft,
+  operatorToken: string,
+): Promise<VendorRecord> {
+  const payload = await request<{ vendor: VendorRecord }>(
+    `/api/vendors/${encodeURIComponent(vendor.id)}/wallet`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        expected_current_wallet: vendor.approved_wallet_address,
+        ...draft,
+      }),
+    },
+    operatorToken,
+  );
+  return payload.vendor;
+}
+
 export async function fetchGovernanceOverview(approverToken: string): Promise<GovernanceOverview> {
   const payload = await request<{
     active_policy: GovernanceOverview['activePolicy'];
@@ -270,6 +340,26 @@ export async function fetchOperationsOverview(auditorToken: string): Promise<Ope
     auditorToken,
   );
   return payload.overview;
+}
+
+export async function fetchInvoiceRun(
+  invoice: Invoice,
+  decisionId: string,
+  readerToken: string,
+): Promise<RunResult> {
+  const payload = await request<{
+    decision: RunResult['decision'];
+    correlation_id: string;
+  }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}`,
+    { method: 'GET' },
+    readerToken,
+  );
+  return {
+    invoice,
+    decision: payload.decision,
+    correlation_id: payload.correlation_id,
+  };
 }
 
 export async function fetchSettlementIncidents(auditorToken: string): Promise<SettlementIncidentOverview> {
@@ -400,6 +490,7 @@ interface ParsedEvidenceBundle {
 
 interface ParsedEvidenceDocument {
   record: JsonEvidence;
+  fields: EvidenceFieldPreview[];
   bytes: ArrayBuffer;
   mimeType: 'application/json' | 'application/pdf';
   contentSha256: string;
@@ -440,6 +531,19 @@ const parseJsonEvidence = async (file: File, documentName: string): Promise<Pars
   }
   return {
     record: normalized,
+    fields: Object.entries(normalized).map(([name, value]) => ({
+      name,
+      raw_value: value,
+      normalized_value: value,
+      confidence: '1',
+      method: 'JSON',
+      source: {
+        document_id: `json-preview-${file.name}`,
+        page_number: null,
+        bounding_box: null,
+        json_pointer: `/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`,
+      },
+    })),
     bytes,
     mimeType: 'application/json',
     contentSha256: await sha256(bytes),
@@ -481,6 +585,7 @@ const parseEvidenceFile = async (
   );
   return {
     record,
+    fields: payload.preview.fields,
     bytes,
     mimeType,
     contentSha256: payload.preview.content_sha256,
@@ -496,15 +601,64 @@ const parseEvidenceFile = async (
   };
 };
 
+const applyEvidenceOverrides = (
+  document: ParsedEvidenceDocument,
+  overrides: Record<string, string> | undefined,
+): ParsedEvidenceDocument => {
+  if (!overrides || Object.keys(overrides).length === 0) return document;
+  const record = { ...document.record, ...overrides };
+  const originals = new Map(document.fields.map((field) => [field.name, field]));
+  const fields = Object.entries(record).map(([name, value]) => {
+    const original = originals.get(name);
+    const manuallyChanged = overrides[name] !== undefined && overrides[name] !== original?.normalized_value;
+    if (original) {
+      return {
+        ...original,
+        normalized_value: value,
+        confidence: manuallyChanged ? '1' : original.confidence,
+        method: manuallyChanged ? 'MANUAL' as const : original.method,
+      };
+    }
+    return {
+      name,
+      raw_value: '',
+      normalized_value: value,
+      confidence: '1',
+      method: 'MANUAL' as const,
+      source: {
+        document_id: `manual-${name}`,
+        page_number: null,
+        bounding_box: null,
+        json_pointer: null,
+      },
+    };
+  });
+  return {
+    ...document,
+    record,
+    fields,
+    extractionMethods: [...new Set(fields.map((field) => field.method))],
+    fieldCount: fields.length,
+    minimumConfidence: fields.reduce(
+      (minimum, field) => Math.min(minimum, Number(field.confidence)),
+      1,
+    ).toFixed(2),
+  };
+};
+
 const parseEvidenceBundle = async (
   files: EvidenceFileBundle,
   operatorToken: string,
+  overrides: EvidenceFieldOverrides = {},
 ): Promise<ParsedEvidenceBundle> => {
-  const [invoiceDocument, purchaseOrderDocument, deliveryDocument] = await Promise.all([
+  const [parsedInvoice, parsedPurchaseOrder, parsedDelivery] = await Promise.all([
     parseEvidenceFile(files.invoice, 'Invoice', 'INVOICE', operatorToken),
     parseEvidenceFile(files.purchaseOrder, 'Purchase order', 'PURCHASE_ORDER', operatorToken),
     parseEvidenceFile(files.delivery, 'Delivery evidence', 'DELIVERY', operatorToken),
   ]);
+  const invoiceDocument = applyEvidenceOverrides(parsedInvoice, overrides.invoice);
+  const purchaseOrderDocument = applyEvidenceOverrides(parsedPurchaseOrder, overrides.purchaseOrder);
+  const deliveryDocument = applyEvidenceOverrides(parsedDelivery, overrides.delivery);
   const invoice = invoiceDocument.record;
   const purchaseOrder = purchaseOrderDocument.record;
   const delivery = deliveryDocument.record;
@@ -550,16 +704,20 @@ const parseEvidenceBundle = async (
 export async function reviewEvidenceFiles(
   files: EvidenceFileBundle,
   operatorToken: string,
+  overrides: EvidenceFieldOverrides = {},
 ): Promise<EvidenceFileReview> {
-  const parsed = await parseEvidenceBundle(files, operatorToken);
+  const parsed = await parseEvidenceBundle(files, operatorToken, overrides);
   return {
+    invoiceId: parsed.invoice.invoice_id,
     invoiceNumber: parsed.invoice.invoice_number,
     vendorId: parsed.invoice.vendor_id,
     amount: parsed.invoice.amount,
     currency: parsed.invoice.currency,
     dueDate: parsed.invoice.due_date,
     purchaseOrderNumber: parsed.purchaseOrder.po_number,
+    purchaseOrderId: parsed.purchaseOrder.purchase_order_id,
     authorizedAmount: parsed.purchaseOrder.authorized_amount,
+    deliveryId: parsed.delivery.delivery_id,
     deliveredValue: parsed.delivery.delivered_value,
     walletAddress: parsed.invoice.payment_wallet_address,
     extractionMethods: [...new Set(Object.values(parsed.documents).flatMap((item) => item.extractionMethods))],
@@ -581,6 +739,7 @@ export async function reviewEvidenceFiles(
 }
 
 export async function loadSamplePdfEvidence(): Promise<EvidenceFileBundle> {
+  const instanceId = crypto.randomUUID();
   const sampleFiles = [
     ['invoice', 'invoice.pdf'],
     ['purchaseOrder', 'purchase-order.pdf'],
@@ -592,7 +751,10 @@ export async function loadSamplePdfEvidence(): Promise<EvidenceFileBundle> {
       throw new ApiError(`Could not load the ${filename} judge sample.`, response.status);
     }
     const bytes = await response.arrayBuffer();
-    return new File([bytes], filename, { type: 'application/pdf' });
+    const instanceMarker = new TextEncoder().encode(
+      `\n% TallyGuard reusable sample instance ${instanceId}-${filename}\n`,
+    );
+    return new File([bytes, instanceMarker], filename, { type: 'application/pdf' });
   }));
   return {
     invoice: loaded[0],
@@ -605,48 +767,124 @@ export async function runUploadedEvidenceWorkflow(
   adminToken: string,
   operatorToken: string,
   files: EvidenceFileBundle,
+  overrides: EvidenceFieldOverrides = {},
 ): Promise<RunResult> {
-  const parsed = await parseEvidenceBundle(files, operatorToken);
+  const parsed = await parseEvidenceBundle(files, operatorToken, overrides);
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
   const invoiceId = parsed.invoice.invoice_id;
   const vendorId = parsed.invoice.vendor_id;
   const wallet = parsed.invoice.payment_wallet_address;
   const invoiceHash = parsed.documents.invoice.contentSha256;
-  await Promise.all([
-    request('/api/policies', {
+  const invoiceDirectory = await request<{ items: Invoice[] }>(
+    '/api/invoices?limit=50',
+    { method: 'GET' },
+    operatorToken,
+  );
+  const existingInvoice = invoiceDirectory.items.find((item) => item.id === invoiceId);
+  if (existingInvoice) {
+    if (existingInvoice.source_document_hash !== invoiceHash) {
+      throw new ApiError(
+        `Invoice ID ${invoiceId} already belongs to different source evidence. Correct the invoice ID or submit it as a new version.`,
+        409,
+        'INVOICE_ID_CONFLICT',
+      );
+    }
+    const overviewPayload = await request<{ overview: OperationsOverview }>(
+      '/api/operations/overview?queue_limit=50&recent_limit=50',
+      { method: 'GET' },
+      operatorToken,
+    );
+    const existingOperation = overviewPayload.overview.recent_requests.find((item) => item.id === invoiceId);
+    if (existingOperation?.decision_id) {
+      return fetchInvoiceRun(existingInvoice, existingOperation.decision_id, operatorToken);
+    }
+    return request<RunResult>(
+      `/api/invoices/${encodeURIComponent(invoiceId)}/evaluate?auto_settle=true`,
+      { method: 'POST' },
+      operatorToken,
+    );
+  }
+
+  const [vendorDirectory, policyDirectory, treasurySnapshot] = await Promise.all([
+    request<{ items: VendorRecord[] }>(
+      '/api/vendors',
+      { method: 'GET' },
+      operatorToken,
+    ),
+    request<{ items: ActivePolicy[] }>(
+      '/api/policies',
+      { method: 'GET' },
+      operatorToken,
+    ),
+    request<{ treasury: TreasurySnapshotRecord }>(
+      '/api/treasury/summary',
+      { method: 'GET' },
+      operatorToken,
+    ).then((payload) => payload.treasury).catch((error: unknown) => {
+      if (
+        error instanceof ApiError
+        && error.code === 'PERSISTENCE_ERROR'
+        && error.message.includes('No treasury snapshot exists')
+      ) {
+        return null;
+      }
+      throw error;
+    }),
+  ]);
+  const existingVendor = vendorDirectory.items.find((item) => item.id === vendorId);
+  if (existingVendor && existingVendor.approved_wallet_address.toLowerCase() !== wallet.toLowerCase()) {
+    throw new ApiError(
+      `Vendor ${vendorId} already has a different verified payout wallet. Finance must verify a wallet change before this request can continue.`,
+      409,
+      'VENDOR_WALLET_CONFLICT',
+    );
+  }
+
+  const setupRequests: Promise<unknown>[] = [];
+  // A requester may bootstrap an empty demo workspace, but must never replace
+  // finance-controlled policy or treasury state while submitting an invoice.
+  if (policyDirectory.items.length === 0) {
+    setupRequests.push(request('/api/policies', {
       method: 'POST',
       body: JSON.stringify({
         version: `upload-${suffix}`,
-        daily_payment_limit_usdc: parsed.invoice.daily_payment_limit_usdc ?? '8500',
+        daily_payment_limit_usdc: parsed.invoice.daily_payment_limit_usdc ?? '5000',
+        daily_autonomous_payment_limit_usdc: parsed.invoice.daily_autonomous_payment_limit_usdc ?? '1000',
+        autonomous_payments_enabled: false,
         minimum_cash_reserve_usdc: parsed.invoice.minimum_cash_reserve_usdc ?? '2500',
-        maximum_autonomous_payment_usdc: parsed.invoice.maximum_autonomous_payment_usdc ?? '2000',
+        maximum_autonomous_payment_usdc: parsed.invoice.maximum_autonomous_payment_usdc ?? '300',
         po_amount_tolerance_usdc: parsed.invoice.po_amount_tolerance_usdc ?? '5',
         allowed_asset: 'USDC',
         allowed_network: 'ARC-TESTNET',
         kill_switch_enabled: false,
       }),
-    }, adminToken),
-    request('/api/treasury/snapshots', {
+    }, adminToken));
+  }
+  if (!treasurySnapshot) {
+    setupRequests.push(request('/api/treasury/snapshots', {
       method: 'POST',
       body: JSON.stringify({
         available_usdc: parsed.invoice.treasury_available_usdc ?? '18437.29',
-        spent_today_usdc: parsed.invoice.treasury_spent_today_usdc ?? '913.48',
+        spent_today_usdc: parsed.invoice.treasury_spent_today_usdc ?? '0',
         source_reference: `uploaded-evidence-${suffix}`,
       }),
-    }, operatorToken),
-    request('/api/vendors', {
+    }, operatorToken));
+  }
+  if (!existingVendor) {
+    setupRequests.push(request('/api/vendors', {
       method: 'POST',
       body: JSON.stringify({
         id: vendorId,
         legal_name: parsed.invoice.vendor_legal_name ?? vendorId,
         approved_wallet_address: wallet,
-        autopay_limit: parsed.invoice.vendor_autopay_limit_usdc ?? '2000',
+        autopay_limit: parsed.invoice.vendor_autopay_limit_usdc ?? '300',
         risk_tier: parsed.invoice.vendor_risk_tier ?? 'low',
         verification_method: 'SIGNED_CHALLENGE',
         verification_reference: parsed.invoice.vendor_verification_reference ?? `uploaded-wallet-proof-${suffix}`,
       }),
-    }, operatorToken),
-  ]);
+    }, operatorToken));
+  }
+  await Promise.all(setupRequests);
   await request('/api/invoices', {
     method: 'POST',
     body: JSON.stringify({
@@ -669,9 +907,10 @@ export async function runUploadedEvidenceWorkflow(
     const form = new FormData();
     form.append('evidence_type', evidenceType);
     form.append('file', new Blob([document.bytes], { type: document.mimeType }), file.name);
+    form.append('fields', JSON.stringify(document.fields));
     return request(`/api/invoices/${encodeURIComponent(invoiceId)}/evidence`, { method: 'POST', body: form }, operatorToken);
   }));
-  return request<RunResult>(`/api/invoices/${encodeURIComponent(invoiceId)}/evaluate`, { method: 'POST' }, operatorToken);
+  return request<RunResult>(`/api/invoices/${encodeURIComponent(invoiceId)}/evaluate?auto_settle=true`, { method: 'POST' }, operatorToken);
 }
 
 export async function runLiveEvidenceWorkflow(
@@ -789,6 +1028,15 @@ export async function requestApproval(decisionId: string, operatorToken: string)
   return payload.approval;
 }
 
+export async function fetchDecisionApproval(decisionId: string, readerToken: string): Promise<Approval | null> {
+  const payload = await request<{ approval: Approval | null }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}/approval`,
+    { method: 'GET' },
+    readerToken,
+  );
+  return payload.approval;
+}
+
 export async function resolveApproval(
   approval: Approval,
   approverToken: string,
@@ -848,6 +1096,43 @@ export async function runDueSchedules(approverToken: string): Promise<ScheduleRu
     approverToken,
   );
   return payload.schedule_run;
+}
+
+export async function fetchInvoiceEvidence(
+  invoiceId: string,
+  readerToken: string,
+): Promise<EvidenceDocument[]> {
+  const payload = await request<{ items: EvidenceDocument[] }>(
+    `/api/invoices/${encodeURIComponent(invoiceId)}/evidence`,
+    { method: 'GET' },
+    readerToken,
+  );
+  return payload.items;
+}
+
+export async function downloadEvidenceDocument(
+  evidenceDocument: EvidenceDocument,
+  readerToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/evidence/${encodeURIComponent(evidenceDocument.id)}/content`,
+    { headers: { Authorization: `Bearer ${readerToken}` } },
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.error;
+    throw new ApiError(
+      detail?.message ?? 'TallyGuard could not download the source evidence.',
+      response.status,
+      detail?.code,
+    );
+  }
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = evidenceDocument.filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export async function fetchInvoiceAudit(invoiceId: string, auditorToken: string): Promise<AuditTrail> {

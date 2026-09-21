@@ -30,6 +30,17 @@ def test_showcase_seeds_mixed_queue_for_one_click_agent_planning(tmp_path):
         "wallet-change",
         "scheduled-payment",
     ]
+    assert len(showcase["approvals"]) == 1
+    assert showcase["approvals"][0]["status"] == "PENDING"
+    assert showcase["approvals"][0]["invoice_id"] == showcase["items"][1]["invoice"]["id"]
+
+    approver = session(client, "approver")
+    pending = client.get(
+        "/api/governance/overview",
+        headers=headers(approver, "showcase-governance"),
+    ).get_json()
+    assert len(pending["pending_approvals"]) == 1
+    assert pending["pending_approvals"][0]["invoice"]["invoice_number"] == showcase["items"][1]["invoice"]["invoice_number"]
 
     plan = client.post(
         "/api/agent-runs",
