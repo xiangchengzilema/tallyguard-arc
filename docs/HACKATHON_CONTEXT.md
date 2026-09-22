@@ -71,7 +71,7 @@ Strongly encouraged:
 - Exported Payment Evidence Packets now have a standalone verifier that needs no application database or server; it recomputes the deterministic decision and can optionally re-prove a real transfer against Arc RPC
 - Reconciled payments can be exported as a content-addressed, spreadsheet-safe accounting CSV from the judge console
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
-- The locked Testnet acceptance command uses the just-observed Circle wallet balance and will emit both JSON and reviewer-friendly Explorer proof artifacts after the first real transfer
+- The locked Testnet acceptance command completed a real `0.01 USDC` Circle developer-wallet transfer on Arc Testnet at block `63409495`; Arc RPC verified the exact canonical-USDC event, idempotent replay reused the durable receipt, and the public proof is recorded in `docs/reports/ARC_TESTNET_ACCEPTANCE_20260922.md`
 - A genuine-pilot protocol and content-addressed report command bind operator-attested timing and predeclared acceptance criteria to a verified Payment Evidence Packet without calling self-operated usage a customer or simulation an onchain transfer
 - The current ten-slide pitch deck is `submission/TallyGuard_Tameion_Pitch_v9.pptx`; it uses the evidence-control product capture, includes the 500 ms slow-provider concurrency evidence, reflects the eight-check deployment gate, and includes a desktop/390px comparison while accurately labeling the remaining Testnet, pilot, deployment, and video gates. The live product now evaluates 15 controls, including finance-configured single-payment and daily no-touch autonomy limits.
 - Automated test suite passing
@@ -94,12 +94,11 @@ Strongly encouraged:
   decision, and receipt; this is one responsive web product rather than
   separate clients
 
-Milestones 1, 2, 3, 5, and 6 are complete. Milestone 4 awaits the external Circle
-Testnet acceptance transfer; Milestone 7 awaits genuine operator evidence; Milestone 8 awaits
+Milestones 1, 2, 3, 4, 5, and 6 are complete. Milestone 7 awaits genuine operator evidence; Milestone 8 awaits
 publication, deployment, and video. SQLite persistence now retains
 tenant-scoped evidence, provenance, vendor wallet verification history, invoice state, optimistic versions, and transition history
-across process restarts. A real Arc Testnet transfer is the next external acceptance gate; no
-mainnet credential or balance is needed yet.
+across process restarts. The real Arc Testnet acceptance gate passed on 2026-09-22; no mainnet
+credential or balance is needed for the hackathon demo.
 
 ## Submission discipline
 

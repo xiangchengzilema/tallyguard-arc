@@ -177,9 +177,11 @@ Mainnet launch procedure:
 5. Require a recorded approval reference for every mainnet settlement during the hackathon.
 6. Run one or a few low-value payments and preserve Explorer evidence.
 
-Current acceptance status: implementation and credential-free fault tests pass. A real Arc
-Testnet transfer remains intentionally pending until a dedicated Circle test wallet and locally
-stored credentials are available.
+Current acceptance status: implementation and credential-free fault tests pass. A real `0.01 USDC`
+Circle developer-wallet transfer completed on Arc Testnet at block `63409495` on 2026-09-22.
+Arc RPC independently verified the exact canonical-USDC event, idempotent replay reused the same
+durable receipt, and the sanitized proof is recorded in
+`docs/reports/ARC_TESTNET_ACCEPTANCE_20260922.md`.
 
 ### Milestone 5 — Multi-tenant finance API
 
