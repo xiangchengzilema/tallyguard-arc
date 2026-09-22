@@ -26,6 +26,7 @@ import type {
   ReplayVerification,
   RunResult,
   ScheduleRun,
+  SettlementBatchItem,
   SettlementIncidentOverview,
   TreasurySnapshotRecord,
   VendorOnboardingDraft,
@@ -816,20 +817,11 @@ export async function runUploadedEvidenceWorkflow(
       { method: 'GET' },
       operatorToken,
     ),
-    request<{ treasury: TreasurySnapshotRecord }>(
-      '/api/treasury/summary',
+    request<{ treasury: TreasurySnapshotRecord | null }>(
+      '/api/treasury/summary?optional=true',
       { method: 'GET' },
       operatorToken,
-    ).then((payload) => payload.treasury).catch((error: unknown) => {
-      if (
-        error instanceof ApiError
-        && error.code === 'PERSISTENCE_ERROR'
-        && error.message.includes('No treasury snapshot exists')
-      ) {
-        return null;
-      }
-      throw error;
-    }),
+    ).then((payload) => payload.treasury),
   ]);
   const existingVendor = vendorDirectory.items.find((item) => item.id === vendorId);
   if (existingVendor && existingVendor.approved_wallet_address.toLowerCase() !== wallet.toLowerCase()) {
@@ -1078,7 +1070,7 @@ export async function settleInvoice(
 }
 
 export async function settlePaymentBatch(
-  items: Array<{ invoice_id: string; decision_id: string }>,
+  items: SettlementBatchItem[],
   approverToken: string,
 ): Promise<PaymentBatch> {
   const payload = await request<{ batch: PaymentBatch }>(

@@ -1120,9 +1120,14 @@ def create_app(
     @app.get("/api/treasury/summary")
     @require(Permission.INVOICE_READ)
     def get_treasury_summary():
-        stored = repository.latest_treasury_snapshot(
-            organization_id=g.principal.organization_id
-        )
+        try:
+            stored = repository.latest_treasury_snapshot(
+                organization_id=g.principal.organization_id
+            )
+        except PersistenceError:
+            if request.args.get("optional", "").strip().lower() in {"1", "true", "yes"}:
+                return jsonify({"treasury": None})
+            raise
         return jsonify({"treasury": _treasury_json(stored)})
 
     @app.post("/api/vendors")
@@ -2215,6 +2220,8 @@ def create_app(
                     "settlement_network": None,
                     "settlement_block_number": None,
                     "settlement_explorer_url": None,
+                    "approval_reference": None,
+                    "approval_status": None,
                 }
             )
             try:
@@ -2232,6 +2239,17 @@ def create_app(
                         ),
                     }
                 )
+                approval = repository.find_approval_for_decision(
+                    organization_id=g.principal.organization_id,
+                    decision_id=decision.id,
+                )
+                if approval is not None:
+                    item_json.update(
+                        {
+                            "approval_reference": approval.id,
+                            "approval_status": approval.status.value,
+                        }
+                    )
                 try:
                     intent = repository.get_payment_intent_for_decision(
                         organization_id=g.principal.organization_id,
@@ -2279,6 +2297,8 @@ def create_app(
                         "decision_action": None,
                         "scheduled_for": None,
                         "settlement_retryable": False,
+                        "approval_reference": None,
+                        "approval_status": None,
                     }
                 )
             return item_json

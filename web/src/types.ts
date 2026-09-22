@@ -412,6 +412,8 @@ export interface OperationsOverview {
 export interface OperationsInvoice extends Invoice {
   decision_id: string | null;
   decision_action: DecisionAction | null;
+  approval_reference: string | null;
+  approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
   scheduled_for: string | null;
   settlement_retryable: boolean;
   settlement_status: string;
@@ -422,6 +424,12 @@ export interface OperationsInvoice extends Invoice {
   settlement_network: string | null;
   settlement_block_number: number | null;
   settlement_explorer_url: string | null;
+}
+
+export interface SettlementBatchItem {
+  invoice_id: string;
+  decision_id: string;
+  approval_reference?: string;
 }
 
 export interface SettlementAttempt {

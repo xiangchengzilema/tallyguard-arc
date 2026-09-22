@@ -4,6 +4,8 @@
 
 TallyGuard is a multi-tenant accounts-payable control plane for AI-operated businesses. The agent may interpret documents and recommend actions, but deterministic controls own payment authorization. Every settlement must be replayable from evidence, policy version, approval state, and Arc transaction data.
 
+Current delivery scope is the browser-based web product only. Native desktop and mobile applications are deferred; responsive checks may prevent obvious breakage, but they are not allowed to displace completion and polish of the desktop web workflow.
+
 ## Network strategy
 
 Arc Mainnet launched on September 16, 2026. TallyGuard will support both networks, with intentionally different safety profiles.

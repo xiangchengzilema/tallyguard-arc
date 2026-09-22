@@ -831,6 +831,22 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     assert overview["minimum_reserve_usdc"] == "3000"
 
 
+def test_optional_treasury_summary_returns_null_for_empty_workspace(tmp_path):
+    app = create_app(database_path=tmp_path / "optional-treasury.sqlite3", testing=True)
+    client = app.test_client()
+    auditor = client.post(
+        "/api/demo/session", json={"role": "auditor"}
+    ).get_json()["access_token"]
+
+    optional = client.get(
+        "/api/treasury/summary?optional=true",
+        headers=headers(auditor, "optional-treasury"),
+    )
+
+    assert optional.status_code == 200
+    assert optional.get_json() == {"treasury": None}
+
+
 def test_reliability_report_is_auditor_visible_and_content_addressed(tmp_path):
     app = create_app(database_path=tmp_path / "reliability.sqlite3", testing=True)
     client = app.test_client()

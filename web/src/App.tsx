@@ -108,6 +108,7 @@ import type {
   RunResult,
   ScheduleRun,
   Scenario,
+  SettlementBatchItem,
   SettlementIncidentOverview,
   TreasurySnapshotRecord,
   VendorOnboardingDraft,
@@ -608,7 +609,8 @@ function requesterStatus(item: OperationsInvoice, approval: Approval | null | un
   if (approval?.status === 'REJECTED' || item.decision_action === 'REJECT') return { key: 'rejected', label: 'Needs changes', helper: 'Finance returned this request' };
   if (normalized.includes('RECONCIL') || normalized.includes('SETTLED') || normalized.includes('PAID')) return { key: 'paid', label: 'Paid · receipt ready', helper: 'Arc settlement confirmed' };
   if (approval?.status === 'APPROVED') return { key: 'approved', label: 'Approved by finance', helper: 'Waiting for finance settlement' };
-  if (approval?.status === 'PENDING' || item.decision_action === 'ESCALATE') return { key: 'review', label: 'In finance review', helper: 'Waiting for an approver' };
+  if (approval?.status === 'PENDING') return { key: 'review', label: 'Independent approval', helper: 'Waiting for an approver' };
+  if (item.decision_action === 'ESCALATE') return { key: 'finance-review', label: 'In finance review', helper: 'Finance must request approval' };
   if (item.decision_action === 'HOLD') return { key: 'hold', label: 'On hold', helper: 'More evidence is required' };
   if (item.decision_action === 'SCHEDULE' || normalized.includes('SCHEDULE')) return { key: 'scheduled', label: 'Scheduled', helper: `Due ${item.due_date}` };
   if (item.decision_action === 'PAY') return { key: 'approved', label: 'Policy checks passed', helper: 'Waiting for finance settlement' };
@@ -641,6 +643,12 @@ function requesterDecisionCopy(item: OperationsInvoice, approval: Approval | nul
     body: `${formatMoney(item.amount)} ${item.currency} is requested. The evidence is sealed, but no transfer has been authorized.`,
     next: 'An approver will either approve the request or return it with a reason.',
   };
+  if (status.key === 'finance-review') return {
+    tone: 'review',
+    title: 'Waiting for finance review',
+    body: `${formatMoney(item.amount)} ${item.currency} is above the automatic-payment boundary. The evidence is sealed, but finance has not requested independent approval yet.`,
+    next: 'Finance will review the evidence and either request approval or return the request with a reason.',
+  };
   if (status.key === 'approved' || status.key === 'scheduled') return {
     tone: 'approved',
     title: status.key === 'scheduled'
@@ -666,15 +674,49 @@ function RequesterProgress({ item, approval }: { item: OperationsInvoice; approv
   const stopped = status.key === 'rejected' || status.key === 'hold';
   const paid = status.key === 'paid';
   const approved = status.key === 'approved' || status.key === 'scheduled' || paid;
+  const decisionComplete = item.decision_action !== 'ESCALATE'
+    || approval?.status === 'APPROVED'
+    || approval?.status === 'REJECTED';
   const steps = [
     ['Submitted', true],
     ['Evidence checked', Boolean(item.decision_id)],
-    [approval ? 'Finance approval' : 'Policy decision', Boolean(approval?.status === 'APPROVED' || approval?.status === 'REJECTED' || item.decision_action !== 'ESCALATE')],
+    [approval ? 'Independent approval' : 'Finance review', decisionComplete],
     ['Arc settlement', paid],
   ] as const;
   return <div className={`requester-progress ${stopped ? 'is-stopped' : ''}`}>
     {steps.map(([label, complete], index) => <div className={complete ? 'is-complete' : index === (item.decision_id ? approved ? 3 : 2 : 1) ? 'is-current' : ''} key={label}><span>{complete ? '✓' : index + 1}</span><small>{label}</small></div>)}
   </div>;
+}
+
+function isSettlementReady(item: OperationsInvoice) {
+  return Boolean(item.decision_id) && (
+    item.settlement_retryable
+    || item.decision_action === 'PAY'
+    || (item.decision_action === 'ESCALATE' && item.approval_status === 'APPROVED')
+  );
+}
+
+function needsFinanceAttention(item: OperationsInvoice) {
+  if (item.decision_action === 'ESCALATE') return item.approval_status !== 'APPROVED';
+  return item.decision_action === 'HOLD' || item.decision_action === 'REJECT';
+}
+
+function financeStatusLabel(item: OperationsInvoice) {
+  if (item.settlement_status === 'CONFIRMED') return 'Paid · receipt ready';
+  if (item.settlement_retryable) return 'Retry settlement';
+  if (item.decision_action === 'ESCALATE') {
+    if (item.approval_status === 'APPROVED') return 'Approved · ready to settle';
+    if (item.approval_status === 'REJECTED') return 'Returned by approver';
+    if (item.approval_status === 'PENDING') return 'Awaiting approver';
+    return 'Finance review required';
+  }
+  return item.decision_action ? ACTION_LABEL[item.decision_action] : item.status.replaceAll('_', ' ');
+}
+
+function financeDecisionLabel(item: OperationsInvoice) {
+  if (item.decision_action === 'ESCALATE' && item.approval_status === 'APPROVED') return 'Approved by finance';
+  if (item.decision_action === 'ESCALATE' && item.approval_status === 'REJECTED') return 'Rejected by approver';
+  return item.decision_action ? ACTION_LABEL[item.decision_action] : 'Awaiting evaluation';
 }
 
 function RequesterPortalPage({
@@ -939,7 +981,7 @@ function PremiumPayablesPage({
   busy: boolean;
   onNavigate: (view: WorkspaceView) => void;
   onOpenReview: (invoice: OperationsInvoice) => void;
-  onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
+  onSettleBatch: (items: SettlementBatchItem[]) => void;
   onRunSchedules: () => void;
   onExportLedger: () => void;
   onSeedShowcase: () => void;
@@ -953,19 +995,23 @@ function PremiumPayablesPage({
   const queue = operations?.work_queue ?? [];
   const normalizedQuery = query.trim().toLowerCase();
   const tabMatches = (item: OperationsInvoice) => {
-    if (tab === 'ready') return item.decision_action === 'PAY' || item.settlement_retryable;
-    if (tab === 'attention') return item.decision_action === 'HOLD' || item.decision_action === 'REJECT' || item.decision_action === 'ESCALATE';
+    if (tab === 'ready') return isSettlementReady(item);
+    if (tab === 'attention') return needsFinanceAttention(item);
     if (tab === 'scheduled') return item.decision_action === 'SCHEDULE' || item.status === 'SCHEDULED';
     return true;
   };
   const filtered = queue.filter((item) => tabMatches(item) && (!normalizedQuery || [item.invoice_number, item.vendor_id, item.status, item.source_document_hash].some((value) => value.toLowerCase().includes(normalizedQuery))));
   const selected = drawerOpen ? queue.find((item) => item.id === selectedId) ?? filtered[0] ?? queue[0] ?? null : null;
-  const ready = queue.filter((item) => item.decision_id && (item.decision_action === 'PAY' || item.settlement_retryable));
-  const attention = queue.filter((item) => item.decision_action === 'HOLD' || item.decision_action === 'REJECT' || item.decision_action === 'ESCALATE');
+  const ready = queue.filter(isSettlementReady);
+  const attention = queue.filter(needsFinanceAttention);
   const scheduled = queue.filter((item) => item.decision_action === 'SCHEDULE' || item.status === 'SCHEDULED');
-  const selectedBatch = queue.filter((item) => batchIds.includes(item.id) && item.decision_id).map((item) => ({ invoice_id: item.id, decision_id: item.decision_id! }));
+  const selectedBatch = queue.filter((item) => batchIds.includes(item.id) && isSettlementReady(item)).map((item) => ({
+    invoice_id: item.id,
+    decision_id: item.decision_id!,
+    ...(item.approval_reference ? { approval_reference: item.approval_reference } : {}),
+  }));
   const setBatchChecked = (id: string, checked: boolean) => setBatchIds((items) => checked ? [...new Set([...items, id])] : items.filter((item) => item !== id));
-  const statusLabel = (item: OperationsInvoice) => item.settlement_retryable ? 'Retry settlement' : item.decision_action ? ACTION_LABEL[item.decision_action] : item.status.replaceAll('_', ' ');
+  const statusLabel = financeStatusLabel;
   const dueLabel = (value: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T00:00:00`));
   const vendorLabel = (value: string) => value.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
   return (
@@ -994,12 +1040,12 @@ function PremiumPayablesPage({
             <div className="payables-table__head"><span>Batch</span><span>Invoice ↓</span><span>Vendor</span><span>Amount</span><span>Due ↕</span><span>Evidence</span><span>Decision</span><span>Status</span></div>
             {filtered.length ? filtered.map((item) => (
               <div className={selected?.id === item.id ? 'payables-table__row is-selected' : 'payables-table__row'} key={item.id} onClick={() => { setSelectedId(item.id); setDrawerOpen(true); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') { setSelectedId(item.id); setDrawerOpen(true); } }}>
-                <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number} for batch settlement`} checked={batchIds.includes(item.id)} disabled={!item.decision_id} onChange={(event) => setBatchChecked(item.id, event.target.checked)} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
+                <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number} for batch settlement`} checked={batchIds.includes(item.id)} disabled={!isSettlementReady(item)} onChange={(event) => setBatchChecked(item.id, event.target.checked)} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
                 <button type="button" className="payable-link" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setDrawerOpen(true); if (item.decision_id) onOpenReview(item); }}><strong>{item.invoice_number}</strong><small>{shorten(item.id, 7, 4)}</small></button>
                 <span className="vendor-cell"><strong>{vendorLabel(item.vendor_id)}</strong><small>{shorten(item.payment_wallet_address, 7, 5)}</small></span>
                 <strong>{formatMoney(item.amount)} {item.currency}</strong><span>{dueLabel(item.due_date)}</span>
                 <span className={item.decision_id ? 'evidence-state is-good' : 'evidence-state'}><i />{item.decision_id ? 'Decision sealed' : 'Evidence needed'}</span>
-                <span>{item.decision_action ?? '—'}</span><span className={`payable-status is-${(item.decision_action ?? item.status).toLowerCase().replaceAll('_', '-')}`}>{statusLabel(item)}</span>
+                <span>{item.decision_action === 'ESCALATE' && item.approval_status === 'APPROVED' ? 'PAY' : item.decision_action ?? '—'}</span><span className={`payable-status is-${(item.approval_status ?? item.decision_action ?? item.status).toLowerCase().replaceAll('_', '-')}`}>{statusLabel(item)}</span>
               </div>
             )) : <div className="payables-empty"><Document size={24} /><strong>No payment requests are waiting.</strong><span>User submissions appear here after evidence is confirmed. Load a realistic queue to inspect the finance workflow.</span><div><button type="button" onClick={() => onNavigate('approvals')}>Open approvals</button><button type="button" className="is-secondary" onClick={onSeedShowcase} disabled={busy}>Load sample requests</button></div></div>}
             <footer><span>Showing {filtered.length} of {queue.length} invoices</span><span>{operations?.as_of ? `Snapshot ${new Date(operations.as_of).toLocaleString()}` : 'Waiting for live operations data'}</span></footer>
@@ -1015,9 +1061,9 @@ function PremiumPayablesPage({
             <div className="payable-drawer__head"><h2>{selected.invoice_number}</h2><button type="button" aria-label="Close invoice details" onClick={() => setDrawerOpen(false)}>×</button></div>
             <div className="vendor-summary"><span>{vendorLabel(selected.vendor_id).slice(0, 1)}</span><div><strong>{vendorLabel(selected.vendor_id)}</strong><small>Submitted through User portal · {new Date(selected.created_at).toLocaleString()}</small></div><em>{selected.decision_id ? '✓ Decision sealed' : 'Evidence pending'}</em></div>
             <div className="drawer-request-link"><span>Matching user request</span><strong>{selected.invoice_number}</strong><small>The same request ID, amount, and source hash appear in both portals.</small></div>
-            <dl className="invoice-facts"><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{dueLabel(selected.due_date)}</dd></div><div><dt>Decision</dt><dd>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting evaluation'}</dd></div><div><dt>Settlement</dt><dd>{settlementStatusLabel(selected)}</dd></div></dl>
+            <dl className="invoice-facts"><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{dueLabel(selected.due_date)}</dd></div><div><dt>Decision</dt><dd>{financeDecisionLabel(selected)}</dd></div><div><dt>Settlement</dt><dd>{settlementStatusLabel(selected)}</dd></div></dl>
             <section className="drawer-section"><header><strong>Evidence & decision</strong><span>{selected.decision_id ? 'Replayable' : 'Not evaluated'}</span></header><div className="drawer-evidence"><span>▤</span><strong>Source document</strong><small>{shorten(selected.source_document_hash, 14, 10)}</small><i>✓</i></div><div className="drawer-evidence"><span>♢</span><strong>Policy action</strong><small>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting evaluation'}</small><i>{selected.decision_id ? '✓' : '•'}</i></div></section>
-            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;SIMULATION</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting policy result'}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
+            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;SIMULATION</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
             <button type="button" className="drawer-primary" disabled={busy || !selected.decision_id} onClick={() => selected.decision_id && onOpenReview(selected)}>{busy ? 'Loading live record…' : selected.decision_id ? 'Review evidence & controls' : 'Waiting for requester evidence'}</button>
             <small className="simulation-note">Public judge workspace is forced simulation. The same workflow supports configured Circle/Arc adapters.</small>
             <section className="audit-mini"><header><strong>Traceability</strong><button type="button" onClick={() => onNavigate('audit')}>Open audit ledger →</button></header><ol><li><i />Invoice persisted<small>Tenant-scoped durable record</small><time>{new Date(selected.created_at).toLocaleString()}</time></li><li><i />Latest state recorded<small>{statusLabel(selected)}</small><time>{new Date(selected.updated_at).toLocaleString()}</time></li>{selected.decision_id ? <li><i />Decision snapshot sealed<small>{shorten(selected.decision_id, 12, 8)}</small><time>Replay available</time></li> : null}</ol></section>
@@ -1254,7 +1300,7 @@ function InvoiceReviewPage({
                   <div className="decision-checks">
                     {reviewRules.map((rule, index) => {
                       const copy = rulePresentation(rule);
-                      return <article className={rule.disposition === 'PASS' ? 'is-pass' : 'is-exception'} key={rule.code}><span className="check-number">{index + 1}</span><i>{rule.disposition === 'PASS' ? '✓' : '!'}</i><div><strong>{copy.title}</strong><p>{rule.message}</p><details><summary>Why this matters · next action</summary><dl><div><dt>Why it matters</dt><dd>{copy.why}</dd></div><div><dt>Next system action</dt><dd>{copy.next}</dd></div></dl></details></div><em>{rule.disposition === 'PASS' ? 'Passed' : rule.disposition}</em></article>;
+                      return <article className={rule.disposition === 'PASS' ? 'is-pass' : 'is-exception'} key={`${rule.code}-${index}`}><span className="check-number">{index + 1}</span><i>{rule.disposition === 'PASS' ? '✓' : '!'}</i><div><strong>{copy.title}</strong><p>{rule.message}</p><details><summary>Why this matters · next action</summary><dl><div><dt>Why it matters</dt><dd>{copy.why}</dd></div><div><dt>Next system action</dt><dd>{copy.next}</dd></div></dl></details></div><em>{rule.disposition === 'PASS' ? 'Passed' : rule.disposition}</em></article>;
                     })}
                   </div>
                 </details>
@@ -1337,7 +1383,7 @@ function ApprovalPortalPage({
               {detail ? <>
                 <header><div><span>SEALED PAYMENT REQUEST</span><h2>{detail.invoice.invoice_number}</h2><p>{detail.invoice.vendor_id.replaceAll('-', ' ')} · submitted by {detail.approval.requested_by_user_id ?? 'finance operator'}</p></div><div className={`approval-packet__decision is-${detail.approval.status.toLowerCase()}`}><strong>{detail.approval.status === 'PENDING' ? ACTION_LABEL[detail.decision.final_action] : detail.approval.status}</strong><small>{detail.decision.policy_version}</small></div></header>
                 <div className="approval-packet__facts"><div><span>Amount</span><strong>{formatMoney(detail.invoice.amount)} {detail.invoice.currency}</strong></div><div><span>Vendor wallet</span><code>{shorten(detail.invoice.payment_wallet_address, 10, 8)}</code></div><div><span>Due date</span><strong>{detail.invoice.due_date}</strong></div><div><span>Decision ID</span><code>{shorten(detail.decision.id, 10, 8)}</code></div></div>
-                <div className="approval-packet__checks"><header><strong>Evidence and policy checks</strong><button type="button" onClick={() => onOpenReview(detail)}>Open full invoice review <ArrowRight size={14} /></button></header>{detail.decision.rules.slice(0, 5).map((rule) => <article key={rule.code}><span className={rule.disposition === 'PASS' ? 'is-pass' : 'is-exception'}>{rule.disposition === 'PASS' ? '✓' : '!'}</span><div><strong>{rulePresentation(rule).title}</strong><p>{rule.message}</p></div><em>{rule.disposition === 'PASS' ? 'Passed' : rule.disposition}</em></article>)}</div>
+                <div className="approval-packet__checks"><header><strong>Evidence and policy checks</strong><button type="button" onClick={() => onOpenReview(detail)}>Open full invoice review <ArrowRight size={14} /></button></header>{detail.decision.rules.slice(0, 5).map((rule, index) => <article key={`${rule.code}-${index}`}><span className={rule.disposition === 'PASS' ? 'is-pass' : 'is-exception'}>{rule.disposition === 'PASS' ? '✓' : '!'}</span><div><strong>{rulePresentation(rule).title}</strong><p>{rule.message}</p></div><em>{rule.disposition === 'PASS' ? 'Passed' : rule.disposition}</em></article>)}</div>
                 {detail.approval.status === 'PENDING' ? <div className="approval-resolution"><label><span>{rejectMode ? 'Rejection reason' : 'Decision note'}</span><textarea value={resolutionNote} placeholder={rejectMode ? 'Explain what finance must correct before resubmitting…' : 'Record what you verified before approving…'} onChange={(event) => setResolutionNote(event.target.value)} /></label>{rejectMode && resolutionNote.trim().length < 12 ? <small>A clear rejection reason of at least 12 characters is required.</small> : null}<div><button type="button" className="approval-reject" disabled={Boolean(busy) || (rejectMode && !canReject)} onClick={() => decide(false)}>{rejectMode ? 'Confirm rejection' : 'Reject request'}</button><button type="button" className="approval-approve" disabled={rejectMode ? Boolean(busy) : !canApprove} onClick={() => { if (rejectMode) { setRejectMode(false); setResolutionNote(defaultApprovalNote); return; } decide(true); }}>{rejectMode ? 'Keep reviewing' : <>Approve payment <ArrowRight size={15} /></>}</button></div></div> : <div className={`approval-resolution__result is-${detail.approval.status.toLowerCase()}`}><span>{approved ? '✓' : rejected ? '×' : '•'}</span><div><strong>{approved ? 'Payment request approved' : rejected ? 'Payment request rejected' : detail.approval.status}</strong><p>{detail.approval.resolution_note ?? 'No resolution note was recorded.'}</p><small>{detail.approval.resolved_by_user_id ? `Resolved by ${detail.approval.resolved_by_user_id}` : 'Independent approver'}</small></div></div>}
               </> : <div className="approval-packet__empty"><CheckmarkFilled size={30} /><h2>Approval queue is clear.</h2><p>Only user requests that require independent finance authority appear here.</p><button type="button" onClick={() => onNavigate('finance')}>Open payment requests</button></div>}
             </section>
@@ -1569,7 +1615,7 @@ function OperationsQueue({
   settlementStopped: boolean;
   ledgerExport: { hash: string; rows: number } | null;
   onExportLedger: () => void;
-  onSettleBatch: (items: Array<{ invoice_id: string; decision_id: string }>) => void;
+  onSettleBatch: (items: SettlementBatchItem[]) => void;
   onRunSchedules: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -1589,9 +1635,7 @@ function OperationsQueue({
     if (queueView === 'SCHEDULED') return invoice.status === 'SCHEDULED';
     return true;
   });
-  const payable = visibleQueue.filter((invoice) => (
-    invoice.status === 'READY' || (invoice.status === 'SUBMISSION_FAILED' && invoice.settlement_retryable)
-  ) && invoice.decision_id);
+  const payable = visibleQueue.filter(isSettlementReady);
   const scheduled = overview.work_queue.filter((invoice) => invoice.status === 'SCHEDULED');
   useEffect(() => {
     const available = new Set(payable.map((invoice) => invoice.id));
@@ -1599,7 +1643,11 @@ function OperationsQueue({
   }, [overview]);
   const selectedItems = payable
     .filter((invoice) => selected.has(invoice.id))
-    .map((invoice) => ({ invoice_id: invoice.id, decision_id: invoice.decision_id! }));
+    .map((invoice) => ({
+      invoice_id: invoice.id,
+      decision_id: invoice.decision_id!,
+      ...(invoice.approval_reference ? { approval_reference: invoice.approval_reference } : {}),
+    }));
   const toggle = (invoiceId: string) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -2604,8 +2652,8 @@ function EvidencePanel({
           <span role="columnheader">Finding</span>
           <span role="columnheader">Result</span>
         </div>
-        {decision.rules.map((rule) => (
-          <div className="rule-table__row" role="row" key={rule.code}>
+        {decision.rules.map((rule, index) => (
+          <div className="rule-table__row" role="row" key={`${rule.code}-${index}`}>
             <div role="cell">
               {rule.disposition === 'PASS' ? <CheckmarkFilled className="icon-success" /> : <WarningAltFilled className="icon-warning" />}
               <code>{rule.code}</code>
@@ -2736,7 +2784,7 @@ function DecisionPanel({
       {decision.remediation.length > 0 ? (
         <div className="remediation">
           <strong>Required remediation</strong>
-          <ul>{decision.remediation.map((item) => <li key={item}>{item}</li>)}</ul>
+          <ul>{decision.remediation.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>
         </div>
       ) : null}
 
@@ -3436,7 +3484,7 @@ function App() {
     });
   }, [act, data, run]);
 
-  const handleSettleBatch = useCallback((items: Array<{ invoice_id: string; decision_id: string }>) => {
+  const handleSettleBatch = useCallback((items: SettlementBatchItem[]) => {
     if (!data || items.length === 0) return;
     void act(`Reconciling ${items.length} selected Arc payments`, async () => {
       setBatch(await settlePaymentBatch(items, data.sessions.approver));

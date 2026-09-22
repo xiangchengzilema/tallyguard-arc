@@ -500,13 +500,34 @@ def test_large_invoice_requires_role_separated_approval(tmp_path):
     ).get_json()["invoice"]
     assert invoice["status"] == "READY"
 
+    overview = client.get(
+        "/api/operations/overview",
+        headers=auth(client, "auditor"),
+    ).get_json()["overview"]
+    operation = next(
+        item for item in overview["work_queue"] if item["id"] == run["invoice"]["id"]
+    )
+    assert operation["approval_reference"] == approval["id"]
+    assert operation["approval_status"] == "APPROVED"
+
     settled = client.post(
-        f"/api/invoices/{run['invoice']['id']}/settle",
+        "/api/payment-batches/settle",
         headers=approver_headers,
-        json={"decision_id": decision_id, "approval_reference": approval["id"]},
+        json={
+            "items": [
+                {
+                    "invoice_id": run["invoice"]["id"],
+                    "decision_id": decision_id,
+                    "approval_reference": approval["id"],
+                }
+            ]
+        },
     )
     assert settled.status_code == 200
-    payment = settled.get_json()["payment"]
+    batch = settled.get_json()["batch"]
+    assert batch["succeeded"] == 1
+    assert batch["failed"] == 0
+    payment = batch["results"][0]["payment"]
     assert payment["intent"]["approval_reference"] == approval["id"]
     assert payment["invoice"]["status"] == "RECONCILED"
     assert payment["receipt"]["status"] == "CONFIRMED"

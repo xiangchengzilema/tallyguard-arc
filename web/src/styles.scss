@@ -1806,7 +1806,7 @@ button, input, select, textarea { font: inherit; }
 .payables-tabs button.is-active::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; border-radius: 2px; background: var(--premium-green); content: ''; }
 .payables-tabs .payables-filter { margin-left: auto; padding: 0 12px; }
 .payables-table { min-width: 720px; }
-.payables-table__head, .payables-table__row { display: grid; grid-template-columns: 28px 84px 1.2fr 1fr 1fr 1fr 50px 86px; align-items: center; min-height: 65px; padding: 0 14px; border-bottom: 1px solid #e6eae8; column-gap: 10px; }
+.payables-table__head, .payables-table__row { display: grid; grid-template-columns: 28px 84px 1.2fr .9fr .9fr .95fr 44px 126px; align-items: center; min-height: 65px; padding: 0 14px; border-bottom: 1px solid #e6eae8; column-gap: 10px; }
 .payables-table__head { min-height: 58px; color: #62726e; font-size: 12px; font-weight: 650; }
 .payables-table__row { width: 100%; border: 0; border-bottom: 1px solid #e6eae8; background: transparent; color: #2a3935; font-size: 12px; text-align: left; cursor: default; }
 .payables-table__row > span { font-size: 12px; }
