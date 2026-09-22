@@ -434,3 +434,19 @@ def test_circle_wallet_inspection_reads_exact_canonical_usdc_balance():
         state="LIVE",
         usdc_balance=Decimal("2.75"),
     )
+
+
+def test_arc_rpc_reads_exact_canonical_usdc_balance():
+    config = ArcNetworkConfig.for_network(ArcNetwork.TESTNET)
+
+    def balance_transport(method: str, params: list[object]):
+        assert method == "eth_call"
+        call, block = params
+        assert block == "latest"
+        assert call["to"] == config.usdc_contract_address
+        assert call["data"] == "0x70a08231" + RECIPIENT[2:].rjust(64, "0")
+        return hex(2_750_001)
+
+    rpc = ArcRpcClient(config=config, transport=balance_transport)
+
+    assert rpc.read_usdc_balance(RECIPIENT) == Decimal("2.750001")

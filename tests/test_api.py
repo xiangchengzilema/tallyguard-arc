@@ -9,6 +9,7 @@ import re
 from tallyguard.api import create_app
 from tallyguard.audit import canonical_json
 from tallyguard.auth import Principal, Role
+from tallyguard.circle_arc import ArcNetworkStatus, CircleWalletSnapshot
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.settlement import PaymentIntent, ProviderSubmission
 
@@ -199,6 +200,71 @@ def test_live_settlement_adapter_disables_demo_identities_by_default(tmp_path, m
     assert response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
     assert workspace_response.status_code == 404
     assert workspace_response.get_json()["error"]["code"] == "DEMO_SESSIONS_DISABLED"
+
+
+def test_live_treasury_refresh_records_circle_balance_and_arc_rpc_proof(tmp_path):
+    class InspectableLiveAdapter:
+        name = "circle-developer-wallets+arc-rpc"
+
+        def submit(self, intent: PaymentIntent) -> ProviderSubmission:
+            raise AssertionError("Treasury refresh must not submit a transfer.")
+
+        def inspect_treasury_wallet(self) -> CircleWalletSnapshot:
+            return CircleWalletSnapshot(
+                wallet_id="wallet-treasury",
+                address="0x21f19dae0e6e6d20657f9c8d03bce02c7d476b99",
+                blockchain="ARC-TESTNET",
+                state="LIVE",
+                usdc_balance=Decimal("578.680587"),
+            )
+
+        def inspect_arc_network(self) -> ArcNetworkStatus:
+            return ArcNetworkStatus(
+                chain_id=5042002,
+                latest_block=63412867,
+                usdc_contract_has_code=True,
+            )
+
+    app = create_app(
+        database_path=tmp_path / "live-treasury.sqlite3",
+        testing=True,
+        settlement_adapter=InspectableLiveAdapter(),
+        settlement_config=ArcNetworkConfig.for_network(ArcNetwork.TESTNET),
+    )
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+
+    response = client.post(
+        "/api/treasury/snapshots/refresh",
+        headers=headers(operator),
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["treasury"]["available_usdc"] == "578.680587"
+    assert payload["treasury"]["spent_today_usdc"] == "0"
+    assert payload["verification"]["chain_id"] == 5042002
+    assert payload["verification"]["latest_block"] == 63412867
+    assert payload["verification"]["wallet_address_redacted"].startswith("0x21f19d")
+    assert "0x21f19dae0e6e6d20657f9c8d03bce02c7d476b99" not in response.get_data(as_text=True)
+
+
+def test_simulation_cannot_claim_a_live_treasury_refresh(tmp_path):
+    app = create_app(database_path=tmp_path / "sim-treasury.sqlite3", testing=True)
+    client = app.test_client()
+    operator = client.post(
+        "/api/demo/session", json={"role": "operator"}
+    ).get_json()["access_token"]
+
+    response = client.post(
+        "/api/treasury/snapshots/refresh",
+        headers=headers(operator),
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "SETTLEMENT_DENIED"
 
 
 def test_demo_workspaces_issue_isolated_role_bundles(tmp_path):

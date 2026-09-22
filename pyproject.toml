@@ -30,6 +30,7 @@ tallyguard-deployment-smoke = "tallyguard.deployment_smoke:main"
 tallyguard-pilot-report = "tallyguard.pilot_report:main"
 tallyguard-release-audit = "tallyguard.release_audit:main"
 tallyguard-operator-setup = "tallyguard.operator_setup:main"
+tallyguard-consolidate-testnet = "tallyguard.consolidation:main"
 
 [project.optional-dependencies]
 circle = [

@@ -256,6 +256,29 @@ export async function recordTreasurySnapshot(
   return payload.treasury;
 }
 
+export async function refreshLiveTreasurySnapshot(
+  operatorToken: string,
+): Promise<TreasurySnapshotRecord> {
+  const payload = await request<{
+    treasury: TreasurySnapshotRecord;
+    verification: {
+      wallet_fingerprint: string;
+      wallet_address_redacted: string;
+      wallet_state: string;
+      network: string;
+      chain_id: number;
+      latest_block: number;
+      usdc_contract: string;
+      source: string;
+    };
+  }>(
+    '/api/treasury/snapshots/refresh',
+    { method: 'POST' },
+    operatorToken,
+  );
+  return payload.treasury;
+}
+
 export async function onboardVendor(
   draft: VendorOnboardingDraft,
   operatorToken: string,
@@ -769,6 +792,7 @@ export async function runUploadedEvidenceWorkflow(
   operatorToken: string,
   files: EvidenceFileBundle,
   overrides: EvidenceFieldOverrides = {},
+  settlementMode: BootstrapData['readiness']['settlement_mode'] = 'simulation',
 ): Promise<RunResult> {
   const parsed = await parseEvidenceBundle(files, operatorToken, overrides);
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
@@ -836,15 +860,16 @@ export async function runUploadedEvidenceWorkflow(
   // A requester may bootstrap an empty demo workspace, but must never replace
   // finance-controlled policy or treasury state while submitting an invoice.
   if (policyDirectory.items.length === 0) {
+    const liveDefaults = settlementMode === 'circle-live';
     setupRequests.push(request('/api/policies', {
       method: 'POST',
       body: JSON.stringify({
         version: `upload-${suffix}`,
-        daily_payment_limit_usdc: parsed.invoice.daily_payment_limit_usdc ?? '5000',
-        daily_autonomous_payment_limit_usdc: parsed.invoice.daily_autonomous_payment_limit_usdc ?? '1000',
+        daily_payment_limit_usdc: parsed.invoice.daily_payment_limit_usdc ?? (liveDefaults ? '0.10' : '5000'),
+        daily_autonomous_payment_limit_usdc: parsed.invoice.daily_autonomous_payment_limit_usdc ?? (liveDefaults ? '0.01' : '1000'),
         autonomous_payments_enabled: false,
-        minimum_cash_reserve_usdc: parsed.invoice.minimum_cash_reserve_usdc ?? '2500',
-        maximum_autonomous_payment_usdc: parsed.invoice.maximum_autonomous_payment_usdc ?? '300',
+        minimum_cash_reserve_usdc: parsed.invoice.minimum_cash_reserve_usdc ?? (liveDefaults ? '0' : '2500'),
+        maximum_autonomous_payment_usdc: parsed.invoice.maximum_autonomous_payment_usdc ?? (liveDefaults ? '0.01' : '300'),
         po_amount_tolerance_usdc: parsed.invoice.po_amount_tolerance_usdc ?? '5',
         allowed_asset: 'USDC',
         allowed_network: 'ARC-TESTNET',
@@ -852,7 +877,9 @@ export async function runUploadedEvidenceWorkflow(
       }),
     }, adminToken));
   }
-  if (!treasurySnapshot) {
+  if (settlementMode === 'circle-live') {
+    setupRequests.push(refreshLiveTreasurySnapshot(operatorToken));
+  } else if (!treasurySnapshot) {
     setupRequests.push(request('/api/treasury/snapshots', {
       method: 'POST',
       body: JSON.stringify({
@@ -869,7 +896,7 @@ export async function runUploadedEvidenceWorkflow(
         id: vendorId,
         legal_name: parsed.invoice.vendor_legal_name ?? vendorId,
         approved_wallet_address: wallet,
-        autopay_limit: parsed.invoice.vendor_autopay_limit_usdc ?? '300',
+        autopay_limit: parsed.invoice.vendor_autopay_limit_usdc ?? (settlementMode === 'circle-live' ? '0.10' : '300'),
         risk_tier: parsed.invoice.vendor_risk_tier ?? 'low',
         verification_method: 'SIGNED_CHALLENGE',
         verification_reference: parsed.invoice.vendor_verification_reference ?? `uploaded-wallet-proof-${suffix}`,

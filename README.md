@@ -76,6 +76,7 @@ clip to the three source captures, dimensions, duration, and SHA-256.
 - Circle developer-wallet adapter with UUID v4 idempotency, lifecycle polling, and hard spend cap
 - Read-only Circle/Arc preflight verifies chain ID, USDC contract code, wallet state, network, and balance before live mode
 - Explicit testnet-only acceptance runner proves real settlement, Arc reconciliation, durable receipt replay, and audit-chain integrity with a maximum 0.10 USDC transfer
+- Live finance mode refreshes the configured Circle treasury balance server-side, verifies Arc chain and canonical USDC through an independent RPC, and never accepts a browser-supplied balance as live treasury truth
 - Separate mainnet acceptance runner is locked to Arc Mainnet, a 0.01 USDC transfer, a 0.10 USDC adapter ceiling, an exact consent phrase, full preflight, and role-separated decision approval
 - Independent Arc RPC verification of chain ID, successful receipt, and exact USDC transfer event
 - Restart-safe payment intents and settlement receipts with exactly-once retry behavior

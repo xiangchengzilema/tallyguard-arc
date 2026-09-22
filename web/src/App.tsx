@@ -63,6 +63,7 @@ import {
   loadSamplePdfEvidence,
   onboardVendor,
   recordTreasurySnapshot,
+  refreshLiveTreasurySnapshot,
   requestApproval,
   reviewEvidenceFiles,
   resolveApproval,
@@ -894,6 +895,7 @@ function ProductTopbar({
   onSignOut,
   searchValue,
   onSearch,
+  settlementMode = 'simulation',
 }: {
   review?: boolean;
   sectionLabel?: string;
@@ -903,6 +905,7 @@ function ProductTopbar({
   onSignOut?: () => void;
   searchValue?: string;
   onSearch?: (value: string) => void;
+  settlementMode?: BootstrapData['readiness']['settlement_mode'];
 }) {
   return (
     <header className="premium-topbar">
@@ -913,7 +916,7 @@ function ProductTopbar({
         <label className="premium-search"><span>⌕</span><input aria-label="Search payables" placeholder="Search invoices, vendors, or hashes..." value={searchValue} onChange={(event) => onSearch?.(event.target.value)} /><kbd>⌘ K</kbd></label>
       )}
       <div className="premium-operator">
-        {review ? <><span className="environment-pill">SIMULATION</span><i /><span>Arc Testnet</span></> : null}
+        <><span className="environment-pill">{settlementMode === 'circle-live' ? 'LIVE USDC' : 'SIMULATION'}</span><i /><span>Arc Testnet</span></>
         <b>{roleLabel.slice(0, 2).toUpperCase()}</b><span><strong>{roleLabel}</strong><small>{roleHelper}</small></span><span>⌄</span>
         {onSignOut ? <button type="button" className="premium-signout" onClick={onSignOut}>Sign out</button> : null}
       </div>
@@ -921,7 +924,7 @@ function ProductTopbar({
   );
 }
 
-function PremiumSideNav({ active, onNavigate }: { active: WorkspaceView; onNavigate: (view: WorkspaceView) => void }) {
+function PremiumSideNav({ active, onNavigate, settlementMode = 'simulation' }: { active: WorkspaceView; onNavigate: (view: WorkspaceView) => void; settlementMode?: BootstrapData['readiness']['settlement_mode'] }) {
   const groups = [
     {
       label: 'Finance',
@@ -952,7 +955,7 @@ function PremiumSideNav({ active, onNavigate }: { active: WorkspaceView; onNavig
           })}
         </div>)}
       </nav>
-      <div className="premium-sidenav__network"><i /> <span>Arc Testnet<small>SIMULATION</small></span></div>
+      <div className="premium-sidenav__network"><i /> <span>Arc Testnet<small>{settlementMode === 'circle-live' ? 'CIRCLE + RPC LIVE' : 'SIMULATION'}</small></span></div>
       <small>TallyGuard v0.9.2</small>
     </aside>
   );
@@ -971,7 +974,9 @@ function PremiumPayablesPage({
   onRunSchedules,
   onExportLedger,
   onSeedShowcase,
+  onRefreshTreasury,
   onSignOut,
+  settlementMode,
 }: {
   operations: OperationsOverview | null;
   incidents: SettlementIncidentOverview | null;
@@ -985,7 +990,9 @@ function PremiumPayablesPage({
   onRunSchedules: () => void;
   onExportLedger: () => void;
   onSeedShowcase: () => void;
+  onRefreshTreasury: () => void;
   onSignOut: () => void;
+  settlementMode: BootstrapData['readiness']['settlement_mode'];
 }) {
   const [tab, setTab] = useState<'all' | 'ready' | 'attention' | 'scheduled'>('all');
   const [query, setQuery] = useState('');
@@ -1016,11 +1023,11 @@ function PremiumPayablesPage({
   const vendorLabel = (value: string) => value.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
   return (
     <div className="premium-app premium-payables">
-      <ProductTopbar roleLabel="Finance team" roleHelper="Operations backend" onBack={() => onNavigate('finance')} onSignOut={onSignOut} searchValue={query} onSearch={setQuery} />
+      <ProductTopbar roleLabel="Finance team" roleHelper="Operations backend" onBack={() => onNavigate('finance')} onSignOut={onSignOut} searchValue={query} onSearch={setQuery} settlementMode={settlementMode} />
       <div className="premium-payables__layout">
-        <PremiumSideNav active="finance" onNavigate={onNavigate} />
+        <PremiumSideNav active="finance" onNavigate={onNavigate} settlementMode={settlementMode} />
         <main className="premium-payables__main">
-          <header className="payables-title"><div><span className="payables-title__eyebrow">FINANCE BACKEND</span><h1>Payment requests</h1><p>Review requests submitted by users, resolve policy exceptions, authorize settlement, and preserve an audit-ready record.</p></div><div className="payables-title__actions"><button type="button" onClick={onExportLedger} disabled={busy}><Download size={15} /> Export ledger</button><button type="button" onClick={onSeedShowcase} disabled={busy}><PlayFilled size={15} /> Load demo queue</button><button type="button" className="is-primary" onClick={() => onNavigate('approvals')} disabled={busy}><CheckmarkFilled size={15} /> Review approvals</button></div></header>
+          <header className="payables-title"><div><span className="payables-title__eyebrow">FINANCE BACKEND</span><h1>Payment requests</h1><p>Review requests submitted by users, resolve policy exceptions, authorize settlement, and preserve an audit-ready record.</p></div><div className="payables-title__actions"><button type="button" onClick={onExportLedger} disabled={busy}><Download size={15} /> Export ledger</button>{settlementMode === 'circle-live' ? <button type="button" onClick={onRefreshTreasury} disabled={busy}><Renew size={15} /> Refresh Arc balance</button> : <button type="button" onClick={onSeedShowcase} disabled={busy}><PlayFilled size={15} /> Load demo queue</button>}<button type="button" className="is-primary" onClick={() => onNavigate('approvals')} disabled={busy}><CheckmarkFilled size={15} /> Review approvals</button></div></header>
           <section className="payables-metrics" aria-label="Payables overview">
             <article><span className="metric-icon is-blue"><Document size={18} /></span><div><small>Open exposure</small><strong>{formatMoney(operations?.open_exposure_usdc ?? '0')} USDC</strong><span>{operations?.invoice_count ?? 0} durable invoices</span></div></article>
             <article><span className="metric-icon is-gold"><WarningAltFilled size={18} /></span><div><small>Needs attention</small><strong>{formatMoney(operations?.blocked_exposure_usdc ?? '0')} USDC</strong><span>{attention.length} controlled exceptions</span></div></article>
@@ -1047,7 +1054,7 @@ function PremiumPayablesPage({
                 <span className={item.decision_id ? 'evidence-state is-good' : 'evidence-state'}><i />{item.decision_id ? 'Decision sealed' : 'Evidence needed'}</span>
                 <span>{item.decision_action === 'ESCALATE' && item.approval_status === 'APPROVED' ? 'PAY' : item.decision_action ?? '—'}</span><span className={`payable-status is-${(item.approval_status ?? item.decision_action ?? item.status).toLowerCase().replaceAll('_', '-')}`}>{statusLabel(item)}</span>
               </div>
-            )) : <div className="payables-empty"><Document size={24} /><strong>No payment requests are waiting.</strong><span>User submissions appear here after evidence is confirmed. Load a realistic queue to inspect the finance workflow.</span><div><button type="button" onClick={() => onNavigate('approvals')}>Open approvals</button><button type="button" className="is-secondary" onClick={onSeedShowcase} disabled={busy}>Load sample requests</button></div></div>}
+            )) : <div className="payables-empty"><Document size={24} /><strong>No payment requests are waiting.</strong><span>{settlementMode === 'circle-live' ? 'User submissions appear here after evidence is confirmed. The treasury balance is read directly from Circle and verified against Arc.' : 'User submissions appear here after evidence is confirmed. Load a realistic queue to inspect the finance workflow.'}</span><div><button type="button" onClick={() => onNavigate('approvals')}>Open approvals</button>{settlementMode === 'circle-live' ? <button type="button" className="is-secondary" onClick={onRefreshTreasury} disabled={busy}>Refresh Arc balance</button> : <button type="button" className="is-secondary" onClick={onSeedShowcase} disabled={busy}>Load sample requests</button>}</div></div>}
             <footer><span>Showing {filtered.length} of {queue.length} invoices</span><span>{operations?.as_of ? `Snapshot ${new Date(operations.as_of).toLocaleString()}` : 'Waiting for live operations data'}</span></footer>
           </section>
           <section className="payables-batchbar"><div><strong>{selectedBatch.length} settlement-ready invoices selected</strong><span>Each item is revalidated against current policy before transfer.</span></div><button type="button" disabled={busy || selectedBatch.length === 0} onClick={() => onSettleBatch(selectedBatch)}>Settle selected on Arc <ArrowRight size={15} /></button></section>
@@ -1063,9 +1070,9 @@ function PremiumPayablesPage({
             <div className="drawer-request-link"><span>Matching user request</span><strong>{selected.invoice_number}</strong><small>The same request ID, amount, and source hash appear in both portals.</small></div>
             <dl className="invoice-facts"><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{dueLabel(selected.due_date)}</dd></div><div><dt>Decision</dt><dd>{financeDecisionLabel(selected)}</dd></div><div><dt>Settlement</dt><dd>{settlementStatusLabel(selected)}</dd></div></dl>
             <section className="drawer-section"><header><strong>Evidence & decision</strong><span>{selected.decision_id ? 'Replayable' : 'Not evaluated'}</span></header><div className="drawer-evidence"><span>▤</span><strong>Source document</strong><small>{shorten(selected.source_document_hash, 14, 10)}</small><i>✓</i></div><div className="drawer-evidence"><span>♢</span><strong>Policy action</strong><small>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting evaluation'}</small><i>{selected.decision_id ? '✓' : '•'}</i></div></section>
-            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;SIMULATION</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
+            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;{settlementMode === 'circle-live' ? 'LIVE' : 'SIMULATION'}</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? settlementMode === 'circle-live' ? 'Circle transfer confirmed by independent Arc RPC proof' : 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
             <button type="button" className="drawer-primary" disabled={busy || !selected.decision_id} onClick={() => selected.decision_id && onOpenReview(selected)}>{busy ? 'Loading live record…' : selected.decision_id ? 'Review evidence & controls' : 'Waiting for requester evidence'}</button>
-            <small className="simulation-note">Public judge workspace is forced simulation. The same workflow supports configured Circle/Arc adapters.</small>
+            <small className="simulation-note">{settlementMode === 'circle-live' ? 'Live mode: final authorization submits USDC through Circle and accepts the result only after independent Arc RPC verification.' : 'Public judge workspace is forced simulation. The same workflow supports configured Circle/Arc adapters.'}</small>
             <section className="audit-mini"><header><strong>Traceability</strong><button type="button" onClick={() => onNavigate('audit')}>Open audit ledger →</button></header><ol><li><i />Invoice persisted<small>Tenant-scoped durable record</small><time>{new Date(selected.created_at).toLocaleString()}</time></li><li><i />Latest state recorded<small>{statusLabel(selected)}</small><time>{new Date(selected.updated_at).toLocaleString()}</time></li>{selected.decision_id ? <li><i />Decision snapshot sealed<small>{shorten(selected.decision_id, 12, 8)}</small><time>Replay available</time></li> : null}</ol></section>
           </> : <div className="payable-drawer__empty"><Document size={30} /><strong>Select a payable</strong><span>The drawer will show its persisted evidence, policy decision, treasury impact, and audit path.</span></div>}
         </aside>
@@ -1212,6 +1219,7 @@ function InvoiceReviewPage({
   onVerifyReplay,
   onSimulatePolicy,
   onSignOut,
+  settlementMode,
 }: {
   run: RunResult | null;
   approval: Approval | null;
@@ -1234,6 +1242,7 @@ function InvoiceReviewPage({
   onVerifyReplay: () => void;
   onSimulatePolicy: (changes: Record<string, string | number | boolean | null>) => void;
   onSignOut: () => void;
+  settlementMode: BootstrapData['readiness']['settlement_mode'];
 }) {
   const reviewWorkspaceRef = useRef<HTMLDivElement>(null);
   const settlementEligible = run?.decision.final_action === 'PAY' || (run?.decision.final_action === 'ESCALATE' && approval?.status === 'APPROVED');
@@ -1271,7 +1280,7 @@ function InvoiceReviewPage({
             : { tone: 'pending', title: 'Awaiting evaluation', detail: 'No policy decision or payment exists yet' };
   return (
     <div className="premium-app premium-review">
-      <ProductTopbar review roleLabel="Finance team" roleHelper="Evidence review" onBack={onBack} onSignOut={onSignOut} />
+      <ProductTopbar review roleLabel="Finance team" roleHelper="Evidence review" onBack={onBack} onSignOut={onSignOut} settlementMode={settlementMode} />
       <div className="review-layout">
         <aside className="review-nav"><nav>{([['Payment requests',Document,'finance'],['Approval queue',CheckmarkFilled,'approvals'],['Evidence lab',ListChecked,'evidence'],['Policies',DocumentSecurity,'policies'],['Agent runs',Rule,'automation'],['Audit',Locked,'audit']] as const).map(([name, Icon, view], index) => <button type="button" className={index === 0 ? 'is-active' : ''} key={name} onClick={() => onNavigate(view)}><Icon size={17} /><span>{name}</span></button>)}</nav><div><small>Finance backend<br />controller access</small><span><i />Testnet<br />Connected</span></div></aside>
         <main className="review-main">
@@ -1329,6 +1338,7 @@ function ApprovalPortalPage({
   onOpenReview,
   onResolve,
   onSignOut,
+  settlementMode,
 }: {
   governance: GovernanceOverview;
   lastResolution: ApprovalResolutionSnapshot | null;
@@ -1337,6 +1347,7 @@ function ApprovalPortalPage({
   onOpenReview: (item: GovernanceOverview['pendingApprovals'][number]) => void;
   onResolve: (item: GovernanceOverview['pendingApprovals'][number], approve: boolean, note: string) => void;
   onSignOut: () => void;
+  settlementMode: BootstrapData['readiness']['settlement_mode'];
 }) {
   const defaultApprovalNote = 'Evidence, vendor identity, amount, and treasury impact reviewed.';
   const [selectedId, setSelectedId] = useState<string | null>(governance.pendingApprovals[0]?.approval.id ?? null);
@@ -1366,9 +1377,9 @@ function ApprovalPortalPage({
   };
   return (
     <div className="premium-app premium-approvals">
-      <ProductTopbar sectionLabel="Approval queue" roleLabel="Finance approver" roleHelper="Independent authority" onBack={() => onNavigate('finance')} onSignOut={onSignOut} />
+      <ProductTopbar sectionLabel="Approval queue" roleLabel="Finance approver" roleHelper="Independent authority" onBack={() => onNavigate('finance')} onSignOut={onSignOut} settlementMode={settlementMode} />
       <div className="approval-portal__layout">
-        <PremiumSideNav active="approvals" onNavigate={onNavigate} />
+        <PremiumSideNav active="approvals" onNavigate={onNavigate} settlementMode={settlementMode} />
         <main className="approval-portal__main">
           <header className="approval-portal__title"><div><span>FINANCE BACKEND · INDEPENDENT AUTHORITY</span><h1>Approval queue</h1><p>Review sealed evidence and policy exceptions. Requesters cannot approve, reject, or alter this decision packet.</p></div><button type="button" onClick={() => onNavigate('finance')}>Back to payment requests <ArrowRight size={15} /></button></header>
           <section className="role-boundary"><Locked size={19} /><div><strong>Separation of duties is active</strong><span>You are acting as an approver. Submitted evidence is read-only, and every resolution requires a reason.</span></div><em>APPROVER SESSION</em></section>
@@ -3369,6 +3380,7 @@ function App() {
         data.sessions.operator,
         files,
         overrides,
+        data.readiness.settlement_mode,
       );
       setRun(result);
       setHistory((items) => [result, ...items].slice(0, 12));
@@ -3427,6 +3439,16 @@ function App() {
     if (!data) return;
     void act('Recording an operator-attested treasury snapshot', async () => {
       setTreasurySnapshot(await recordTreasurySnapshot(availableUsdc, spentTodayUsdc, sourceReference, data.sessions.operator));
+      setGovernance(await fetchGovernanceOverview(data.sessions.approver));
+      setOperations(await fetchOperationsOverview(data.sessions.auditor));
+      await refreshAuditLedger();
+    });
+  }, [act, data, refreshAuditLedger]);
+
+  const handleRefreshLiveTreasury = useCallback(() => {
+    if (!data) return;
+    void act('Reading the Circle treasury and verifying Arc Testnet', async () => {
+      setTreasurySnapshot(await refreshLiveTreasurySnapshot(data.sessions.operator));
       setGovernance(await fetchGovernanceOverview(data.sessions.approver));
       setOperations(await fetchOperationsOverview(data.sessions.auditor));
       await refreshAuditLedger();
@@ -3740,7 +3762,9 @@ function App() {
             onRunSchedules={handleRunSchedules}
             onExportLedger={handleExportLedger}
             onSeedShowcase={handleSeedAgentShowcase}
+            onRefreshTreasury={handleRefreshLiveTreasury}
             onSignOut={signOutPortal}
+            settlementMode={data?.readiness.settlement_mode ?? 'simulation'}
           />
         ) : activeView === 'review' ? (
           <InvoiceReviewPage
@@ -3765,6 +3789,7 @@ function App() {
             onVerifyReplay={handleVerifyReplay}
             onSimulatePolicy={handleSimulatePolicy}
             onSignOut={signOutPortal}
+            settlementMode={data?.readiness.settlement_mode ?? 'simulation'}
           />
         ) : activeView === 'approvals' && governance ? (
           <ApprovalPortalPage
@@ -3775,6 +3800,7 @@ function App() {
             onOpenReview={handleOpenApprovalItem}
             onResolve={handleResolveInboxApproval}
             onSignOut={signOutPortal}
+            settlementMode={data?.readiness.settlement_mode ?? 'simulation'}
           />
         ) : accessContext ? (
           <PremiumWorkspaceFrame active="policies" index="Secure access" title="Connect the finance team" description="Four role-separated sessions unlock one isolated operating workspace without putting credentials into the interface." meta="Private operator mode" onNavigate={navigateToView} onSignOut={signOutPortal}>

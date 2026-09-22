@@ -36,16 +36,16 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 
 ## Real Arc Testnet acceptance
 
-- [ ] Store Circle credentials locally in environment variables. Never paste
+- [x] Store Circle credentials locally in environment variables. Never paste
   them into chat or commit them.
-- [ ] Create the isolated treasury and recipient wallet pair with the guarded
+- [x] Create the isolated treasury and recipient wallet pair with the guarded
   setup command.
-- [ ] Fund only the dedicated Testnet treasury wallet.
-- [ ] Run read-only preflight and confirm wallet, network, balance, RPC, and USDC
+- [x] Fund only the dedicated Testnet treasury wallet.
+- [x] Run read-only preflight and confirm wallet, network, balance, RPC, and USDC
   contract checks.
-- [ ] Execute one transfer of at most 0.10 Testnet USDC with the exact consent
+- [x] Execute one transfer of at most 0.10 Testnet USDC with the exact consent
   phrase.
-- [ ] Confirm the JSON and Markdown acceptance artifacts agree.
+- [x] Confirm the JSON and Markdown acceptance artifacts agree.
 - [ ] Run the standalone packet verifier with Arc RPC enabled.
 - [ ] Open the Explorer URL in a logged-out browser.
 

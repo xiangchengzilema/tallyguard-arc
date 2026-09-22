@@ -1117,6 +1117,95 @@ def create_app(
         )
         return jsonify({"treasury": _treasury_json(stored)}), 201
 
+    @app.post("/api/treasury/snapshots/refresh")
+    @require(Permission.TREASURY_WRITE)
+    def refresh_live_treasury_snapshot():
+        wallet_inspector = getattr(
+            settlement_adapter, "inspect_treasury_wallet", None
+        )
+        network_inspector = getattr(
+            settlement_adapter, "inspect_arc_network", None
+        )
+        if not callable(wallet_inspector) or not callable(network_inspector):
+            raise SettlementDenied(
+                "A live Circle/Arc adapter is required to refresh the treasury balance."
+            )
+
+        wallet = wallet_inspector()
+        network = network_inspector()
+        if wallet.state.strip().upper() != "LIVE":
+            raise SettlementDenied("The configured Circle treasury wallet is not LIVE.")
+        if wallet.blockchain.strip().upper() != network_config.circle_blockchain:
+            raise SettlementDenied(
+                "The Circle treasury wallet is configured for a different network."
+            )
+        if wallet.usdc_balance is None:
+            raise SettlementDenied(
+                "Circle did not return the canonical Arc USDC treasury balance."
+            )
+        if network.chain_id != network_config.chain_id:
+            raise SettlementDenied("Arc RPC returned an unexpected chain ID.")
+        if not network.usdc_contract_has_code:
+            raise SettlementDenied("Canonical Arc USDC is not deployed on the selected RPC.")
+
+        today = current_date()
+        spent_today = sum(
+            (
+                row.amount_usdc
+                for row in repository.accounting_ledger(
+                    organization_id=g.principal.organization_id
+                )
+                if row.confirmed_at.date() == today
+            ),
+            Decimal("0"),
+        )
+        wallet_fingerprint = sha256(wallet.address.lower().encode("utf-8")).hexdigest()[:12]
+        source_reference = (
+            f"circle-live:{wallet_fingerprint}:arc-block-{network.latest_block}"
+        )
+        snapshot = TreasurySnapshot(
+            organization_id=g.principal.organization_id,
+            available_usdc=wallet.usdc_balance,
+            spent_today_usdc=spent_today,
+        )
+        stored = repository.record_treasury_snapshot(
+            snapshot,
+            source_reference=source_reference,
+            recorded_by_user_id=g.principal.user_id,
+        )
+        repository.append(
+            aggregate_type="treasury_snapshot",
+            aggregate_id=str(stored.sequence),
+            event_type="TREASURY_SNAPSHOT_REFRESHED_FROM_CIRCLE",
+            payload={
+                "organization_id": g.principal.organization_id,
+                "sequence": stored.sequence,
+                "available_usdc": format(snapshot.available_usdc, "f"),
+                "spent_today_usdc": format(snapshot.spent_today_usdc, "f"),
+                "source_reference": source_reference,
+                "wallet_fingerprint": wallet_fingerprint,
+                "network": network_config.name.value,
+                "chain_id": network.chain_id,
+                "latest_block": network.latest_block,
+                "recorded_by_user_id": g.principal.user_id,
+            },
+        )
+        return jsonify(
+            {
+                "treasury": _treasury_json(stored),
+                "verification": {
+                    "wallet_fingerprint": wallet_fingerprint,
+                    "wallet_address_redacted": f"{wallet.address[:8]}…{wallet.address[-6:]}",
+                    "wallet_state": wallet.state,
+                    "network": network_config.name.value,
+                    "chain_id": network.chain_id,
+                    "latest_block": network.latest_block,
+                    "usdc_contract": network_config.usdc_contract_address,
+                    "source": "Circle Wallets + independent Arc RPC",
+                },
+            }
+        ), 201
+
     @app.get("/api/treasury/summary")
     @require(Permission.INVOICE_READ)
     def get_treasury_summary():

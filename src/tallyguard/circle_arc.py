@@ -28,6 +28,7 @@ from .settlement import (
 
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+BALANCE_OF_SELECTOR = "0x70a08231"
 
 
 class CircleTransactionState(StrEnum):
@@ -136,6 +137,24 @@ class ArcRpcClient:
             latest_block=latest_block,
             usdc_contract_has_code=has_code,
         )
+
+    def read_usdc_balance(self, address: str) -> Decimal:
+        """Read one canonical Arc USDC balance without signing or mutating state."""
+
+        normalized = _require_evm_address(address, field="wallet address")
+        calldata = BALANCE_OF_SELECTOR + normalized[2:].rjust(64, "0")
+        result = self._transport(
+            "eth_call",
+            [
+                {
+                    "to": self.config.usdc_contract_address,
+                    "data": calldata,
+                },
+                "latest",
+            ],
+        )
+        atomic = _hex_int(result, field="USDC balance")
+        return Decimal(atomic) / Decimal(1_000_000)
 
     def confirm_usdc_transfer(
         self,
@@ -442,6 +461,21 @@ class CircleArcAdapter:
             network=intent.network,
             block_number=proof.block_number,
         )
+
+    def inspect_treasury_wallet(self) -> CircleWalletSnapshot:
+        """Read the configured Circle treasury wallet without moving funds."""
+
+        inspector = getattr(self.circle, "inspect_wallet", None)
+        if not callable(inspector):
+            raise CircleConfigurationError(
+                "The configured Circle gateway cannot inspect the treasury wallet."
+            )
+        return inspector()
+
+    def inspect_arc_network(self) -> ArcNetworkStatus:
+        """Verify the Arc RPC and canonical USDC contract used for settlement."""
+
+        return self.arc_rpc.inspect_network()
 
     def _validate_circle_result(self, intent: PaymentIntent, result: CircleTransaction) -> None:
         if result.blockchain != self.config.circle_blockchain:
