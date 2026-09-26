@@ -61,7 +61,9 @@ def _request(
         method=method,
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        # A public free-tier origin may need to wake before the proxy replies.
+        timeout_seconds = 75 if base_url.startswith("https://") else 10
+        with urlopen(request, timeout=timeout_seconds) as response:
             return response.status, dict(response.headers.items()), response.read()
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -70,6 +72,8 @@ def _request(
         ) from exc
     except URLError as exc:
         raise DeploymentSmokeError(f"{method} {path} failed: {exc.reason}") from exc
+    except TimeoutError as exc:
+        raise DeploymentSmokeError(f"{method} {path} timed out waiting for a response.") from exc
 
 
 def _json_request(

@@ -18,15 +18,15 @@ in Beijing. Finish the external steps at least 24 hours earlier.
   document is tracked.
 - [x] Confirm README links resolve to tracked files available from a clean
   checkout; the release audit enforces this.
-- [ ] Create the public GitHub repository only after explicit publication
-  approval, then push the full activity-window history.
-- [ ] Verify the repository from a logged-out browser.
+- [x] Create the public GitHub repository after explicit publication approval,
+  then push the full activity-window history.
+- [x] Verify the repository without browser credentials (HTTP 200 and README visible).
 
 ## Live judge console
 
-- [ ] Deploy the checked-in `render.yaml` in public-safe simulation mode.
-- [ ] Confirm `/api/health` returns `ok`.
-- [ ] Confirm `/api/readiness` reports simulation, disabled funds movement, and
+- [x] Deploy the checked-in `render.yaml` in public-safe simulation mode.
+- [x] Confirm `/api/health` returns `ok`.
+- [x] Confirm `/api/readiness` reports simulation, disabled funds movement, and
   disabled Mainnet.
 - [ ] Complete the mixed autonomous queue from a clean private browser.
 - [ ] Complete clean-payment, wallet-change, and provider-recovery scenarios.
@@ -107,9 +107,10 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Select the AP/AR Automation Agent track and mention the secondary
   Compliance Intelligence fit in the description.
 - [ ] Recheck repository, live product, video, deck, Explorer, and pilot links.
-- [ ] Run `tallyguard-deployment-smoke --base-url <LIVE_URL> --output
-  artifacts/remote-deployment-smoke.json` from outside the host and confirm all
-  eight public workflow checks pass while funds movement and mainnet stay disabled.
+- [x] Run `tallyguard-deployment-smoke --base-url <LIVE_URL> --output
+  artifacts/remote-deployment-smoke-final.json` from outside the host and
+  confirm all eight public workflow checks pass while funds movement and
+  mainnet stay disabled. See `docs/reports/REMOTE_DEPLOYMENT_SMOKE_20260926.md`.
 - [ ] Save screenshots of the completed form before submitting.
 - [ ] Submit before the internal deadline, then reopen the confirmation page or
   email and preserve proof of submission.

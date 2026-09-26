@@ -127,8 +127,8 @@ unless payment and permission to make that claim are separately documented.
 
 ## Repository, product, and media
 
-- Public repository: `PENDING_EXTERNAL`
-- Live judge console: `PENDING_EXTERNAL`
+- Public repository: https://github.com/xiangchengzilema/tallyguard-arc
+- Live judge console: https://tallyguard-arc.onrender.com
 - Demo video under three minutes: `PENDING_EXTERNAL`
 - Pitch deck: `submission/TallyGuard_Tameion_Pitch_v9.pptx`
 - Arc Testnet transaction: `0xe8c6b06dbafbd55a7f9a5a9fbb276fe5b07ddf27be3ef84cc26281dcdf783adf`

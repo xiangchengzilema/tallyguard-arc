@@ -2,6 +2,10 @@
 
 **Proof-before-payment accounts payable for AI-operated businesses on Arc.**
 
+**[Open the live judge console](https://tallyguard-arc.onrender.com)** · [Read the public deployment check](docs/reports/REMOTE_DEPLOYMENT_SMOKE_20260926.md)
+
+The public site is a role-separated, isolated judge playground. Its payment receipts use the Arc simulator and do not move funds; real Arc Testnet transfer evidence is documented separately.
+
 TallyGuard is an evidence-bound accounts-payable agent. It evaluates an invoice against its purchase order, delivery evidence, vendor identity, treasury budget, and a deterministic policy before it can schedule or execute a USDC payment on Arc.
 
 The AI may interpret documents and recommend an action. It cannot override the policy engine or settlement controls.
