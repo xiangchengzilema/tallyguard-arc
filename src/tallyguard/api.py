@@ -776,7 +776,9 @@ def create_app(
     def public_arc_activity():
         """Publish only redacted progress and proven Testnet transaction links."""
 
-        root = Path(__file__).resolve().parents[2]
+        # Installed wheels resolve __file__ in site-packages; the deployed
+        # report is copied under the service working directory instead.
+        root = Path.cwd()
         base = root / "artifacts" / "testnet-campaign"
         plan_path = Path(os.getenv(
             "TALLYGUARD_PUBLIC_ACTIVITY_PLAN",

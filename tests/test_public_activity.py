@@ -143,6 +143,26 @@ def test_published_snapshot_fallback_is_redacted_and_read_only(tmp_path, monkeyp
         app.extensions["tallyguard_repository"].close()
 
 
+def test_public_route_uses_service_working_directory_for_checked_in_snapshot(tmp_path, monkeypatch):
+    _plan, _report, plan_path, report_path = _sources(tmp_path)
+    published = tmp_path / "docs" / "reports" / "arc-testnet-public-activity.json"
+    published.parent.mkdir(parents=True)
+    published.write_text(
+        json.dumps(public_activity_snapshot(plan_path=plan_path, report_path=report_path)),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TALLYGUARD_PUBLIC_ACTIVITY_SNAPSHOT", raising=False)
+    app = create_app(database_path=tmp_path / "web.sqlite3", testing=True)
+    try:
+        with app.test_client() as client:
+            response = client.get("/api/public/arc-activity")
+            assert response.status_code == 200
+            assert response.get_json()["confirmed_payments"] == 1
+    finally:
+        app.extensions["tallyguard_repository"].close()
+
+
 def test_published_snapshot_rejects_extra_fields_and_forged_receipts(tmp_path):
     _plan, _report, plan_path, report_path = _sources(tmp_path)
     payload = public_activity_snapshot(plan_path=plan_path, report_path=report_path)

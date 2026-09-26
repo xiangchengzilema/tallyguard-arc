@@ -14,6 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TALLYGUARD_FRONTEND_DIST=/app/web/dist \
     TALLYGUARD_RELIABILITY_REPORT=/app/docs/reports/load-test-10000.json \
     TALLYGUARD_AGENT_RELIABILITY_REPORT=/app/docs/reports/agent-run-load-50.json \
+    TALLYGUARD_PUBLIC_ACTIVITY_SNAPSHOT=/app/docs/reports/arc-testnet-public-activity.json \
     TALLYGUARD_DATABASE_PATH=/tmp/tallyguard.sqlite3 \
     TALLYGUARD_MODE=simulation \
     TALLYGUARD_ARC_NETWORK=ARC-TESTNET \
