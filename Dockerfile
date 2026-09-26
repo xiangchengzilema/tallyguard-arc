@@ -33,6 +33,7 @@ RUN pip install .
 COPY --from=web-build /build/web/dist ./web/dist
 COPY docs/reports/load-test-10000.json ./docs/reports/load-test-10000.json
 COPY docs/reports/agent-run-load-50.json ./docs/reports/agent-run-load-50.json
+COPY docs/reports/arc-testnet-public-activity.json ./docs/reports/arc-testnet-public-activity.json
 RUN chown -R tallyguard:tallyguard /app
 
 USER tallyguard

@@ -7,7 +7,7 @@ import random
 import pytest
 
 from tallyguard.api import create_app
-from tallyguard.public_activity import ActivityFeedError, public_activity_snapshot
+from tallyguard.public_activity import ActivityFeedError, public_activity_snapshot, published_activity_snapshot
 from tallyguard.testnet_campaign import make_plan
 
 
@@ -103,6 +103,7 @@ def test_public_route_is_read_only_and_unavailable_without_sources(tmp_path, mon
     _plan, _report, plan_path, report_path = _sources(tmp_path)
     monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_PLAN", str(plan_path))
     monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_REPORT", str(report_path))
+    monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_SNAPSHOT", str(tmp_path / "missing-snapshot.json"))
     app = create_app(database_path=tmp_path / "web.sqlite3", testing=True)
     try:
         with app.test_client() as client:
@@ -118,3 +119,43 @@ def test_public_route_is_read_only_and_unavailable_without_sources(tmp_path, mon
             assert missing.get_json() == {"available": False}
     finally:
         app.extensions["tallyguard_repository"].close()
+
+
+def test_published_snapshot_fallback_is_redacted_and_read_only(tmp_path, monkeypatch):
+    plan, _report, plan_path, report_path = _sources(tmp_path)
+    snapshot_path = tmp_path / "published.json"
+    snapshot_path.write_text(
+        json.dumps(public_activity_snapshot(plan_path=plan_path, report_path=report_path)),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_PLAN", str(tmp_path / "private-plan-missing.json"))
+    monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_REPORT", str(tmp_path / "private-report-missing.json"))
+    monkeypatch.setenv("TALLYGUARD_PUBLIC_ACTIVITY_SNAPSHOT", str(snapshot_path))
+    app = create_app(database_path=tmp_path / "web.sqlite3", testing=True)
+    try:
+        with app.test_client() as client:
+            response = client.get("/api/public/arc-activity")
+            assert response.status_code == 200
+            assert response.get_json()["confirmed_payments"] == 1
+            assert plan["treasury"] not in response.get_data(as_text=True)
+            assert all(job["recipient"] not in response.get_data(as_text=True) for job in plan["jobs"])
+    finally:
+        app.extensions["tallyguard_repository"].close()
+
+
+def test_published_snapshot_rejects_extra_fields_and_forged_receipts(tmp_path):
+    _plan, _report, plan_path, report_path = _sources(tmp_path)
+    payload = public_activity_snapshot(plan_path=plan_path, report_path=report_path)
+    snapshot_path = tmp_path / "published.json"
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+    assert published_activity_snapshot(snapshot_path)["confirmed_payments"] == 1
+    payload["entries"][0]["recipient"] = "private-wallet"
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ActivityFeedError, match="unexpected entry"):
+        published_activity_snapshot(snapshot_path)
+    del payload["entries"][0]["recipient"]
+    paid = next(entry for entry in payload["entries"] if entry["status"] == "PAID")
+    paid["explorer_url"] = "https://example.com/fake"
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ActivityFeedError, match="exact Arc receipt"):
+        published_activity_snapshot(snapshot_path)

@@ -84,6 +84,8 @@
 .review-outcome.is-approved > span, .review-outcome.is-paid > span { background: #047557; }
 .review-outcome.is-review, .review-outcome.is-pending { border-color: #d5cdf1; background: #faf9ff; }
 .review-outcome.is-review > span, .review-outcome.is-pending > span { background: #6e45f0; }
+.review-outcome.is-scheduled { border-color: #e8d7ad; background: #fffbf1; }
+.review-outcome.is-scheduled > span { background: #ad7e21; }
 .review-outcome.is-rejected, .review-outcome.is-blocked { border-color: #e4c5c1; background: #fcf5f4; }
 .review-outcome.is-rejected > span, .review-outcome.is-blocked > span { background: #a64038; }
 .decision-checks__summary { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid #e1e6e3; }
@@ -3068,4 +3070,19 @@ button, input, select, textarea { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .arc-activity__row, .arc-activity-preview__header button { transition: none; }
+}
+
+/* Keep the finance table readable in a normal, non-maximized desktop window. */
+@media (min-width: 1181px) and (max-width: 1360px) {
+  /* The annotated invoice is too narrow here for truthful cross-panel arrows. */
+  .evidence-connectors { display: none; }
+  .review-key-controls article::before { display: none; }
+  .premium-payables__layout { grid-template-columns: 144px minmax(0, 1fr) 300px; }
+  .premium-payables__main { padding-right: 18px; padding-left: 18px; }
+  .payables-title { align-items: flex-start; flex-direction: column; gap: 1.15rem; }
+  .payables-title p { max-width: 68ch; }
+  .payables-title__actions { flex-wrap: wrap; }
+  .payables-tabs { gap: 1.15rem; overflow-x: auto; }
+  .payables-tabs button { flex: none; white-space: nowrap; }
+  .payables-metrics article { gap: 8px; padding-right: 9px; padding-left: 9px; }
 }

@@ -82,7 +82,7 @@ from .persistence import (
 )
 from .policies import PolicyRepositoryError, StoredPolicy
 from .policy import DecisionAction, Policy
-from .public_activity import ActivityFeedError, public_activity_snapshot
+from .public_activity import ActivityFeedError, public_activity_snapshot, published_activity_snapshot
 from .settlement import (
     SettlementAdapter,
     SettlementAttempt,
@@ -786,8 +786,15 @@ def create_app(
             "TALLYGUARD_PUBLIC_ACTIVITY_REPORT",
             str(base / "agent50-20260925-live-report.json"),
         ))
+        snapshot_path = Path(os.getenv(
+            "TALLYGUARD_PUBLIC_ACTIVITY_SNAPSHOT",
+            str(root / "docs" / "reports" / "arc-testnet-public-activity.json"),
+        ))
         try:
-            payload = public_activity_snapshot(plan_path=plan_path, report_path=report_path)
+            if plan_path.is_file() and report_path.is_file():
+                payload = public_activity_snapshot(plan_path=plan_path, report_path=report_path)
+            else:
+                payload = published_activity_snapshot(snapshot_path)
         except (OSError, ValueError, TypeError, KeyError, ActivityFeedError):
             payload = {"available": False}
         response = jsonify(payload)

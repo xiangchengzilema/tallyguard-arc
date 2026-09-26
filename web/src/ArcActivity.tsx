@@ -48,25 +48,30 @@ function ActivityMetrics({ activity }: { activity: ArcActivity }) {
 
 export function ArcActivityPreview({ activity, error, onOpen }: Pick<ActivityProps, 'activity' | 'error' | 'onOpen'>) {
   const available = activity?.available ? activity : null;
-  const recent = available?.entries.filter((entry) => entry.status !== 'SCHEDULED').slice(0, 3) ?? [];
+  const processed = available?.entries.filter((entry) => entry.status !== 'SCHEDULED') ?? [];
+  const latestPaid = processed.find((entry) => entry.status === 'PAID');
+  const recent = processed.slice(0, 2);
+  const previewEntries = latestPaid && !recent.some((entry) => entry.id === latestPaid.id)
+    ? [...recent, latestPaid]
+    : processed.slice(0, 3);
   return (
     <section className="arc-activity-preview" aria-labelledby="arc-activity-preview-title">
       <div className="arc-activity-preview__header">
-        <div><span className="arc-activity__eyebrow"><i /> ARC TESTNET · LIVE ACTIVITY</span><h2 id="arc-activity-preview-title">Every decision leaves a trail.</h2><p>Follow each request from evidence and policy review to an independently confirmed USDC receipt.</p></div>
+        <div><span className="arc-activity__eyebrow"><i /> ARC TESTNET · VERIFIED ACTIVITY</span><h2 id="arc-activity-preview-title">Every decision leaves a trail.</h2><p>Follow each request from evidence and policy review to an independently confirmed USDC receipt.</p></div>
         <button type="button" onClick={onOpen}>Explore activity <span aria-hidden="true">↗</span></button>
       </div>
       {available ? (
         <>
           <ActivityMetrics activity={available} />
           <div className="arc-activity-preview__recent">
-            {recent.length > 0 ? recent.map((entry) => (
+            {previewEntries.length > 0 ? previewEntries.map((entry) => (
               <div key={entry.invoice_number}>
                 <span>{entry.invoice_number}</span><small>{ROUTE[entry.route]}</small><ActivityPill status={entry.status} />
                 {entry.explorer_url ? <a href={entry.explorer_url} target="_blank" rel="noreferrer">Arc proof ↗</a> : null}
               </div>
             )) : <p>Scheduled requests will appear here as they enter the workflow.</p>}
           </div>
-          <div className="arc-activity-preview__foot"><span>Confirmed principal <strong>{available.confirmed_principal_usdc} USDC</strong></span><span>Updated {formatDate(available.updated_at)}</span></div>
+          <div className="arc-activity-preview__foot"><span>Confirmed principal <strong>{available.confirmed_principal_usdc} USDC</strong></span><span>Verified snapshot {formatDate(available.updated_at)}</span></div>
         </>
       ) : <div className="arc-activity-preview__unavailable">{error ?? 'Connecting to the Arc activity feed…'}</div>}
     </section>
@@ -108,7 +113,7 @@ export function ArcActivityPage({ activity, error, onBack, onRefresh }: Pick<Act
   const available = activity?.available ? activity : null;
   const entries = available?.entries ?? [];
   const visible = filter === 'ALL' ? entries : entries.filter((entry) => entry.status === filter);
-  const latest = visible.find((entry) => entry.status !== 'SCHEDULED') ?? visible[0];
+  const latest = visible.find((entry) => entry.status === 'PAID') ?? visible.find((entry) => entry.status !== 'SCHEDULED') ?? visible[0];
   const selected = visible.find((entry) => entry.invoice_number === selectedId) ?? latest;
   const filters: { value: Filter; label: string; count: number }[] = available ? [
     { value: 'ALL', label: 'All', count: available.planned },
@@ -121,7 +126,7 @@ export function ArcActivityPage({ activity, error, onBack, onRefresh }: Pick<Act
   return (
     <main className="arc-activity">
       <div className="arc-activity__top"><button type="button" onClick={onBack}>← Product overview</button><span><i /> Arc Testnet</span></div>
-      <header className="arc-activity__hero"><div><span className="arc-activity__eyebrow">PROGRAMMABLE ACCOUNTS PAYABLE / NETWORK ACTIVITY</span><h1>From invoice to proof.<br /><em>In public view.</em></h1><p>See how requests move through evidence checks, payment authority, and USDC settlement. Confirmed transfers link to their exact Arc receipt.</p></div><div className="arc-activity__hero-aside"><span>CONFIRMED PRINCIPAL</span><strong>{available?.confirmed_principal_usdc ?? '—'} <small>USDC</small></strong><p>{available ? `Last updated ${formatDate(available.updated_at)}` : 'Awaiting feed'}</p><button type="button" onClick={onRefresh}>Refresh data ↻</button></div></header>
+      <header className="arc-activity__hero"><div><span className="arc-activity__eyebrow">PROGRAMMABLE ACCOUNTS PAYABLE / NETWORK ACTIVITY</span><h1>From invoice to proof.<br /><em>In public view.</em></h1><p>See how requests move through evidence checks, payment authority, and USDC settlement. Confirmed transfers link to their exact Arc receipt.</p></div><div className="arc-activity__hero-aside"><span>CONFIRMED PRINCIPAL</span><strong>{available?.confirmed_principal_usdc ?? '—'} <small>USDC</small></strong><p>{available ? `Verified snapshot ${formatDate(available.updated_at)}` : 'Awaiting feed'}</p><button type="button" onClick={onRefresh}>Check for update ↻</button></div></header>
       {available ? (
         <>
           <ActivityMetrics activity={available} />

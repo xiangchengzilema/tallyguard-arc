@@ -1301,6 +1301,8 @@ function InvoiceReviewPage({
         ? { tone: 'review', title: 'Waiting for independent approval', detail: `${formatMoney(invoice?.amount ?? '0')} USDC requested · no funds sent` }
         : settlementEligible
           ? { tone: 'approved', title: 'Approved for payment', detail: `${formatMoney(invoice?.amount ?? '0')} USDC authorized · transfer not sent yet` }
+          : decision?.final_action === 'SCHEDULE'
+            ? { tone: 'scheduled', title: 'Scheduled — no funds sent', detail: 'Settlement remains locked until the policy-controlled payment window.' }
           : decision
             ? { tone: 'blocked', title: ACTION_LABEL[decision.final_action], detail: `${formatMoney(invoice?.amount ?? '0')} USDC requested · settlement is locked` }
             : { tone: 'pending', title: 'Awaiting evaluation', detail: 'No policy decision or payment exists yet' };
@@ -1324,7 +1326,7 @@ function InvoiceReviewPage({
             <ReviewConnectors rootRef={reviewWorkspaceRef} revision={`${decision?.id ?? 'empty'}:${reviewRules.length}`} />
             <aside className="review-decision-panel">
               <header><h2>Evidence and decision</h2><div><span>Policy&nbsp;&nbsp;<strong>{decision?.policy_version ?? 'Not evaluated'}</strong></span><small>Arc Testnet&nbsp; • &nbsp;{run?.correlation_id ? shorten(run.correlation_id, 10, 6) : 'Awaiting run'}</small></div></header>
-              <section className={`review-outcome is-${decisionOutcome.tone}`}><span>{decisionOutcome.tone === 'rejected' || decisionOutcome.tone === 'blocked' ? '×' : decisionOutcome.tone === 'review' || decisionOutcome.tone === 'pending' ? '!' : '✓'}</span><div><strong>{decisionOutcome.title}</strong><small>{decisionOutcome.detail}</small></div></section>
+              <section className={`review-outcome is-${decisionOutcome.tone}`}><span>{decisionOutcome.tone === 'rejected' || decisionOutcome.tone === 'blocked' ? '×' : decisionOutcome.tone === 'review' || decisionOutcome.tone === 'pending' || decisionOutcome.tone === 'scheduled' ? '!' : '✓'}</span><div><strong>{decisionOutcome.title}</strong><small>{decisionOutcome.detail}</small></div></section>
               {decision ? <>
                 <div className="decision-checks__summary"><strong>{decision.rules.filter((rule) => rule.disposition === 'PASS').length} of {decision.rules.length} controls passed</strong><span>Four decision groups show what the invoice evidence was checked against.</span></div>
                 <section className="review-key-controls" aria-label="Key decision groups">

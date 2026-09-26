@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+import argparse
 import json
 from pathlib import Path
 import re
@@ -22,6 +23,15 @@ _STATUSES = {"PAID", "DECLINED", "HELD", "AWAITING_REVIEW"}
 _SCENARIOS = {"AUTO_PAY", "APPROVE_PAY", "DECLINE", "EVIDENCE_HOLD"}
 _EXPECTED_COUNTS = {"AUTO_PAY": 20, "APPROVE_PAY": 20, "DECLINE": 5, "EVIDENCE_HOLD": 5}
 _PAID_AMOUNT = Decimal("0.01")
+_PUBLIC_KEYS = {
+    "available", "network", "updated_at", "planned", "processed", "queued",
+    "confirmed_payments", "awaiting_review", "declined", "held",
+    "confirmed_principal_usdc", "next_scheduled_at", "entries",
+}
+_ENTRY_KEYS = {
+    "id", "invoice_number", "scheduled_at", "review_at", "amount_usdc",
+    "route", "status", "transaction_hash", "explorer_url", "block_number",
+}
 
 
 class ActivityFeedError(ValueError):
@@ -188,3 +198,87 @@ def public_activity_snapshot(
         "next_scheduled_at": upcoming[0].isoformat() if upcoming else None,
         "entries": entries,
     }
+
+
+def published_activity_snapshot(path: Path) -> dict[str, Any]:
+    """Read a checked-in, redacted snapshot when private campaign files are absent.
+
+    Reject unknown fields rather than accidentally publishing source wallet or
+    credential material added to an artifact in a later revision.
+    """
+
+    payload = _json_object(path)
+    if set(payload) != _PUBLIC_KEYS or payload["available"] is not True or payload["network"] != "ARC-TESTNET":
+        raise ActivityFeedError("Published activity has an unexpected schema or network.")
+    _iso(payload["updated_at"])
+    next_at = payload["next_scheduled_at"]
+    if next_at is not None:
+        _iso(next_at)
+    if payload["planned"] != 50 or not isinstance(payload["entries"], list) or len(payload["entries"]) != 50:
+        raise ActivityFeedError("Published activity does not contain the locked campaign.")
+    entries = payload["entries"]
+    counts = {status: 0 for status in (*_STATUSES, "SCHEDULED")}
+    seen_ids: set[str] = set()
+    seen_hashes: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != _ENTRY_KEYS:
+            raise ActivityFeedError("Published activity contains an unexpected entry.")
+        if (
+            not isinstance(entry["id"], str)
+            or not re.fullmatch(r"FLOW-\d{3}", entry["id"])
+            or not isinstance(entry["invoice_number"], str)
+            or not re.fullmatch(r"TG-\d{8}-\d{3}", entry["invoice_number"])
+            or entry["id"] in seen_ids
+            or entry["route"] not in {"AUTOMATIC", "APPROVAL", "EVIDENCE"}
+            or entry["status"] not in counts
+            or entry["amount_usdc"] != "0.01"
+        ):
+            raise ActivityFeedError("Published activity contains an invalid workflow.")
+        seen_ids.add(entry["id"])
+        _iso(entry["scheduled_at"])
+        if entry["review_at"] is not None:
+            _iso(entry["review_at"])
+        counts[entry["status"]] += 1
+        tx_hash = entry["transaction_hash"]
+        if entry["status"] == "PAID":
+            if (
+                not isinstance(tx_hash, str)
+                or not _HASH.fullmatch(tx_hash)
+                or tx_hash.lower() in seen_hashes
+                or type(entry["block_number"]) is not int
+                or entry["block_number"] < 1
+                or entry["explorer_url"] != f"https://explorer.testnet.arc.io/tx/{tx_hash}"
+            ):
+                raise ActivityFeedError("Published payment lacks a unique exact Arc receipt.")
+            seen_hashes.add(tx_hash.lower())
+        elif any(entry[key] is not None for key in ("transaction_hash", "explorer_url", "block_number")):
+            raise ActivityFeedError("Published non-payment claims an Arc receipt.")
+    if (
+        payload["processed"] != 50 - counts["SCHEDULED"]
+        or payload["queued"] != counts["SCHEDULED"]
+        or payload["confirmed_payments"] != counts["PAID"]
+        or payload["awaiting_review"] != counts["AWAITING_REVIEW"]
+        or payload["declined"] != counts["DECLINED"]
+        or payload["held"] != counts["HELD"]
+        or counts["PAID"] > 40
+        or payload["confirmed_principal_usdc"] != format(_PAID_AMOUNT * counts["PAID"], "f")
+    ):
+        raise ActivityFeedError("Published activity totals do not match its entries.")
+    return payload
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Publish a redacted Arc Testnet activity snapshot.")
+    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    snapshot = public_activity_snapshot(plan_path=args.plan, report_path=args.report)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    published_activity_snapshot(args.output)
+    print(f"Published {snapshot['processed']}/50 redacted workflows with {snapshot['confirmed_payments']} Arc receipts.")
+
+
+if __name__ == "__main__":
+    main()

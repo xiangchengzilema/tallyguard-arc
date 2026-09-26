@@ -1,160 +1,45 @@
-# Three-minute demo runbook
+# Final web demo runbook
 
-Target duration: 2 minutes 55 seconds. Record at 1920 × 1080 with the browser at
-100% zoom. Use the deployed judge console in a clean private window. Do not show
-API credentials, wallet secrets, local environment files, or browser bookmarks.
+Target: 2:45–2:55, 1920 × 1080, browser at 100% zoom. Record only after the
+deployed version and the same-request handoff have passed a complete rehearsal.
+The public interactive workspace is a **simulation**. The separate Arc activity
+page displays a verified, read-only Testnet snapshot with exact Explorer links.
+Never describe a simulated public-workspace receipt as an onchain transfer.
 
-## Pre-recording checklist
+## Before recording
 
-- Open the live console and allow a sleeping free instance to wake before
-  recording.
-- Confirm the runtime banner says `Judge simulation — no funds move` for the
-  public interaction segment.
-- Confirm the reliability panel loads both immutable reports.
-- Prepare the verified Arc Testnet transaction in a separate Explorer tab only
-  after the real acceptance transfer succeeds.
-- Keep the current pitch deck available only as backup. The video should show
-  the product, not narrate slides.
-- Prepare clean 1440px, 768px, and 390px captures anchored on the same completed
-  decision. They are three responsive widths of one web application, not
-  separate desktop, tablet, and mobile clients.
-- Use the checked-in 9-second `assets/tallyguard-responsive-broll.webm` as
-  the responsive insert. It uses real product captures, ends with all three
-  widths together, and keeps the main workflow footage focused on desktop.
-- Clear old demo data by redeploying or using a clean ephemeral instance so the
-  queue starts empty.
+- Wake the deployed site, then verify the home page, user portal, finance
+  backend, invoice review, and `Arc activity` at the recording width. Inspect
+  fresh screenshots for clipping, overlap, and stale figures.
+- Submit one request through the user portal using the provided sample PDF
+  sources. Adjust the visible key fields if needed. Keep its request ID and
+  source hash on screen, and confirm the finance backend shows the **same ID**.
+- Rehearse an amount that enters the independent-approval route. Verify that
+  the requester sees its actual status and the finance decision. Do not assume
+  the route from the amount alone; check the displayed policy result first.
+- Confirm the public activity snapshot's processed/paid totals and open one
+  `View on Arc Explorer` link in a logged-out tab. Record its snapshot time;
+  scheduled, held, and declined requests must not have a transaction link.
+- Keep API keys, wallet secrets, local files, browser bookmarks, and personal
+  account details off screen. Keep the responsive insert optional; desktop web
+  workflow and readable evidence take priority.
 
-## Script and actions
+## Shot sequence
 
-### 0:00–0:15 — Problem and authority boundary
+| Time | Screen and action | Point to make |
+| --- | --- | --- |
+| 0:00–0:15 | Home hero and three roles | TallyGuard is evidence-bound accounts payable for finance teams, not an unrestricted AI payer. |
+| 0:15–0:45 | User portal: load sample sources, review/edit key fields, submit | The requester supplies evidence and sees exactly what is being requested. The source is sealed before evaluation. |
+| 0:45–1:00 | User tracking page: request ID and status | Submission, checks, finance decision, settlement, and receipt are separate visible steps. |
+| 1:00–1:35 | Finance backend: find the same request ID, open invoice review | Finance sees the original evidence, policy checks, payout destination, amount, and treasury effect. |
+| 1:35–2:00 | Independent approval or a policy hold; show reason and requester feedback | AI can recommend; configured policy and the finance role retain authority. Approval is not the same as money sent. |
+| 2:00–2:30 | Public `Arc activity`: processed/settled/not-paid states; select a paid entry and open its exact Explorer receipt | This is a separate read-only record of confirmed **Arc Testnet** USDC transfers. Do not conflate it with the simulated request just shown. |
+| 2:30–2:50 | Reliability proof and closing frame | Show test counts as engineering evidence, not customer traction. End on the product and Arc proof. |
 
-Screen: top of the judge console.
+Leave five seconds for a clean close. Cut loading waits and pointer hunting. If
+the same-request user → finance handoff, denial reason, or Explorer link fails
+rehearsal, fix it before recording rather than covering the gap with narration.
 
-Say:
-
-> AI agents can process bills quickly, but a model should never invent the
-> recipient, amount, or authority to pay. TallyGuard puts a deterministic,
-> evidence-bound control layer between agent reasoning and Circle USDC on Arc.
-
-Point briefly to the runtime boundary, deterministic authority, and Mainnet
-lock.
-
-### 0:15–0:45 — Durable autonomous plan
-
-Action: click **Load mixed queue**, then **Plan current queue** if needed.
-
-Say:
-
-> One agent run scans the tenant queue and freezes both the observed state and
-> its proposed actions under separate hashes. This queue contains a safe
-> payment, an invoice needing independent approval, a wallet-risk hold, and a
-> future schedule.
-
-Show the four proposed actions and the plan hash.
-
-### 0:45–1:05 — Safe execution
-
-Action: click **Execute safe actions**.
-
-Say:
-
-> Execution rechecks the invoice version, current policy, approval binding,
-> schedule eligibility, treasury capacity, and retry state. Only the cleared
-> item settles. The exception is routed to another role, while the hold and
-> future schedule stay blocked.
-
-Show the item outcomes: settled, routed, and skipped.
-
-### 1:05–1:35 — Evidence and policy decision
-
-Action: return to **Control lab**, select **Clean three-way match**, and run it.
-
-Say:
-
-> This decision binds the invoice, purchase order, delivery evidence, verified
-> vendor wallet, treasury snapshot, and policy version. Thirteen controls pass.
-> The AI recommendation remains visible, but it has zero payment authority.
-
-Show `13/13 clear`, the policy and evidence hashes, and the wallet cooldown
-control. Click **Verify replay**.
-
-### 1:35–1:55 — Failure protection
-
-Action: run **Vendor wallet change held**.
-
-Say:
-
-> A changed payout address fails closed. TallyGuard records the mismatch and
-> refuses to call the settlement provider. Even a verified replacement enters
-> a two-day cooldown before a fresh decision may authorize payment.
-
-Show the HOLD result and remediation.
-
-### 1:55–2:15 — Portable proof
-
-Action: return to the clean invoice, click **Download evidence packet**, then
-show the displayed SHA-256. Briefly show **Export ledger**.
-
-Say:
-
-> Auditors can export a content-addressed Payment Evidence Packet and verify the
-> evidence, policy, rule trace, decision, receipt, and audit hashes without the
-> application server. Reconciled payments also export to a spreadsheet-safe
-> accounting ledger with its own content hash.
-
-### 2:15–2:30 — Reliability
-
-Action: scroll to the checked-in reliability panel.
-
-Say:
-
-> Reproducible tests completed ten thousand workflows with no duplicate
-> payments, denied every cross-tenant probe, and admitted only the payments that
-> fit one shared treasury limit. These are synthetic engineering results, not
-> customer traction.
-
-### 2:30–2:40 — One workflow across three widths
-
-Action: hard-cut the same completed decision from 1440px desktop to 768px tablet
-and then 390px mobile. Keep the invoice ID and decision state visible so the
-continuity is obvious. Do not replay the workflow.
-
-Say:
-
-> This is one responsive web product: a finance team can operate it on desktop,
-> a reviewer can inspect it on tablet, and an approver can verify the same
-> evidence and payment proof from a phone without a separate client.
-
-### 2:40–2:55 — Real Arc proof and close
-
-Use this segment only after the real Arc Testnet acceptance succeeds.
-
-Action: show the acceptance artifact, then the Arc Explorer transaction.
-
-Say:
-
-> This capped Testnet payment used a dedicated Circle wallet and a separate
-> controlled recipient. Circle completed the request, and TallyGuard
-> independently matched the exact canonical-USDC Transfer on Arc. TallyGuard
-> lets the agent do the work while evidence and policy retain control.
-
-If the Testnet proof is still pending, do not substitute a simulated receipt.
-Show the responsive proof and end at 2:40 by saying:
-
-> The live Circle adapter and independent Arc verifier are implemented. The
-> public product stays in safe simulation mode until the dedicated Testnet
-> credentials and funds are present.
-
-## Editing notes
-
-- Cut all load waits, pointer hunting, and repeated scrolling.
-- Keep the responsive proof to one 8–10 second desktop → tablet → mobile
-  sequence plus a brief three-width end frame; the prepared insert is 9.2
-  seconds and the main product narrative remains the desktop finance workflow.
-- Keep captions short: `SEALED EVIDENCE`, `13 CONTROLS`, `ROLE-SEPARATED`,
-  `EXACTLY ONCE`, and `ARC VERIFIED` only when each claim is on screen.
-- Never overlay `ARC VERIFIED` on a simulator receipt.
-- Blur only accidental personal information. Re-record any frame containing a
-  secret, seed phrase, entity secret, API key, or private wallet detail.
-- Export 1080p H.264. Review the final upload from a logged-out browser before
-  placing its URL in the submission form.
+The nine-second `assets/tallyguard-responsive-broll.webm` is available if it
+improves the final edit. It shows three **web viewport widths**, not separate
+desktop/mobile apps. The final walkthrough video and upload are still pending.
