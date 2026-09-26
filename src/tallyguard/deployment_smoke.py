@@ -103,6 +103,12 @@ def _require(condition: bool, message: str) -> None:
         raise DeploymentSmokeError(message)
 
 
+def _response_header(headers: dict[str, str], name: str) -> str:
+    """Read an HTTP header without relying on a proxy's casing."""
+
+    return next((value for key, value in headers.items() if key.lower() == name.lower()), "")
+
+
 def _normalize_remote_base_url(value: str) -> str:
     candidate = value.strip().rstrip("/")
     parsed = urlparse(candidate)
@@ -259,10 +265,13 @@ def run_deployment_smoke(
             correlation_id="deployment-smoke-ledger",
         )
         _require(status == 200, "Accounting ledger export failed.")
-        header_hash = ledger_headers.get("X-TallyGuard-Ledger-SHA256", "")
+        header_hash = _response_header(ledger_headers, "X-TallyGuard-Ledger-SHA256")
         body_hash = sha256(ledger_body).hexdigest()
         _require(header_hash == body_hash, "Ledger content hash does not match its response header.")
-        _require(ledger_headers.get("X-TallyGuard-Ledger-Rows") == "1", "Ledger row count is not one.")
+        _require(
+            _response_header(ledger_headers, "X-TallyGuard-Ledger-Rows") == "1",
+            "Ledger row count is not one.",
+        )
         rows = list(csv.DictReader(StringIO(ledger_body.decode("utf-8-sig"))))
         _require(len(rows) == 1, "Ledger body does not contain exactly one row.")
         row = rows[0]

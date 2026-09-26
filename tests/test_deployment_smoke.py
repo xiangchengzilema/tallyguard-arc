@@ -4,6 +4,7 @@ from tallyguard.api import create_app
 from tallyguard.deployment_smoke import (
     DeploymentSmokeError,
     _normalize_remote_base_url,
+    _response_header,
     run_deployment_smoke,
 )
 
@@ -61,6 +62,14 @@ def test_remote_smoke_accepts_only_a_bare_public_https_origin():
     ):
         with pytest.raises(DeploymentSmokeError):
             _normalize_remote_base_url(invalid)
+
+
+def test_response_header_lookup_is_case_insensitive():
+    headers = {"x-tallyguard-ledger-sha256": "abc", "X-TallyGuard-Ledger-Rows": "1"}
+
+    assert _response_header(headers, "X-TallyGuard-Ledger-SHA256") == "abc"
+    assert _response_header(headers, "x-tallyguard-ledger-rows") == "1"
+    assert _response_header(headers, "missing") == ""
 
 
 def test_deployment_smoke_requires_exactly_one_target(tmp_path, monkeypatch):
