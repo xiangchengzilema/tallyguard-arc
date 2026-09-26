@@ -881,6 +881,7 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
     }
     assert all(item["settlement_status"] == "NOT_STARTED" for item in overview["recent_requests"])
     assert all(item["settled_amount_usdc"] is None for item in overview["recent_requests"])
+    assert all(item["settlement_payment_intent_id"] is None for item in overview["recent_requests"])
     assert all(item["settlement_transaction_hash"] is None for item in overview["recent_requests"])
     assert all(item["settlement_provider"] is None for item in overview["recent_requests"])
     assert all(item["settlement_network"] is None for item in overview["recent_requests"])
@@ -1139,12 +1140,20 @@ def test_batch_settlement_isolates_failures_and_reuses_each_receipt(tmp_path):
     ]
     assert len(settled_requests) == 2
     assert all(item["settlement_provider"] == "arc-simulator" for item in settled_requests)
+    assert all(item["settlement_payment_intent_id"] for item in settled_requests)
     assert all(item["settlement_network"] == "ARC-TESTNET" for item in settled_requests)
     assert all(item["settlement_block_number"] is not None for item in settled_requests)
     assert all(
         item["settlement_explorer_url"].startswith("https://explorer.testnet.arc.io/tx/")
         for item in settled_requests
     )
+    for item in settled_requests:
+        persisted = client.get(
+            f"/api/payments/{item['settlement_payment_intent_id']}",
+            headers=headers(auditor, f"reopen-{item['id']}"),
+        )
+        assert persisted.status_code == 200
+        assert persisted.get_json()["payment"]["receipt"]["transaction_hash"] == item["settlement_transaction_hash"]
     settled_amount = sum(
         (Decimal(item["invoice"]["amount"]) for item in runs[:2]),
         Decimal("0"),

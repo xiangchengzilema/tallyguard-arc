@@ -82,6 +82,7 @@ from .persistence import (
 )
 from .policies import PolicyRepositoryError, StoredPolicy
 from .policy import DecisionAction, Policy
+from .public_activity import ActivityFeedError, public_activity_snapshot
 from .settlement import (
     SettlementAdapter,
     SettlementAttempt,
@@ -770,6 +771,28 @@ def create_app(
     @app.get("/api/health")
     def health():
         return jsonify({"status": "ok", "service": "tallyguard-api"})
+
+    @app.get("/api/public/arc-activity")
+    def public_arc_activity():
+        """Publish only redacted progress and proven Testnet transaction links."""
+
+        root = Path(__file__).resolve().parents[2]
+        base = root / "artifacts" / "testnet-campaign"
+        plan_path = Path(os.getenv(
+            "TALLYGUARD_PUBLIC_ACTIVITY_PLAN",
+            str(base / "agent50-20260925-live-plan.json"),
+        ))
+        report_path = Path(os.getenv(
+            "TALLYGUARD_PUBLIC_ACTIVITY_REPORT",
+            str(base / "agent50-20260925-live-report.json"),
+        ))
+        try:
+            payload = public_activity_snapshot(plan_path=plan_path, report_path=report_path)
+        except (OSError, ValueError, TypeError, KeyError, ActivityFeedError):
+            payload = {"available": False}
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/openapi.json")
     def openapi_contract():
@@ -2309,6 +2332,7 @@ def create_app(
                     "settlement_network": None,
                     "settlement_block_number": None,
                     "settlement_explorer_url": None,
+                    "settlement_payment_intent_id": None,
                     "approval_reference": None,
                     "approval_status": None,
                 }
@@ -2344,6 +2368,7 @@ def create_app(
                         organization_id=g.principal.organization_id,
                         decision_id=decision.id,
                     )
+                    item_json["settlement_payment_intent_id"] = intent.id
                     latest_attempt = repository.latest_settlement_attempt(
                         organization_id=g.principal.organization_id,
                         payment_intent_id=intent.id,

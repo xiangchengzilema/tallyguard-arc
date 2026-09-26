@@ -256,6 +256,7 @@ Implemented foundation:
 - The work queue exposes a one-click, content-addressed accounting ledger export and immediately displays its row count and SHA-256 fingerprint
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
+- The private local website completed a real capped `0.01 USDC` browser-to-receipt Arc Testnet run on 2026-09-25: requester submission, finance escalation, independent approval, final finance settlement, and requester receipt. The exact Transfer was rechecked independently through Arc RPC; see `docs/reports/ARC_TESTNET_BROWSER_ACCEPTANCE_20260925.md`. The public judge site remains simulation-only and undeployed.
 - The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
 - A settlement-capacity module shows observed balance, durably committed amount, daily headroom, reserve floor, snapshot freshness, and the maximum currently admissible payment
 - A vendor trust directory exposes legal identity, risk tier, autopay ceiling, exact invoice-wallet match state, and append-only wallet verification history; the wallet-change scenario visibly resolves to `MISMATCH — HOLD`
@@ -304,6 +305,7 @@ Implemented foundation:
 - The judge console now exposes the checked-in full-run artifact through an authenticated, SHA-256-addressed reliability API and an honest evidence panel with workflow, isolation, idempotency, atomic treasury contention, throughput, and P95 figures
 - A second real-HTTP suite ran 50 tenant-isolated mixed Agent Runs: 50/50 completed, 200 item outcomes matched their authority boundaries, 50/50 foreign proof reads were denied, and every content-addressed proof verified
 - A 100-request duplicate Agent Run execution storm produced one durable claim winner, one provider submission, and exactly one planned plus one executed audit event
+- A separate guarded 50-agent Arc Testnet campaign runner generates a locked random 24-hour schedule and mixed auto-pay, role-approval, decline, and evidence-hold traffic. Its simulated regression test completes 40 payments and 10 non-payments with no duplicate submission on replay. The live private campaign started 2026-09-25 using the user-approved rotation of 37 controlled wallets. Its supervised first `0.01 USDC` payment succeeded on Arc Testnet, the recipient balance rose by exactly `0.01`, and an immediate replay tick did not submit a duplicate. **The remaining 49 jobs are still pending; do not report the campaign as completed.** See `docs/TESTNET_CAMPAIGN_50.md`.
 
 Two distinct test classes will be reported honestly:
 

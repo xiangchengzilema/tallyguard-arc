@@ -33,6 +33,11 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Download an evidence packet and accounting ledger.
 - [ ] Check desktop and mobile layout after the final deployment.
 - [ ] Test the URL after idle spin-down and record the expected cold-start delay.
+- [ ] Connect the public `#activity` view to a sanitized, read-only Arc Testnet
+  progress source. Verify receipt hashes against Explorer, and confirm no
+  private campaign database, wallet inventory, or Circle credential is
+  published. If the source is unavailable, show the unavailable state rather
+  than frozen counters.
 
 ## Real Arc Testnet acceptance
 
@@ -46,6 +51,11 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [x] Execute one transfer of at most 0.10 Testnet USDC with the exact consent
   phrase.
 - [x] Confirm the JSON and Markdown acceptance artifacts agree.
+- [x] Complete a private local browser-to-receipt run on Arc Testnet: user
+  uploads/reviews three sources, finance requests independent approval,
+  approver authorizes, finance clicks final settlement, and the requester sees
+  the confirmed `0.01 USDC` receipt. Preserve the screenshots and independent
+  Arc RPC check in `docs/reports/ARC_TESTNET_BROWSER_ACCEPTANCE_20260925.md`.
 - [ ] Run the standalone packet verifier with Arc RPC enabled.
 - [ ] Open the Explorer URL in a logged-out browser.
 
@@ -103,3 +113,26 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [ ] Save screenshots of the completed form before submitting.
 - [ ] Submit before the internal deadline, then reopen the confirmation page or
   email and preserve proof of submission.
+
+## Post-hackathon Arc RFB follow-on
+
+Begin this section only after the Tameion submission is complete and its
+confirmation evidence has been preserved.
+
+- [ ] Reuse the verified public repository, live product, video, deck, Arc
+  Testnet transaction proof, and reliability evidence to prepare an Arc
+  Request for Builders application package.
+- [ ] Position TallyGuard as **intelligent accounts payable for agentic
+  commerce**: evidence-bound invoice approval, finance-configured autonomous
+  spending limits, independent approval, and USDC settlement on Arc.
+- [ ] Lead with the `Agentic Economy` and `Intelligent Account` RFB themes;
+  include `Global Money / Programmable Trade Workflows` as a supporting fit.
+  Do not claim an `Onchain Credit` fit unless lending or underwriting is
+  actually implemented.
+- [ ] Recheck the current eligibility and terms, then apply first to the Circle
+  Developer Grant program: https://www.circle.com/grant
+- [ ] Treat Arc Microgrants as an early-stage fallback only, and do not submit
+  overlapping applications if the current program terms prohibit it:
+  http://dorahacks.io/hackathon/arc-microgrants
+- [ ] Save the completed application, confirmation page or email, submission
+  date, and any follow-up requirements in the project records.

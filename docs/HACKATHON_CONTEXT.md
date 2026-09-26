@@ -72,6 +72,8 @@ Strongly encouraged:
 - Reconciled payments can be exported as a content-addressed, spreadsheet-safe accounting CSV from the judge console
 - Live settlement requires UUID v4 idempotency and an adapter-level hard transfer cap
 - The locked Testnet acceptance command completed a real `0.01 USDC` Circle developer-wallet transfer on Arc Testnet at block `63409495`; Arc RPC verified the exact canonical-USDC event, idempotent replay reused the durable receipt, and the public proof is recorded in `docs/reports/ARC_TESTNET_ACCEPTANCE_20260922.md`
+- A separate private-browser acceptance on 2026-09-25 completed the full user submission → finance review → independent approval → finance click-to-settle → requester receipt path with a capped real `0.01 USDC` Arc Testnet transfer at block `63900352`; the exact canonical-USDC Transfer was independently rechecked against Arc RPC. See `docs/reports/ARC_TESTNET_BROWSER_ACCEPTANCE_20260925.md`. Public deployment remains pending and must stay in simulation mode.
+- A guarded 50-agent random-time Arc Testnet campaign is running privately from 2026-09-25. It plans 20 finance-enabled autonomous payments, 20 synthetic role-approved payments, 5 role declines, and 5 evidence holds; the maximum is 40 transfers / `0.40` test USDC. The user approved rotating 37 confirmed controlled recipient wallets. Its first `0.01 USDC` real transfer succeeded and increased the planned recipient's independently queried Arc balance by exactly `0.01`; a replay tick did not duplicate it. Remaining tasks are still pending. See `docs/TESTNET_CAMPAIGN_50.md` for the locked plan, report, and live status. This traffic must never be presented as genuine customers or human approvals.
 - A genuine-pilot protocol and content-addressed report command bind operator-attested timing and predeclared acceptance criteria to a verified Payment Evidence Packet without calling self-operated usage a customer or simulation an onchain transfer
 - The current ten-slide pitch deck is `submission/TallyGuard_Tameion_Pitch_v9.pptx`; it uses the evidence-control product capture, includes the 500 ms slow-provider concurrency evidence, reflects the eight-check deployment gate, and includes a desktop/390px comparison while accurately labeling the remaining Testnet, pilot, deployment, and video gates. The live product now evaluates 15 controls, including finance-configured single-payment and daily no-touch autonomy limits.
 - Automated test suite passing
@@ -106,3 +108,26 @@ credential or balance is needed for the hackathon demo.
 - Preserve activity-window commits, Arc transaction hashes, load-test results, and pilot evidence.
 - Distinguish synthetic reliability testing from genuine pilot usage.
 - Keep judge paths short: seeded scenarios, visible decisions, visible failure protection, visible settlement proof.
+
+## Post-hackathon Arc Request for Builders plan
+
+After the Tameion Agents Hackathon submission is formally completed and proof
+of submission is saved, submit TallyGuard through the Arc Request for Builders
+support path as well.
+
+- Official RFB: https://www.arc.io/blog/the-unfinished-business-of-finance-machine-commerce-and-global-money
+- Primary funding target: Circle Developer Grants — https://www.circle.com/grant
+- Early-stage fallback: Arc Microgrants — http://dorahacks.io/hackathon/arc-microgrants
+- Current-stage non-target: Arc Builders Fund / investor-deck route; reconsider
+  only after the product has genuine usage or company-scale traction.
+- Architects Program is a separate Arc House community/program identity. It is
+  not a substitute for the grant application.
+
+RFB positioning:
+
+> TallyGuard is intelligent accounts payable for agentic commerce: evidence-bound invoice approval, finance-configured autonomous spending controls, independent approval, and USDC settlement on Arc.
+
+The product directly supports the `Agentic Economy` and `Intelligent Account`
+frontiers and has a supporting fit with `Global Money / Programmable Trade
+Workflows`. Do not present it as `Onchain Credit` without real lending,
+collateral, or underwriting functionality.

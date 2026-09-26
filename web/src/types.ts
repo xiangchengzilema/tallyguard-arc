@@ -423,7 +423,8 @@ export interface OperationsInvoice extends Invoice {
   settlement_provider: string | null;
   settlement_network: string | null;
   settlement_block_number: number | null;
-  settlement_explorer_url: string | null;
+    settlement_explorer_url: string | null;
+    settlement_payment_intent_id: string | null;
 }
 
 export interface SettlementBatchItem {
@@ -696,3 +697,36 @@ export interface BootstrapContext {
   scenarios: Scenario[];
   readiness: BootstrapData['readiness'];
 }
+
+export type ActivityStatus = 'SCHEDULED' | 'AWAITING_REVIEW' | 'PAID' | 'DECLINED' | 'HELD';
+
+export interface ArcActivityEntry {
+  id: string;
+  invoice_number: string;
+  scheduled_at: string;
+  review_at: string | null;
+  amount_usdc: string;
+  route: 'AUTOMATIC' | 'APPROVAL' | 'EVIDENCE';
+  status: ActivityStatus;
+  transaction_hash: string | null;
+  explorer_url: string | null;
+  block_number: number | null;
+}
+
+export interface ArcActivity {
+  available: true;
+  network: 'ARC-TESTNET';
+  updated_at: string;
+  planned: number;
+  processed: number;
+  queued: number;
+  confirmed_payments: number;
+  awaiting_review: number;
+  declined: number;
+  held: number;
+  confirmed_principal_usdc: string;
+  next_scheduled_at: string | null;
+  entries: ArcActivityEntry[];
+}
+
+export type ArcActivityResponse = ArcActivity | { available: false };

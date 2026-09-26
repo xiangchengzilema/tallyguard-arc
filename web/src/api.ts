@@ -1,5 +1,6 @@
 import type {
   ActivePolicy,
+  ArcActivityResponse,
   Approval,
   AgentRun,
   AuditEvent,
@@ -90,6 +91,10 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     throw new ApiError(detail?.message ?? 'TallyGuard could not complete the request.', response.status, detail?.code);
   }
   return payload as T;
+}
+
+export function fetchArcActivity(): Promise<ArcActivityResponse> {
+  return request<ArcActivityResponse>('/api/public/arc-activity', { cache: 'no-store' });
 }
 
 async function createDemoWorkspace(): Promise<{
@@ -384,6 +389,18 @@ export async function fetchInvoiceRun(
     decision: payload.decision,
     correlation_id: payload.correlation_id,
   };
+}
+
+export async function fetchConfirmedPayment(
+  paymentIntentId: string,
+  readerToken: string,
+): Promise<Payment> {
+  const payload = await request<{ payment: Payment }>(
+    `/api/payments/${encodeURIComponent(paymentIntentId)}`,
+    { method: 'GET' },
+    readerToken,
+  );
+  return payload.payment;
 }
 
 export async function fetchSettlementIncidents(auditorToken: string): Promise<SettlementIncidentOverview> {
