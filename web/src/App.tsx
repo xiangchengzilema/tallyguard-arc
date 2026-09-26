@@ -1071,7 +1071,7 @@ function PremiumPayablesPage({
             <article><span className="metric-icon is-green"><Money size={18} /></span><div><small>Treasury available</small><strong>{formatMoney(operations?.treasury_available_usdc ?? '0')} USDC</strong><span>{operations?.projected_after_open_usdc ? `${formatMoney(operations.projected_after_open_usdc)} projected` : 'Awaiting treasury snapshot'}</span></div></article>
           </section>
           {verifiedActivity ? <section className="finance-arc-proof" aria-label="Arc Testnet verification cases">
-            <div className="finance-arc-proof__intro"><span>ARC TESTNET · READ-ONLY CASES</span><strong>{verifiedActivity.processed} workflows checked · {verifiedActivity.confirmed_payments} onchain receipts</strong><small>Separate verification history. The payable queue below is the current interactive demo workspace.</small></div>
+            <div className="finance-arc-proof__intro"><span>ARC TESTNET · READ-ONLY CASES</span><strong>{verifiedActivity.processed}+ payment workflow runs · {verifiedActivity.confirmed_payments} Arc Testnet settlements confirmed</strong><small>Separate verification history. The payable queue below is the current interactive demo workspace.</small></div>
             <div className="finance-arc-proof__actions"><span>{verifiedActivity.confirmed_principal_usdc} test USDC confirmed</span>{latestProof?.explorer_url ? <a href={latestProof.explorer_url} target="_blank" rel="noreferrer">Latest Arc proof ↗</a> : null}<button type="button" onClick={() => onNavigate('activity')}>View all {verifiedActivity.planned} cases <ArrowRight size={14} /></button></div>
           </section> : null}
           <div className="payables-tabs">

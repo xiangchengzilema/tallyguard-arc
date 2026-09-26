@@ -48,6 +48,7 @@ function ActivityMetrics({ activity }: { activity: ArcActivity }) {
 
 export function ArcActivityPreview({ activity, error, onOpen }: Pick<ActivityProps, 'activity' | 'error' | 'onOpen'>) {
   const available = activity?.available ? activity : null;
+  const activityHeadline = available ? `${available.processed}+ payment workflow runs · ${available.confirmed_payments} Arc Testnet settlements confirmed.` : null;
   const processed = available?.entries.filter((entry) => entry.status !== 'SCHEDULED') ?? [];
   const latestPaid = processed.find((entry) => entry.status === 'PAID');
   const recent = processed.slice(0, 2);
@@ -57,7 +58,7 @@ export function ArcActivityPreview({ activity, error, onOpen }: Pick<ActivityPro
   return (
     <section className="arc-activity-preview" aria-labelledby="arc-activity-preview-title">
       <div className="arc-activity-preview__header">
-        <div><span className="arc-activity__eyebrow"><i /> ARC TESTNET · VERIFIED ACTIVITY</span><h2 id="arc-activity-preview-title">Every decision leaves a trail.</h2><p>Follow each request from evidence and policy review to an independently confirmed USDC receipt.</p></div>
+        <div><span className="arc-activity__eyebrow"><i /> ARC TESTNET · VERIFIED ACTIVITY</span><h2 id="arc-activity-preview-title">Every decision leaves a trail.</h2><p>{activityHeadline ?? 'Follow each request from evidence and policy review to an independently confirmed USDC receipt.'}</p></div>
         <button type="button" onClick={onOpen}>Explore activity <span aria-hidden="true">↗</span></button>
       </div>
       {available ? (
@@ -126,7 +127,7 @@ export function ArcActivityPage({ activity, error, onBack, onRefresh }: Pick<Act
   return (
     <main className="arc-activity">
       <div className="arc-activity__top"><button type="button" onClick={onBack}>← Product overview</button><span><i /> Arc Testnet</span></div>
-      <header className="arc-activity__hero"><div><span className="arc-activity__eyebrow">PROGRAMMABLE ACCOUNTS PAYABLE / NETWORK ACTIVITY</span><h1>From invoice to proof.<br /><em>In public view.</em></h1><p>See how requests move through evidence checks, payment authority, and USDC settlement. Confirmed transfers link to their exact Arc receipt.</p></div><div className="arc-activity__hero-aside"><span>CONFIRMED PRINCIPAL</span><strong>{available?.confirmed_principal_usdc ?? '—'} <small>USDC</small></strong><p>{available ? `Verified snapshot ${formatDate(available.updated_at)}` : 'Awaiting feed'}</p><button type="button" onClick={onRefresh}>Check for update ↻</button></div></header>
+      <header className="arc-activity__hero"><div><span className="arc-activity__eyebrow">PROGRAMMABLE ACCOUNTS PAYABLE / NETWORK ACTIVITY</span><h1>From invoice to proof.<br /><em>In public view.</em></h1><p>{available ? `${available.processed}+ payment workflow runs · ${available.confirmed_payments} Arc Testnet settlements confirmed. Explore each decision and its exact receipt below.` : 'See how requests move through evidence checks, payment authority, and USDC settlement. Confirmed transfers link to their exact Arc receipt.'}</p></div><div className="arc-activity__hero-aside"><span>CONFIRMED PRINCIPAL</span><strong>{available?.confirmed_principal_usdc ?? '—'} <small>USDC</small></strong><p>{available ? `Verified snapshot ${formatDate(available.updated_at)}` : 'Awaiting feed'}</p><button type="button" onClick={onRefresh}>Check for update ↻</button></div></header>
       {available ? (
         <>
           <ActivityMetrics activity={available} />
