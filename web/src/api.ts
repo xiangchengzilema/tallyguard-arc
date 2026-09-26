@@ -212,6 +212,9 @@ export async function bootstrap(): Promise<BootstrapData> {
     throw new OperatorAccessRequired(context);
   }
   const workspace = await createDemoWorkspace();
+  // Each public browser gets an isolated tenant. Give that tenant a useful,
+  // real workflow state before the first render instead of an empty dashboard.
+  await seedAutonomyShowcase(workspace.sessions.operator);
   return hydrateBootstrap(context, workspace.sessions, workspace.workspace_id);
 }
 

@@ -3034,6 +3034,23 @@ button, input, select, textarea { font: inherit; }
 .arc-activity__offline button { padding: .7rem 1rem; border: 1px solid #123125; background: #123125; color: #fff; cursor: pointer; }
 .arc-activity button:focus-visible, .arc-activity a:focus-visible, .arc-activity-preview button:focus-visible, .arc-activity-preview a:focus-visible { outline: 2px solid #147f65; outline-offset: 3px; }
 
+.finance-arc-proof { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin: 1rem 0 .1rem; padding: 1rem 1.2rem; border: 1px solid #bcd8ca; background: #eef7f1; }
+.finance-arc-proof__intro { display: grid; gap: .27rem; min-width: 0; }
+.finance-arc-proof__intro > span { color: #087355; font-family: 'IBM Plex Mono', monospace; font-size: .58rem; font-weight: 700; letter-spacing: .08em; }
+.finance-arc-proof__intro strong { color: #16392c; font-size: .87rem; }
+.finance-arc-proof__intro small { color: #60766b; font-size: .66rem; line-height: 1.45; }
+.finance-arc-proof__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .6rem; flex: none; }
+.finance-arc-proof__actions > span { color: #315848; font-size: .68rem; font-weight: 700; white-space: nowrap; }
+.finance-arc-proof__actions a { color: #075a42; font-size: .69rem; font-weight: 700; text-decoration-thickness: 1px; text-underline-offset: 3px; white-space: nowrap; }
+.finance-arc-proof__actions button { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 34px; padding: .45rem .65rem; border: 1px solid #1c6950; background: #fff; color: #145c45; font-size: .7rem; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.finance-arc-proof__actions button:hover { background: #e4f1e9; }
+.finance-arc-proof button:focus-visible, .finance-arc-proof a:focus-visible { outline: 2px solid #147f65; outline-offset: 3px; }
+
+@media (max-width: 1180px) {
+  .finance-arc-proof { align-items: flex-start; flex-direction: column; gap: .8rem; }
+  .finance-arc-proof__actions { justify-content: flex-start; }
+}
+
 @media (max-width: 1100px) {
   .arc-activity__board { grid-template-columns: minmax(0, 1fr) 320px; }
   .arc-activity__row { grid-template-columns: minmax(155px, 1fr) 80px 100px 12px; }

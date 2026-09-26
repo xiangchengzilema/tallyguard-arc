@@ -221,6 +221,7 @@ const TEAM_ROLES = [
 ] as const;
 
 type PortalRole = 'requester' | 'finance';
+const isDemoScenarioInvoice = (item: OperationsInvoice) => /^invoice_(?:clean_payment|duplicate_invoice|wallet_change|po_overage|missing_delivery|large_invoice|scheduled_payment|provider_recovery)_/.test(item.id);
 type WorkspaceView =
   | 'overview'
   | 'activity'
@@ -756,7 +757,7 @@ function RequesterPortalPage({
   onNavigate: (view: WorkspaceView) => void;
   onSignOut: () => void;
 }) {
-  const queue = operations?.recent_requests ?? operations?.work_queue ?? [];
+  const queue = (operations?.recent_requests ?? operations?.work_queue ?? []).filter((item) => !isDemoScenarioInvoice(item));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = queue.find((item) => item.id === selectedId) ?? queue[0] ?? null;
   const selectedApproval = selected?.decision_id ? approvals[selected.decision_id] : null;
@@ -986,6 +987,7 @@ function PremiumSideNav({ active, onNavigate, settlementMode = 'simulation' }: {
 
 function PremiumPayablesPage({
   operations,
+  arcActivity,
   incidents,
   batch,
   scheduleRun,
@@ -1002,6 +1004,7 @@ function PremiumPayablesPage({
   settlementMode,
 }: {
   operations: OperationsOverview | null;
+  arcActivity: ArcActivityResponse | null;
   incidents: SettlementIncidentOverview | null;
   batch: PaymentBatch | null;
   scheduleRun: ScheduleRun | null;
@@ -1032,7 +1035,7 @@ function PremiumPayablesPage({
     return true;
   };
   const filtered = queue.filter((item) => tabMatches(item) && (!normalizedQuery || [item.invoice_number, item.vendor_id, item.status, item.source_document_hash].some((value) => value.toLowerCase().includes(normalizedQuery))));
-  const selected = drawerOpen ? queue.find((item) => item.id === selectedId) ?? filtered[0] ?? queue[0] ?? null : null;
+  const selected = drawerOpen ? filtered.find((item) => item.id === selectedId) ?? filtered[0] ?? null : null;
   const ready = queue.filter(isSettlementReady);
   const attention = queue.filter(needsFinanceAttention);
   const scheduled = queue.filter((item) => item.settlement_status !== 'CONFIRMED' && (item.decision_action === 'SCHEDULE' || item.status === 'SCHEDULED'));
@@ -1046,19 +1049,25 @@ function PremiumPayablesPage({
   const statusLabel = financeStatusLabel;
   const dueLabel = (value: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T00:00:00`));
   const vendorLabel = (value: string) => value.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const verifiedActivity = arcActivity?.available ? arcActivity : null;
+  const latestProof = verifiedActivity?.entries.find((entry) => entry.status === 'PAID' && entry.explorer_url);
   return (
     <div className="premium-app premium-payables">
       <ProductTopbar roleLabel="Finance team" roleHelper="Operations backend" onBack={() => onNavigate('finance')} onSignOut={onSignOut} searchValue={query} onSearch={setQuery} settlementMode={settlementMode} />
       <div className="premium-payables__layout">
         <PremiumSideNav active="finance" onNavigate={onNavigate} settlementMode={settlementMode} />
         <main className="premium-payables__main">
-          <header className="payables-title"><div><span className="payables-title__eyebrow">FINANCE BACKEND</span><h1>Payment requests</h1><p>Review requests submitted by users, resolve policy exceptions, authorize settlement, and preserve an audit-ready record.</p></div><div className="payables-title__actions"><button type="button" onClick={onExportLedger} disabled={busy}><Download size={15} /> Export ledger</button>{settlementMode === 'circle-live' ? <button type="button" onClick={onRefreshTreasury} disabled={busy}><Renew size={15} /> Refresh Arc balance</button> : <button type="button" onClick={onSeedShowcase} disabled={busy}><PlayFilled size={15} /> Load demo queue</button>}<button type="button" className="is-primary" onClick={() => onNavigate('approvals')} disabled={busy}><CheckmarkFilled size={15} /> Review approvals</button></div></header>
+          <header className="payables-title"><div><span className="payables-title__eyebrow">FINANCE BACKEND</span><h1>Payment requests</h1><p>Review requests submitted by users, resolve policy exceptions, authorize settlement, and preserve an audit-ready record.</p></div><div className="payables-title__actions"><button type="button" onClick={onExportLedger} disabled={busy}><Download size={15} /> Export ledger</button>{settlementMode === 'circle-live' ? <button type="button" onClick={onRefreshTreasury} disabled={busy}><Renew size={15} /> Refresh Arc balance</button> : queue.length === 0 ? <button type="button" onClick={onSeedShowcase} disabled={busy}><PlayFilled size={15} /> Load demo queue</button> : null}<button type="button" className="is-primary" onClick={() => onNavigate('approvals')} disabled={busy}><CheckmarkFilled size={15} /> Review approvals</button></div></header>
           <section className="payables-metrics" aria-label="Payables overview">
-            <article><span className="metric-icon is-blue"><Document size={18} /></span><div><small>Open exposure</small><strong>{formatMoney(operations?.open_exposure_usdc ?? '0')} USDC</strong><span>{operations?.invoice_count ?? 0} durable invoices</span></div></article>
+            <article><span className="metric-icon is-blue"><Document size={18} /></span><div><small>Open exposure</small><strong>{formatMoney(operations?.open_exposure_usdc ?? '0')} USDC</strong><span>{operations?.invoice_count ?? 0} workspace invoices</span></div></article>
             <article><span className="metric-icon is-gold"><WarningAltFilled size={18} /></span><div><small>Needs attention</small><strong>{formatMoney(operations?.blocked_exposure_usdc ?? '0')} USDC</strong><span>{attention.length} controlled exceptions</span></div></article>
             <article><span className="metric-icon is-blue"><Time size={18} /></span><div><small>Due this week</small><strong>{formatMoney(operations?.due_next_7_days_usdc ?? '0')} USDC</strong><span>{operations?.due_next_7_days_count ?? 0} invoices</span></div></article>
             <article><span className="metric-icon is-green"><Money size={18} /></span><div><small>Treasury available</small><strong>{formatMoney(operations?.treasury_available_usdc ?? '0')} USDC</strong><span>{operations?.projected_after_open_usdc ? `${formatMoney(operations.projected_after_open_usdc)} projected` : 'Awaiting treasury snapshot'}</span></div></article>
           </section>
+          {verifiedActivity ? <section className="finance-arc-proof" aria-label="Arc Testnet verification cases">
+            <div className="finance-arc-proof__intro"><span>ARC TESTNET · READ-ONLY CASES</span><strong>{verifiedActivity.processed} workflows checked · {verifiedActivity.confirmed_payments} onchain receipts</strong><small>Separate verification history. The payable queue below is the current interactive demo workspace.</small></div>
+            <div className="finance-arc-proof__actions"><span>{verifiedActivity.confirmed_principal_usdc} test USDC confirmed</span>{latestProof?.explorer_url ? <a href={latestProof.explorer_url} target="_blank" rel="noreferrer">Latest Arc proof ↗</a> : null}<button type="button" onClick={() => onNavigate('activity')}>View all {verifiedActivity.planned} cases <ArrowRight size={14} /></button></div>
+          </section> : null}
           <div className="payables-tabs">
             {([
               ['all', `All payables (${queue.length})`],
@@ -1075,7 +1084,7 @@ function PremiumPayablesPage({
               <div className={selected?.id === item.id ? 'payables-table__row is-selected' : 'payables-table__row'} key={item.id} onClick={() => { setSelectedId(item.id); setDrawerOpen(true); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') { setSelectedId(item.id); setDrawerOpen(true); } }}>
                 <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number} for batch settlement`} checked={batchIds.includes(item.id)} disabled={!isSettlementReady(item)} onChange={(event) => setBatchChecked(item.id, event.target.checked)} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
                 <button type="button" className="payable-link" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setDrawerOpen(true); if (item.decision_id) onOpenReview(item); }}><strong>{item.invoice_number}</strong><small>{shorten(item.id, 7, 4)}</small></button>
-                <span className="vendor-cell"><strong>{vendorLabel(item.vendor_id)}</strong><small>{shorten(item.payment_wallet_address, 7, 5)}</small></span>
+                <span className="vendor-cell"><strong>{vendorLabel(item.vendor_id)}</strong><small>{isDemoScenarioInvoice(item) ? 'Sample case · ' : ''}{shorten(item.payment_wallet_address, 7, 5)}</small></span>
                 <strong>{formatMoney(item.amount)} {item.currency}</strong><span>{dueLabel(item.due_date)}</span>
                 <span className={item.decision_id ? 'evidence-state is-good' : 'evidence-state'}><i />{item.decision_id ? 'Decision sealed' : 'Evidence needed'}</span>
                 <span className="payable-decision">{item.approval_status === 'APPROVED' ? 'Approved' : item.decision_action ? QUEUE_DECISION_LABEL[item.decision_action] : '—'}</span><span className={`payable-status is-${(item.approval_status ?? item.decision_action ?? item.status).toLowerCase().replaceAll('_', '-')}`}>{statusLabel(item)}</span>
@@ -1092,14 +1101,14 @@ function PremiumPayablesPage({
         <aside className="payable-drawer">
           {selected ? <>
             <div className="payable-drawer__head"><h2>{selected.invoice_number}</h2><button type="button" aria-label="Close invoice details" onClick={() => setDrawerOpen(false)}>×</button></div>
-            <div className="vendor-summary"><span>{vendorLabel(selected.vendor_id).slice(0, 1)}</span><div><strong>{vendorLabel(selected.vendor_id)}</strong><small>Submitted through User portal · {new Date(selected.created_at).toLocaleString()}</small></div><em>{selected.decision_id ? '✓ Decision sealed' : 'Evidence pending'}</em></div>
-            <div className="drawer-request-link"><span>Matching user request</span><strong>{selected.invoice_number}</strong><small>The same request ID, amount, and source hash appear in both portals.</small></div>
+            <div className="vendor-summary"><span>{vendorLabel(selected.vendor_id).slice(0, 1)}</span><div><strong>{vendorLabel(selected.vendor_id)}</strong><small>{isDemoScenarioInvoice(selected) ? 'Sample workflow case' : 'Submitted through User portal'} · {new Date(selected.created_at).toLocaleString()}</small></div><em>{selected.decision_id ? '✓ Decision sealed' : 'Evidence pending'}</em></div>
+            <div className="drawer-request-link"><span>{isDemoScenarioInvoice(selected) ? 'Preloaded example' : 'Matching user request'}</span><strong>{selected.invoice_number}</strong><small>{isDemoScenarioInvoice(selected) ? 'A complete decision path you can inspect without uploading a file.' : 'The same request ID, amount, and source hash appear in both portals.'}</small></div>
             <dl className="invoice-facts"><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{dueLabel(selected.due_date)}</dd></div><div><dt>Decision</dt><dd>{financeDecisionLabel(selected)}</dd></div><div><dt>Settlement</dt><dd>{settlementStatusLabel(selected)}</dd></div></dl>
             <section className="drawer-section"><header><strong>Evidence & decision</strong><span>{selected.decision_id ? 'Replayable' : 'Not evaluated'}</span></header><div className="drawer-evidence"><span>▤</span><strong>Source document</strong><small>{shorten(selected.source_document_hash, 14, 10)}</small><i>✓</i></div><div className="drawer-evidence"><span>♢</span><strong>Policy action</strong><small>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting evaluation'}</small><i>{selected.decision_id ? '✓' : '•'}</i></div></section>
             <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;{settlementMode === 'circle-live' ? 'LIVE' : 'SIMULATION'}</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? settlementMode === 'circle-live' ? 'Circle transfer confirmed by independent Arc RPC proof' : 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
             <button type="button" className="drawer-primary" disabled={busy || !selected.decision_id} onClick={() => selected.decision_id && onOpenReview(selected)}>{busy ? 'Loading live record…' : selected.decision_id ? 'Review evidence & controls' : 'Waiting for requester evidence'}</button>
             <small className="simulation-note">{settlementMode === 'circle-live' ? 'Live mode: final authorization submits USDC through Circle and accepts the result only after independent Arc RPC verification.' : 'Public judge workspace is forced simulation. The same workflow supports configured Circle/Arc adapters.'}</small>
-            <section className="audit-mini"><header><strong>Traceability</strong><button type="button" onClick={() => onNavigate('audit')}>Open audit ledger →</button></header><ol><li><i />Invoice persisted<small>Tenant-scoped durable record</small><time>{new Date(selected.created_at).toLocaleString()}</time></li><li><i />Latest state recorded<small>{statusLabel(selected)}</small><time>{new Date(selected.updated_at).toLocaleString()}</time></li>{selected.decision_id ? <li><i />Decision snapshot sealed<small>{shorten(selected.decision_id, 12, 8)}</small><time>Replay available</time></li> : null}</ol></section>
+            <section className="audit-mini"><header><strong>Traceability</strong><button type="button" onClick={() => onNavigate('audit')}>Open audit ledger →</button></header><ol><li><i />Invoice persisted<small>Tenant-scoped workspace record</small><time>{new Date(selected.created_at).toLocaleString()}</time></li><li><i />Latest state recorded<small>{statusLabel(selected)}</small><time>{new Date(selected.updated_at).toLocaleString()}</time></li>{selected.decision_id ? <li><i />Decision snapshot sealed<small>{shorten(selected.decision_id, 12, 8)}</small><time>Replay available</time></li> : null}</ol></section>
           </> : <div className="payable-drawer__empty"><Document size={30} /><strong>Select a payable</strong><span>The drawer will show its persisted evidence, policy decision, treasury impact, and audit path.</span></div>}
         </aside>
       </div>
@@ -3177,7 +3186,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (activeView !== 'overview' && activeView !== 'activity') return;
+    if (!['overview', 'activity', 'finance', 'payables'].includes(activeView)) return;
     void refreshArcActivity();
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshArcActivity();
@@ -3816,6 +3825,7 @@ function App() {
         ) : activeView === 'finance' || activeView === 'payables' ? (
           <PremiumPayablesPage
             operations={operations}
+            arcActivity={arcActivity}
             incidents={incidents}
             batch={batch}
             scheduleRun={scheduleRun}
