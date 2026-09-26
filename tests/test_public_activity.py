@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
 import random
 
 import pytest
@@ -9,6 +10,19 @@ import pytest
 from tallyguard.api import create_app
 from tallyguard.public_activity import ActivityFeedError, public_activity_snapshot, published_activity_snapshot
 from tallyguard.testnet_campaign import make_plan
+
+
+def test_checked_in_final_campaign_snapshot_is_complete():
+    snapshot = published_activity_snapshot(
+        Path(__file__).resolve().parents[1] / "docs" / "reports" / "arc-testnet-public-activity.json"
+    )
+    assert snapshot["network"] == "ARC-TESTNET"
+    assert (snapshot["planned"], snapshot["processed"], snapshot["queued"]) == (50, 50, 0)
+    assert (snapshot["confirmed_payments"], snapshot["declined"], snapshot["held"]) == (40, 5, 5)
+    assert snapshot["confirmed_principal_usdc"] == "0.40"
+    assert len(snapshot["entries"]) == len({item["invoice_number"] for item in snapshot["entries"]}) == 50
+    hashes = [item["transaction_hash"] for item in snapshot["entries"] if item["status"] == "PAID"]
+    assert len(hashes) == len(set(hashes)) == 40
 
 
 def _sources(tmp_path):

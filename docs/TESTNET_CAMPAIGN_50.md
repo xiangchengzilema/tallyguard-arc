@@ -1,13 +1,12 @@
 # Controlled 50-agent Arc Testnet campaign
 
-The locked live schedule is running in a private local process. At the first
-independent check, **1/50 jobs had completed and one real 0.01 USDC Arc
-Testnet transfer was confirmed.** The recipient
-balance rose from 0.002484 to 0.012484 USDC. Transaction:
-[`0x4f1b4160…b65e3680d`](https://explorer.testnet.arc.io/tx/0x4f1b416077bbf8117c74c4bc31757882fce494e81cb645f22506938b65e3680d).
-The current counts and receipt hashes come from the progress report below,
-not this historical first-check paragraph. This is synthetic engineering
-traffic, not customer adoption.
+The locked private schedule completed on 2026-09-26. The final durable report
+contains **50 terminal workflows: 40 confirmed Arc Testnet transfers of
+0.01 test USDC each, five declined, and five held**. All 40 unique transaction
+hashes and confirmed amounts match the settlement receipt table; no workflow
+remains queued. Total transfer principal was 0.40 test USDC, excluding fees.
+The public website exposes a redacted read-only snapshot of these results.
+This is synthetic engineering traffic, not customer adoption.
 
 ## Exact experiment
 
@@ -62,26 +61,26 @@ adoption claims. The underlying test provenance remains in this internal
 record and should be disclosed accurately if requested in a grant or judge
 submission.
 
-This endpoint is currently verified on the local preview. A future public
-host will need a controlled sync of the sanitized report (or equivalent
-read-only feed); deploying the website without that source shows an honest
-unavailable state. Never publish the private SQLite database, raw plan,
-Circle-backed operator server, or secrets to make the dashboard work.
+The deployed website packages the validated, redacted final snapshot at
+`docs/reports/arc-testnet-public-activity.json`. Its interactive four-case
+demo workspace is separate from this historical Testnet evidence. The user
+portal can inspect those four sample invoice IDs and their matching finance
+records without counting them as a visitor's own submissions. Never publish
+the private SQLite database, raw plan, Circle-backed operator server, or
+secrets to make the dashboard work.
 
-## Active run
+## Completed run
 
 - Locked plan: `artifacts/testnet-campaign/agent50-20260925-live-plan.json`.
 - Durable database: `data/agent50-20260925-live.sqlite3`.
 - Progress report: `artifacts/testnet-campaign/agent50-20260925-live-report.json`.
-- Private runner was started as PID `40980`; this PID is only an initial
-  observation and may change after a safe restart. Standard output and error
-  logs are in the same artifacts directory with `-stdout.log` and
-  `-stderr.log` suffixes.
+- The original private runner PID was `40980`; after a checked, idempotent
+  restart the final runner PID was `31320`. Both sets of standard output and
+  error logs remain in the artifacts directory.
 - Repeating the first due `tick` reused the existing payment and transaction
   hash; it did not submit a second transfer.
-- A quiet 30-minute Codex thread heartbeat monitors progress and reports only
-  failure, completion, or required action. Automation ID:
-  `tallyguard-arc-testnet-50-agent-campaign-monitor`.
+- The quiet monitor `tallyguard-arc-testnet-50-agent-campaign-monitor` was
+  paused after terminal-count and receipt verification.
 
 ## Operator procedure
 

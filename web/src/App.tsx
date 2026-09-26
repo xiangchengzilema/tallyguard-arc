@@ -617,7 +617,7 @@ function RequesterTopbar({
     <header className="requester-topbar">
       <button type="button" className="premium-brand" onClick={() => onNavigate('portal')}><span>T</span><strong>TallyGuard</strong></button>
       <nav aria-label="User portal">
-        <button type="button" className={active === 'portal' ? 'is-active' : ''} onClick={() => onNavigate('portal')}>My requests</button>
+        <button type="button" className={active === 'portal' ? 'is-active' : ''} onClick={() => onNavigate('portal')}>Requests</button>
         <button type="button" className={active === 'submit' ? 'is-active' : ''} onClick={() => onNavigate('submit')}>New request</button>
       </nav>
       <div className="requester-topbar__account"><span>MC</span><div><strong>Morgan Chen</strong><small>Operations requester</small></div><button type="button" onClick={onSignOut}>Sign out</button></div>
@@ -757,16 +757,21 @@ function RequesterPortalPage({
   onNavigate: (view: WorkspaceView) => void;
   onSignOut: () => void;
 }) {
-  const queue = (operations?.recent_requests ?? operations?.work_queue ?? []).filter((item) => !isDemoScenarioInvoice(item));
+  const allRequests = operations?.recent_requests ?? operations?.work_queue ?? [];
+  const submittedQueue = allRequests.filter((item) => !isDemoScenarioInvoice(item));
+  const exampleQueue = settlementMode === 'circle-live' ? [] : allRequests.filter(isDemoScenarioInvoice);
+  const [viewingExamples, setViewingExamples] = useState<boolean | null>(null);
+  const showExamples = exampleQueue.length > 0 && (viewingExamples ?? submittedQueue.length === 0);
+  const queue = showExamples ? exampleQueue : submittedQueue;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = queue.find((item) => item.id === selectedId) ?? queue[0] ?? null;
   const selectedApproval = selected?.decision_id ? approvals[selected.decision_id] : null;
   const selectedDecision = selected ? requesterDecisionCopy(selected, selectedApproval) : null;
-  const activeCount = queue.filter((item) => {
+  const activeCount = submittedQueue.filter((item) => {
     const linked = item.decision_id ? approvals[item.decision_id] : null;
     return !['rejected', 'paid'].includes(requesterStatus(item, linked).key);
   }).length;
-  const returnedCount = queue.filter((item) => {
+  const returnedCount = submittedQueue.filter((item) => {
     const linked = item.decision_id ? approvals[item.decision_id] : null;
     return requesterStatus(item, linked).key === 'rejected';
   }).length;
@@ -774,22 +779,23 @@ function RequesterPortalPage({
     <div className="requester-app">
       <RequesterTopbar active="portal" onNavigate={onNavigate} onSignOut={onSignOut} />
       <main className="requester-dashboard">
-        <header className="requester-heading"><div><span>USER PORTAL</span><h1>Your payment requests</h1><p>Submit supporting documents, follow finance review, and see every decision without exposing treasury controls.</p></div><button type="button" disabled={busy} onClick={() => onNavigate('submit')}><Document size={17} /> New payment request</button></header>
+        <header className="requester-heading"><div><span>USER PORTAL</span><h1>{showExamples ? 'Explore payment journeys' : 'Your payment requests'}</h1><p>{showExamples ? 'Follow the same four sample request IDs shown in the finance backend, then submit your own documents to run the complete handoff.' : 'Submit supporting documents, follow finance review, and see every decision without exposing treasury controls.'}</p></div><button type="button" disabled={busy} onClick={() => onNavigate('submit')}><Document size={17} /> New payment request</button></header>
         <section className="requester-summary" aria-label="Request summary">
-          <article><small>Active requests</small><strong>{activeCount}</strong><span>Moving through controls</span></article>
-          <article><small>Returned for changes</small><strong>{returnedCount}</strong><span>Reason and next step included</span></article>
-          <article><small>Total submitted</small><strong>{queue.length}</strong><span>{settlementMode === 'circle-live' ? 'In this private workspace' : 'In this demo workspace'}</span></article>
+          {exampleQueue.length > 0 ? <article><small>Linked sample journeys</small><strong>{exampleQueue.length}</strong><span>Same records in both portals</span></article> : <article><small>Active requests</small><strong>{activeCount}</strong><span>Moving through controls</span></article>}
+          <article><small>{exampleQueue.length > 0 ? 'Submitted by you' : 'Returned for changes'}</small><strong>{exampleQueue.length > 0 ? submittedQueue.length : returnedCount}</strong><span>{exampleQueue.length > 0 ? 'Separate from the sample journeys' : 'Reason and next step included'}</span></article>
+          <article><small>{exampleQueue.length > 0 ? 'Your active requests' : 'Total submitted'}</small><strong>{exampleQueue.length > 0 ? activeCount : submittedQueue.length}</strong><span>{settlementMode === 'circle-live' ? 'In this private workspace' : 'In this demo workspace'}</span></article>
         </section>
+        {exampleQueue.length > 0 ? <nav className="requester-case-switch" aria-label="Request collections"><button type="button" className={showExamples ? 'is-active' : ''} aria-pressed={showExamples} onClick={() => { setViewingExamples(true); setSelectedId(null); }}>Explore sample journeys <span>{exampleQueue.length}</span></button><button type="button" className={!showExamples ? 'is-active' : ''} aria-pressed={!showExamples} onClick={() => { setViewingExamples(false); setSelectedId(null); }}>My submitted requests <span>{submittedQueue.length}</span></button><small>Sample journeys are preloaded examples, not requests submitted by your account.</small></nav> : null}
         <div className="requester-workspace">
-          <section className="requester-list" aria-label="Your payment requests">
-            <header><strong>Recent requests</strong><span>{queue.length} total</span></header>
+          <section className="requester-list" aria-label={showExamples ? 'Sample payment journeys' : 'Your payment requests'}>
+            <header><strong>{showExamples ? 'Sample request journeys' : 'Recent requests'}</strong><span>{queue.length} total</span></header>
             {queue.length ? queue.map((item) => {
               const linkedApproval = item.decision_id ? approvals[item.decision_id] : null;
               const status = requesterStatus(item, linkedApproval);
               return <button type="button" className={selected?.id === item.id ? 'is-selected' : ''} key={item.id} onClick={() => setSelectedId(item.id)}>
                 <span className={`requester-status is-${status.key}`}><i />{status.label}</span>
                 <strong>{item.invoice_number}</strong>
-                <small>{item.vendor_id.replaceAll('-', ' ')} · due {item.due_date}</small>
+                <small>{showExamples ? 'Sample case · ' : ''}{item.vendor_id.replaceAll('-', ' ')} · due {item.due_date}</small>
                 <b>{formatMoney(item.amount)} {item.currency}</b>
                 <em>{status.helper}</em>
               </button>;
@@ -797,7 +803,7 @@ function RequesterPortalPage({
           </section>
           <section className="requester-detail">
             {selected ? <>
-              <header><div><span>PAYMENT REQUEST</span><h2>{selected.invoice_number}</h2><p>Submitted {new Date(selected.created_at).toLocaleString()}</p></div><span className={`requester-status is-${requesterStatus(selected, selectedApproval).key}`}><i />{requesterStatus(selected, selectedApproval).label}</span></header>
+              <header><div><span>{showExamples ? 'PRELOADED SAMPLE · SHARED WITH FINANCE' : 'PAYMENT REQUEST'}</span><h2>{selected.invoice_number}</h2><p>{showExamples ? 'Example created ' : 'Submitted '}{new Date(selected.created_at).toLocaleString()}</p></div><span className={`requester-status is-${requesterStatus(selected, selectedApproval).key}`}><i />{requesterStatus(selected, selectedApproval).label}</span></header>
               <RequesterProgress item={selected} approval={selectedApproval} />
               {selectedDecision ? <section className={`requester-decision is-${selectedDecision.tone}`}><span>{selectedDecision.tone === 'rejected' ? '×' : selectedDecision.tone === 'hold' || selectedDecision.tone === 'review' ? '!' : '✓'}</span><div><strong>{selectedDecision.title}</strong><p>{selectedDecision.body}</p><small>Next: {selectedDecision.next}</small></div></section> : null}
               {selectedApproval?.status === 'APPROVED' ? <section className="requester-feedback is-approved"><CheckmarkFilled size={20} /><div><strong>Finance approval note</strong><p>{selectedApproval.resolution_note ?? 'Finance approved this request for settlement.'}</p><small>{selectedApproval.resolved_by_user_id ? `Approved by ${selectedApproval.resolved_by_user_id}` : 'Approved by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small></div></section> : null}

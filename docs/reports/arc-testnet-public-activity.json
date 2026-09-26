@@ -1,17 +1,53 @@
 {
   "available": true,
   "network": "ARC-TESTNET",
-  "updated_at": "2026-09-26T07:32:35.635587+00:00",
+  "updated_at": "2026-09-26T10:59:47.258249+00:00",
   "planned": 50,
-  "processed": 47,
-  "queued": 3,
-  "confirmed_payments": 37,
+  "processed": 50,
+  "queued": 0,
+  "confirmed_payments": 40,
   "awaiting_review": 0,
   "declined": 5,
   "held": 5,
-  "confirmed_principal_usdc": "0.37",
-  "next_scheduled_at": "2026-09-26T09:51:13.685886+00:00",
+  "confirmed_principal_usdc": "0.40",
+  "next_scheduled_at": null,
   "entries": [
+    {
+      "id": "FLOW-050",
+      "invoice_number": "TG-20260925-050",
+      "scheduled_at": "2026-09-26T10:59:08.685886+00:00",
+      "review_at": null,
+      "amount_usdc": "0.01",
+      "route": "AUTOMATIC",
+      "status": "PAID",
+      "transaction_hash": "0xecf9d0da3d854c4355a4c4ad57fc3aed17da2286bcb48d97e8729a0d38b8d629",
+      "explorer_url": "https://explorer.testnet.arc.io/tx/0xecf9d0da3d854c4355a4c4ad57fc3aed17da2286bcb48d97e8729a0d38b8d629",
+      "block_number": 64089362
+    },
+    {
+      "id": "FLOW-049",
+      "invoice_number": "TG-20260925-049",
+      "scheduled_at": "2026-09-26T10:21:22.685886+00:00",
+      "review_at": null,
+      "amount_usdc": "0.01",
+      "route": "AUTOMATIC",
+      "status": "PAID",
+      "transaction_hash": "0xce68f227646ab63a177858bea58904c8cf684d9a7ed9594e5b0677a0ff77e8c4",
+      "explorer_url": "https://explorer.testnet.arc.io/tx/0xce68f227646ab63a177858bea58904c8cf684d9a7ed9594e5b0677a0ff77e8c4",
+      "block_number": 64084912
+    },
+    {
+      "id": "FLOW-048",
+      "invoice_number": "TG-20260925-048",
+      "scheduled_at": "2026-09-26T09:51:13.685886+00:00",
+      "review_at": null,
+      "amount_usdc": "0.01",
+      "route": "AUTOMATIC",
+      "status": "PAID",
+      "transaction_hash": "0xec3d4b48aa50a31ab0081d5dba3deb8bfd6d3191711ffb1dcb78966e9f03a9f2",
+      "explorer_url": "https://explorer.testnet.arc.io/tx/0xec3d4b48aa50a31ab0081d5dba3deb8bfd6d3191711ffb1dcb78966e9f03a9f2",
+      "block_number": 64081360
+    },
     {
       "id": "FLOW-047",
       "invoice_number": "TG-20260925-047",
@@ -575,42 +611,6 @@
       "transaction_hash": "0x4f1b416077bbf8117c74c4bc31757882fce494e81cb645f22506938b65e3680d",
       "explorer_url": "https://explorer.testnet.arc.io/tx/0x4f1b416077bbf8117c74c4bc31757882fce494e81cb645f22506938b65e3680d",
       "block_number": 63922230
-    },
-    {
-      "id": "FLOW-050",
-      "invoice_number": "TG-20260925-050",
-      "scheduled_at": "2026-09-26T10:59:08.685886+00:00",
-      "review_at": null,
-      "amount_usdc": "0.01",
-      "route": "AUTOMATIC",
-      "status": "SCHEDULED",
-      "transaction_hash": null,
-      "explorer_url": null,
-      "block_number": null
-    },
-    {
-      "id": "FLOW-049",
-      "invoice_number": "TG-20260925-049",
-      "scheduled_at": "2026-09-26T10:21:22.685886+00:00",
-      "review_at": null,
-      "amount_usdc": "0.01",
-      "route": "AUTOMATIC",
-      "status": "SCHEDULED",
-      "transaction_hash": null,
-      "explorer_url": null,
-      "block_number": null
-    },
-    {
-      "id": "FLOW-048",
-      "invoice_number": "TG-20260925-048",
-      "scheduled_at": "2026-09-26T09:51:13.685886+00:00",
-      "review_at": null,
-      "amount_usdc": "0.01",
-      "route": "AUTOMATIC",
-      "status": "SCHEDULED",
-      "transaction_hash": null,
-      "explorer_url": null,
-      "block_number": null
     }
   ]
 }

@@ -2225,6 +2225,11 @@ button, input, select, textarea { font: inherit; }
 .requester-summary article:last-child { border-right: 0; }
 .requester-summary small, .requester-summary span { color: #74817c; font-size: .58rem; }
 .requester-summary strong { font-family: 'Bodoni MT', Didot, Georgia, serif; font-size: 2.1rem; font-weight: 500; }
+.requester-case-switch { display: flex; align-items: center; gap: .5rem; margin: 0 0 1rem; }
+.requester-case-switch button { display: inline-flex; align-items: center; gap: .65rem; min-height: 38px; padding: 0 .85rem; border: 1px solid #dce5e0; background: #fff; color: #61716b; font-size: .65rem; font-weight: 700; cursor: pointer; }
+.requester-case-switch button.is-active { border-color: #047557; background: #eaf7f2; color: #075e49; }
+.requester-case-switch button span { display: grid; place-items: center; min-width: 19px; height: 19px; padding: 0 .25rem; background: #f0f3f1; color: inherit; font-family: IBM Plex Mono, monospace; font-size: .55rem; }
+.requester-case-switch small { margin-left: auto; color: #77837f; font-size: .56rem; }
 .requester-workspace { display: grid; grid-template-columns: minmax(320px, .68fr) minmax(560px, 1.32fr); min-height: 560px; border: 1px solid #dfe5e2; background: #fff; }
 .requester-list { border-right: 1px solid #dfe5e2; background: #fafbf9; }
 .requester-list > header { display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 1.2rem; border-bottom: 1px solid #dfe5e2; }
