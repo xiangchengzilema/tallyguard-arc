@@ -5,6 +5,9 @@ deployed version and the same-request handoff have passed a complete rehearsal.
 The public interactive workspace is a **simulation**. The separate Arc activity
 page displays a verified, read-only Testnet snapshot with exact Explorer links.
 Never describe a simulated public-workspace receipt as an onchain transfer.
+Responsive checks cover 1440px, 768px, and 390px views of one responsive web product;
+these are not separate desktop or mobile apps. The video remains focused on
+the desktop browser workflow.
 
 ## Before recording
 
