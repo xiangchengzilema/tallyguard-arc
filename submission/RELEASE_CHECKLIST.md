@@ -88,13 +88,17 @@ in Beijing. Finish the external steps at least 24 hours earlier.
   deck binaries remain recoverable from Git history but are not exposed to judges.
 - [ ] Replace no pending claim with a placeholder that looks complete.
 - [ ] Record the product walkthrough from the final deployed commit.
-- [ ] Keep the final video under three minutes.
-- [ ] Include an 8–10 second 1440px → 768px → 390px comparison of the same
-  governed decision and receipt; describe it as one responsive web app, not
-  three apps.
-- [x] Render and visually inspect the responsive insert at 1440 × 900
+- [x] Keep the final product film under three minutes (2:59 at 1920 × 1080,
+  30 fps, with recorded web interaction and narration).
+- [x] Show both complete public-demo paths from recorded web interaction:
+  independent approval followed by separate finance settlement, and a
+  finance-enabled small-payment autonomous settlement. Show each requester's
+  resulting status and receipt; label these filmed payments as simulation.
+- [x] Keep the desktop/tablet/mobile comparison as optional source material,
+  not a required insert in the web-first final cut.
+- [x] Render and visually inspect the optional responsive insert at 1440 × 900
   (`assets/tallyguard-responsive-broll.webm`, 9 seconds, desktop → tablet →
-  mobile → all three widths). Final-video assembly and upload remain pending.
+  mobile → all three widths). It is intentionally outside the web-first cut.
 - [x] Include one desktop/mobile comparison frame in the final deck or submission
   gallery so the responsive work remains visible outside the video (slide 10).
 - [ ] Include real Explorer proof only after independent verification succeeds.

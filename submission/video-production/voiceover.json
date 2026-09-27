@@ -1,0 +1,16 @@
+[
+  {"id":"01","from":0,"duration":12,"text":"Finance teams want invoices paid faster, but cannot hand an AI agent unlimited treasury authority. TallyGuard makes that boundary the product."},
+  {"id":"02","from":12,"duration":13,"text":"A requester starts with an invoice, purchase order, and delivery proof. The system extracts key fields; a person confirms them before the evidence is sealed."},
+  {"id":"03","from":25,"duration":14,"text":"The submitted request gets one traceable ID. Both the requester and finance see its status. Submission alone never releases funds."},
+  {"id":"04","from":39,"duration":14,"text":"Finance reviews the same request. Duplicate evidence, supplier, wallet, timing, and policy are checked. This larger payment needs independent approval."},
+  {"id":"05","from":53,"duration":13,"text":"A separate approver reviews the evidence and records a reasoned decision. The agent can recommend an action, but cannot approve its own exception."},
+  {"id":"06","from":66,"duration":14,"text":"Approval is still not payment. Finance performs the final, separately controlled settlement action. The public website demonstrates this step in simulation mode."},
+  {"id":"07","from":80,"duration":11,"text":"Back in the requester portal, the same ID now shows paid status, the finance note, and a final simulated receipt."},
+  {"id":"08","from":91,"duration":16,"text":"There is also a no-touch path. Finance explicitly versions the policy: fifty USDC per payment and a five-hundred-USDC daily ceiling, subject to treasury headroom and the emergency stop."},
+  {"id":"09","from":107,"duration":14,"text":"Now a forty-USDC request arrives. Its invoice, order, delivery, supplier, wallet, and available budget are checked against that finance-approved boundary."},
+  {"id":"10","from":121,"duration":13,"text":"Because every required control passes and the amount remains inside the limit, the agent settles this simulated request automatically. The requester immediately sees the receipt."},
+  {"id":"11","from":134,"duration":16,"text":"A separate sample queue uses its own policy to show four outcomes: proceed, human review, scheduled, and held. Each decision is explained, and the controls are rechecked before execution."},
+  {"id":"12","from":150,"duration":14,"text":"Compared with fragmented bank handoffs, Circle-controlled wallets and Arc USDC provide an always-on programmable settlement rail. Fiat entry and exit still involve banking partners."},
+  {"id":"13","from":164,"duration":9,"text":"Forty confirmed Arc Testnet transfers. This historical proof is separate from the demo."},
+  {"id":"14","from":173,"duration":6,"text":"TallyGuard: agent speed, finance control, proof on Arc."}
+]

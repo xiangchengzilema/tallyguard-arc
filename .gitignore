@@ -23,3 +23,7 @@ web/vite.config.d.ts
 artifacts/
 .codex-deck/
 submission/node_modules/
+submission/video-production/node_modules/
+submission/video-production/public/media/
+submission/video-production/audio/
+submission/video-production/out/

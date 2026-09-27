@@ -1,0 +1,20 @@
+{
+  "name": "tallyguard-product-film",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "still": "remotion still src/index.ts TallyGuardFilm",
+    "render": "remotion render src/index.ts TallyGuardFilm"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.484",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "6.0.3"
+  }
+}
