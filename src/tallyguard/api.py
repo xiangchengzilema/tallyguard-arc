@@ -2359,6 +2359,17 @@ def create_app(
                     {
                         "decision_id": decision.id,
                         "decision_action": decision.final_action.value,
+                        "decision_reason_codes": list(decision.policy_decision.reason_codes),
+                        "decision_remediation": list(decision.policy_decision.remediation),
+                        "decision_findings": [
+                            {
+                                "code": rule.code,
+                                "message": rule.message,
+                                "remediation": rule.remediation,
+                            }
+                            for rule in decision.policy_decision.rule_results
+                            if rule.disposition.value in {"HOLD", "REJECT", "ESCALATE"}
+                        ],
                         "scheduled_for": (
                             scheduled_for.isoformat() if scheduled_for is not None else None
                         ),
@@ -2421,6 +2432,9 @@ def create_app(
                     {
                         "decision_id": None,
                         "decision_action": None,
+                        "decision_reason_codes": [],
+                        "decision_remediation": [],
+                        "decision_findings": [],
                         "scheduled_for": None,
                         "settlement_retryable": False,
                         "approval_reference": None,

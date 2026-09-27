@@ -1791,7 +1791,7 @@ button, input, select, textarea { font: inherit; }
 .premium-sidenav__network small { color: var(--premium-violet); font-family: IBM Plex Mono, monospace; font-size: 8px; }
 .premium-sidenav > small { margin: 12px; color: #8a9491; font-size: 8px; }
 .premium-payables__main { min-width: 0; overflow: hidden; padding: 28px 22px 0; }
-.payables-title h1 { margin: 0; font-size: clamp(1.65rem,2.5vw,2.4rem); font-weight: 720; letter-spacing: -.052em; }
+.payables-title h1 { margin: 0; font-size: clamp(1.65rem,2.5vw,2.4rem); font-weight: 720; letter-spacing: 0; }
 .payables-title p { margin: 6px 0 0; color: #557069; font-size: 14px; }
 .payables-metrics { display: grid; grid-template-columns: repeat(4,1fr); margin-top: 32px; border: 1px solid var(--premium-line); border-radius: 6px; background: #fff; }
 .payables-metrics article { display: grid; grid-template-columns: 38px 1fr; gap: 12px; min-width: 0; min-height: 92px; padding: 17px 15px; border-right: 1px solid #e5e9e7; }
@@ -2953,6 +2953,46 @@ button, input, select, textarea { font: inherit; }
   .requester-submit__handoff i::before { transition: none; transform: none; }
 }
 
+/* The submission decision is a focused handoff, not a notice below the form. */
+.request-result-modal .cds--modal-container { width: min(680px, calc(100vw - 32px)); max-height: min(90vh, 760px); border: 1px solid #cddbd3; background: #fcfdfa; box-shadow: 0 28px 90px rgba(8, 35, 27, .24); }
+.request-result-modal .cds--modal-header { padding: 28px 32px 16px; }
+.request-result-modal .cds--modal-header__label { color: #087557; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+.request-result-modal .cds--modal-header__heading { margin-top: 8px; color: #132a22; font-family: Georgia, serif; font-size: clamp(26px, 3vw, 35px); line-height: 1.14; }
+.request-result-modal .cds--modal-content { padding: 0 32px 30px; }
+.request-result { color: #19342b; }
+.request-result__hero { display: flex; align-items: center; gap: 16px; padding: 18px; border: 1px solid #d0e4db; background: #eef8f3; }
+.request-result__hero.is-blocked { border-color: #ead1bb; background: #fff7eb; }
+.request-result__hero > span { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #087557; color: #fff; font-size: 20px; }
+.request-result__hero.is-blocked > span { background: #aa6831; }
+.request-result__hero strong { font-size: 17px; }
+.request-result__hero p { margin: 4px 0 0; color: #60746a; font-size: 12px; }
+.request-result__steps { display: grid; gap: 0; margin: 20px 0; padding: 0; list-style: none; }
+.request-result__steps li { position: relative; display: flex; gap: 14px; min-height: 63px; }
+.request-result__steps li:not(:last-child)::after { position: absolute; top: 30px; bottom: 0; left: 14px; width: 1px; background: #d2ddd6; content: ''; }
+.request-result__steps li.is-complete:not(:last-child)::after { background: #51aa83; }
+.request-result__steps b { z-index: 1; display: grid; flex: 0 0 auto; place-items: center; width: 29px; height: 29px; border: 1px solid #cad7cf; border-radius: 50%; background: #fff; color: #85948b; font-size: 12px; }
+.request-result__steps .is-complete b { border-color: #087557; background: #087557; color: #fff; }
+.request-result__steps .is-current b { border-color: #7358b5; color: #7358b5; box-shadow: 0 0 0 4px #eee9f8; }
+.request-result__steps .is-blocked b { border-color: #b15b4b; background: #b15b4b; color: #fff; }
+.request-result__steps span { display: grid; align-content: start; gap: 3px; padding-top: 2px; }
+.request-result__steps strong { font-size: 13px; }
+.request-result__steps small { color: #687971; font-size: 11px; line-height: 1.45; }
+.request-result__reason { padding: 14px 16px; border-left: 3px solid #b15b4b; background: #fff2ef; }
+.request-result__reason strong, .request-result__next strong { display: block; margin-bottom: 5px; font-size: 12px; }
+.request-result__reason p { margin: 0 0 4px; font-size: 12px; line-height: 1.5; }
+.request-result__reason small { color: #86524b; font-size: 11px; line-height: 1.45; }
+.request-result__next { margin: 16px 0 20px; color: #50685b; font-size: 12px; line-height: 1.5; }
+.request-result__next strong { color: #19342b; }
+.request-result__actions { display: flex; justify-content: flex-end; gap: 9px; }
+.request-result__actions button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; padding: 0 16px; border: 1px solid #087557; background: #087557; color: white; font-size: 12px; font-weight: 750; cursor: pointer; }
+.request-result__actions button.is-secondary { border-color: #d1ded6; background: white; color: #345344; }
+.requester-correction { display: flex; gap: 12px; margin: 20px 0; padding: 17px 19px; border: 1px solid #eacdbd; background: #fff7ee; color: #854937; }
+.requester-correction strong { font-size: 14px; }
+.requester-correction p { margin: 5px 0; font-size: 12px; line-height: 1.5; }
+.requester-correction small { font-size: 11px; }
+@media (max-width: 600px) { .request-result-modal .cds--modal-header { padding: 20px 20px 12px; } .request-result-modal .cds--modal-content { padding: 0 20px 22px; } .request-result__actions { flex-direction: column-reverse; } }
+@media (prefers-reduced-motion: reduce) { .request-result *, .request-result-modal * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
 /* Public Arc activity: real workflow progress without exposing private controls. */
 .arc-activity__eyebrow { display: inline-flex; align-items: center; gap: .55rem; color: #087259; font-family: 'IBM Plex Mono', monospace; font-size: .72rem; font-weight: 650; letter-spacing: .08em; }
 .arc-activity__eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: #0e9b79; box-shadow: 0 0 0 4px #e2f2ec; }
@@ -3106,6 +3146,8 @@ button, input, select, textarea { font: inherit; }
 }
 
 /* Keep the finance table readable in a normal, non-maximized desktop window. */
+.review-title h1 { letter-spacing: 0; }
+
 @media (min-width: 1181px) and (max-width: 1360px) {
   /* The annotated invoice is too narrow here for truthful cross-panel arrows. */
   .evidence-connectors { display: none; }

@@ -100,8 +100,27 @@ export function fetchArcActivity(): Promise<ArcActivityResponse> {
 async function createDemoWorkspace(): Promise<{
   workspace_id: string;
   sessions: BootstrapData['sessions'];
+  expires_at: string;
 }> {
   return request('/api/demo/workspace', { method: 'POST' });
+}
+
+const DEMO_WORKSPACE_SESSION_KEY = 'tallyguard:demo-workspace:v1';
+
+function readDemoWorkspaceSession(): { workspace_id: string; sessions: BootstrapData['sessions']; expires_at: string } | null {
+  try {
+    const raw = window.sessionStorage.getItem(DEMO_WORKSPACE_SESSION_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as { workspace_id?: string; sessions?: BootstrapData['sessions']; expires_at?: string };
+    if (!value.workspace_id || !value.sessions || !value.expires_at || Date.parse(value.expires_at) <= Date.now() + 60_000) {
+      window.sessionStorage.removeItem(DEMO_WORKSPACE_SESSION_KEY);
+      return null;
+    }
+    return value as { workspace_id: string; sessions: BootstrapData['sessions']; expires_at: string };
+  } catch {
+    window.sessionStorage.removeItem(DEMO_WORKSPACE_SESSION_KEY);
+    return null;
+  }
 }
 
 export async function fetchBootstrapContext(): Promise<BootstrapContext> {
@@ -211,10 +230,22 @@ export async function bootstrap(): Promise<BootstrapData> {
   if (!context.readiness.demo_sessions_enabled) {
     throw new OperatorAccessRequired(context);
   }
+  const previous = readDemoWorkspaceSession();
+  if (previous) {
+    try {
+      // Demo-only role sessions survive a page refresh, so the same browser
+      // returns to its own invoices. Live operator credentials are never stored.
+      return await bootstrapWithSessions(previous.sessions, context);
+    } catch (error) {
+      if (!(error instanceof ApiError) || ![401, 403, 404].includes(error.status)) throw error;
+      window.sessionStorage.removeItem(DEMO_WORKSPACE_SESSION_KEY);
+    }
+  }
   const workspace = await createDemoWorkspace();
   // Each public browser gets an isolated tenant. Give that tenant a useful,
   // real workflow state before the first render instead of an empty dashboard.
   await seedAutonomyShowcase(workspace.sessions.operator);
+  window.sessionStorage.setItem(DEMO_WORKSPACE_SESSION_KEY, JSON.stringify(workspace));
   return hydrateBootstrap(context, workspace.sessions, workspace.workspace_id);
 }
 

@@ -412,6 +412,9 @@ export interface OperationsOverview {
 export interface OperationsInvoice extends Invoice {
   decision_id: string | null;
   decision_action: DecisionAction | null;
+  decision_reason_codes?: string[];
+  decision_remediation?: string[];
+  decision_findings?: Array<{ code: string; message: string; remediation: string | null }>;
   approval_reference: string | null;
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
   scheduled_for: string | null;

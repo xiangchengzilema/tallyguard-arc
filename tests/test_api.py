@@ -1018,6 +1018,11 @@ def test_operations_overview_aggregates_persisted_work_queue_by_tenant(tmp_path)
         "HOLD",
         "REJECTED",
     }
+    rejected = next(item for item in overview["recent_requests"] if item["status"] == "REJECTED")
+    assert rejected["decision_reason_codes"]
+    assert rejected["decision_findings"]
+    assert all(finding["message"] for finding in rejected["decision_findings"])
+    assert rejected["decision_remediation"]
     assert all(item["settlement_status"] == "NOT_STARTED" for item in overview["recent_requests"])
     assert all(item["settled_amount_usdc"] is None for item in overview["recent_requests"])
     assert all(item["settlement_payment_intent_id"] is None for item in overview["recent_requests"])

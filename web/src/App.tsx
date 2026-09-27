@@ -632,7 +632,7 @@ function RequesterTopbar({
 function requesterStatus(item: OperationsInvoice, approval: Approval | null | undefined) {
   const normalized = item.status.toUpperCase();
   if (approval?.status === 'REJECTED' || item.decision_action === 'REJECT') return { key: 'rejected', label: 'Needs changes', helper: 'Finance returned this request' };
-  if (normalized.includes('RECONCIL') || normalized.includes('SETTLED') || normalized.includes('PAID')) return { key: 'paid', label: 'Paid · receipt ready', helper: 'Arc settlement confirmed' };
+  if (normalized.includes('RECONCIL') || normalized.includes('SETTLED') || normalized.includes('PAID')) return { key: 'paid', label: item.settlement_provider === 'arc-simulator' ? 'Demo complete · receipt ready' : 'Paid · receipt ready', helper: item.settlement_provider === 'arc-simulator' ? 'No funds moved in this demo' : 'Arc settlement confirmed' };
   if (approval?.status === 'APPROVED') return { key: 'approved', label: 'Approved by finance', helper: 'Waiting for finance settlement' };
   if (approval?.status === 'PENDING') return { key: 'review', label: 'Independent approval', helper: 'Waiting for an approver' };
   if (item.decision_action === 'ESCALATE') return { key: 'finance-review', label: 'In finance review', helper: 'Finance must request approval' };
@@ -646,21 +646,21 @@ function requesterDecisionCopy(item: OperationsInvoice, approval: Approval | nul
   const status = requesterStatus(item, approval);
   if (status.key === 'paid') return {
     tone: 'paid',
-    title: `Paid ${formatMoney(item.settled_amount_usdc ?? item.amount)} ${item.currency}`,
-    body: item.settlement_transaction_hash ? `Arc receipt ${shorten(item.settlement_transaction_hash, 12, 10)} confirms the transfer.` : 'The transfer is complete and the finance receipt is available.',
+    title: `${item.settlement_provider === 'arc-simulator' ? 'Demo payment completed' : 'Paid'} ${formatMoney(item.settled_amount_usdc ?? item.amount)} ${item.currency}`,
+    body: item.settlement_provider === 'arc-simulator' ? 'The demo payment is complete. The simulation receipt records the full workflow; no real funds moved.' : item.settlement_transaction_hash ? `Arc receipt ${shorten(item.settlement_transaction_hash, 12, 10)} confirms the transfer.` : 'The transfer is complete and the finance receipt is available.',
     next: 'No action is required. Keep the receipt for your records.',
   };
   if (status.key === 'rejected') return {
     tone: 'rejected',
-    title: 'Returned by finance — no funds were sent',
-    body: approval?.resolution_note ?? 'This request did not pass the current payment controls.',
-    next: 'Correct the source documents and submit a new request.',
+    title: approval?.status === 'REJECTED' ? 'Returned by finance — no funds were sent' : 'Stopped by payment controls — no funds were sent',
+    body: approval?.resolution_note || (item.decision_findings?.length ? item.decision_findings.map((finding) => finding.message).join(' ') : 'This request did not pass the current payment controls.'),
+    next: item.decision_remediation?.[0] ?? item.decision_findings?.find((finding) => finding.remediation)?.remediation ?? 'Correct the evidence and submit a new request.',
   };
   if (status.key === 'hold') return {
     tone: 'hold',
     title: 'Payment is on hold — no funds were sent',
-    body: 'One or more evidence or treasury controls require attention before finance can proceed.',
-    next: 'Finance will identify the missing evidence or policy exception.',
+    body: item.decision_findings?.length ? item.decision_findings.map((finding) => finding.message).join(' ') : 'One or more evidence or treasury controls require attention before finance can proceed.',
+    next: item.decision_remediation?.[0] ?? 'Finance will identify the missing evidence or policy exception.',
   };
   if (status.key === 'review') return {
     tone: 'review',
@@ -699,14 +699,14 @@ function RequesterProgress({ item, approval }: { item: OperationsInvoice; approv
   const stopped = status.key === 'rejected' || status.key === 'hold';
   const paid = status.key === 'paid';
   const approved = status.key === 'approved' || status.key === 'scheduled' || paid;
-  const decisionComplete = item.decision_action !== 'ESCALATE'
+  const decisionComplete = !stopped && (item.decision_action !== 'ESCALATE'
     || approval?.status === 'APPROVED'
-    || approval?.status === 'REJECTED';
+    || approval?.status === 'REJECTED');
   const steps = [
     ['Submitted', true],
     ['Evidence checked', Boolean(item.decision_id)],
     [approval ? 'Independent approval' : 'Finance review', decisionComplete],
-    ['Arc settlement', paid],
+    [item.settlement_provider === 'arc-simulator' ? 'Demo settlement' : 'Arc settlement', paid],
   ] as const;
   return <div className={`requester-progress ${stopped ? 'is-stopped' : ''}`}>
     {steps.map(([label, complete], index) => <div className={complete ? 'is-complete' : index === (item.decision_id ? approved ? 3 : 2 : 1) ? 'is-current' : ''} key={label}><span>{complete ? '✓' : index + 1}</span><small>{label}</small></div>)}
@@ -752,6 +752,7 @@ function RequesterPortalPage({
   busy,
   settlementMode,
   onNavigate,
+  onStartCorrection,
   onSignOut,
 }: {
   operations: OperationsOverview | null;
@@ -759,6 +760,7 @@ function RequesterPortalPage({
   busy: boolean;
   settlementMode: BootstrapData['readiness']['settlement_mode'];
   onNavigate: (view: WorkspaceView) => void;
+  onStartCorrection: (item: OperationsInvoice) => void;
   onSignOut: () => void;
 }) {
   const allRequests = operations?.recent_requests ?? operations?.work_queue ?? [];
@@ -811,18 +813,18 @@ function RequesterPortalPage({
               <RequesterProgress item={selected} approval={selectedApproval} />
               {selectedDecision ? <section className={`requester-decision is-${selectedDecision.tone}`}><span>{selectedDecision.tone === 'rejected' ? '×' : selectedDecision.tone === 'hold' || selectedDecision.tone === 'review' ? '!' : '✓'}</span><div><strong>{selectedDecision.title}</strong><p>{selectedDecision.body}</p><small>Next: {selectedDecision.next}</small></div></section> : null}
               {selectedApproval?.status === 'APPROVED' ? <section className="requester-feedback is-approved"><CheckmarkFilled size={20} /><div><strong>Finance approval note</strong><p>{selectedApproval.resolution_note ?? 'Finance approved this request for settlement.'}</p><small>{selectedApproval.resolved_by_user_id ? `Approved by ${selectedApproval.resolved_by_user_id}` : 'Approved by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small></div></section> : null}
-              {(selectedApproval?.status === 'REJECTED' || selected.decision_action === 'REJECT') ? <section className="requester-feedback is-rejected"><WarningAltFilled size={20} /><div><strong>Finance needs a correction</strong><p>{selectedApproval?.resolution_note ?? 'This request did not pass the current payment policy. Review the source documents and resubmit the corrected request.'}</p>{selectedApproval ? <small>{selectedApproval.resolved_by_user_id ? `Returned by ${selectedApproval.resolved_by_user_id}` : 'Returned by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small> : null}<button type="button" onClick={() => onNavigate('submit')}>Submit corrected evidence <ArrowRight size={14} /></button></div></section> : null}
+              {(selectedApproval?.status === 'REJECTED' || selected.decision_action === 'REJECT') ? <section className="requester-feedback is-rejected"><WarningAltFilled size={20} /><div><strong>{selectedApproval?.status === 'REJECTED' ? 'Finance returned this request' : 'Automated controls stopped this request'}</strong><p>{selectedApproval?.resolution_note || (selected.decision_findings?.length ? selected.decision_findings.map((finding) => finding.message).join(' ') : 'This request did not pass the current payment policy.')}</p>{selected.decision_remediation?.length ? <p><strong>How to fix: </strong>{selected.decision_remediation.join(' ')}</p> : null}{selectedApproval ? <small>{selectedApproval.resolved_by_user_id ? `Returned by ${selectedApproval.resolved_by_user_id}` : 'Returned by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small> : null}<button type="button" onClick={() => onStartCorrection(selected)}>Correct and resubmit <ArrowRight size={14} /></button><small>The original evidence stays sealed. Your correction creates a new request.</small></div></section> : null}
               <dl className="requester-facts"><div><dt>Vendor</dt><dd>{selected.vendor_id.replaceAll('-', ' ')}</dd></div><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{selected.due_date}</dd></div><div><dt>Current step</dt><dd>{requesterStatus(selected, selectedApproval).helper}</dd></div></dl>
               <section className="requester-proof"><div><DocumentSecurity size={20} /><span><strong>Evidence record</strong><small>{selected.decision_id ? 'Documents hashed and decision sealed' : 'Waiting for evidence evaluation'}</small></span></div><code>{selected.decision_id ? shorten(selected.decision_id, 14, 10) : shorten(selected.source_document_hash, 14, 10)}</code></section>
               {selected.settled_amount_usdc && selected.settlement_transaction_hash ? <section className="requester-receipt" aria-labelledby="requester-receipt-title">
-                <header><div><DocumentSecurity size={20} /><span><small>FINAL RECEIPT</small><strong id="requester-receipt-title">Arc payment confirmed</strong></span></div><em>CONFIRMED</em></header>
+                <header><div><DocumentSecurity size={20} /><span><small>FINAL RECEIPT</small><strong id="requester-receipt-title">{selected.settlement_provider === 'arc-simulator' ? 'Demo payment completed' : 'Arc payment confirmed'}</strong></span></div><em>{selected.settlement_provider === 'arc-simulator' ? 'SIMULATED' : 'CONFIRMED'}</em></header>
                 <dl>
-                  <div><dt>Amount paid</dt><dd>{formatMoney(selected.settled_amount_usdc)} {selected.currency}</dd></div>
-                  <div><dt>Network</dt><dd>{selected.settlement_network?.replaceAll('-', ' ') ?? 'Arc'}</dd></div>
-                  <div><dt>Block</dt><dd>{selected.settlement_block_number ? `#${selected.settlement_block_number.toLocaleString()}` : 'Confirmed'}</dd></div>
-                  <div><dt>Confirmed</dt><dd>{selected.settlement_confirmed_at ? new Date(selected.settlement_confirmed_at).toLocaleString() : 'Receipt recorded'}</dd></div>
+                  <div><dt>{selected.settlement_provider === 'arc-simulator' ? 'Amount simulated' : 'Amount paid'}</dt><dd>{formatMoney(selected.settled_amount_usdc)} {selected.currency}</dd></div>
+                  <div><dt>Network</dt><dd>{selected.settlement_provider === 'arc-simulator' ? 'Arc Testnet simulation' : selected.settlement_network?.replaceAll('-', ' ') ?? 'Arc'}</dd></div>
+                  <div><dt>Block</dt><dd>{selected.settlement_provider === 'arc-simulator' ? 'Simulated' : selected.settlement_block_number ? `#${selected.settlement_block_number.toLocaleString()}` : 'Confirmed'}</dd></div>
+                  <div><dt>{selected.settlement_provider === 'arc-simulator' ? 'Recorded' : 'Confirmed'}</dt><dd>{selected.settlement_confirmed_at ? new Date(selected.settlement_confirmed_at).toLocaleString() : 'Receipt recorded'}</dd></div>
                 </dl>
-                <div className="requester-receipt__transaction"><span><small>Transaction hash</small><code>{selected.settlement_transaction_hash}</code></span>{selected.settlement_explorer_url ? <a href={selected.settlement_explorer_url} target="_blank" rel="noreferrer">View on Arc <Launch size={14} /></a> : null}</div>
+                <div className="requester-receipt__transaction"><span><small>{selected.settlement_provider === 'arc-simulator' ? 'Simulation receipt ID' : 'Transaction hash'}</small><code>{selected.settlement_transaction_hash}</code></span>{selected.settlement_provider !== 'arc-simulator' && selected.settlement_explorer_url ? <a href={selected.settlement_explorer_url} target="_blank" rel="noreferrer">View on Arc <Launch size={14} /></a> : null}</div>
                 <p>{selected.settlement_provider === 'arc-simulator' ? 'Demo settlement receipt generated by the Arc simulator. No real funds moved in this workspace.' : `Settlement provider: ${selected.settlement_provider ?? 'Arc'}. This receipt records the confirmed transfer.`}</p>
               </section> : null}
               <aside className="requester-boundary"><Locked size={17} /><p><strong>What you can see</strong><span>Status, finance feedback, settlement progress, and the final receipt.</span></p><small>Approval and payment controls are only available in the finance backend.</small></aside>
@@ -838,6 +840,7 @@ function RequesterSubmitPage({
   data,
   busy,
   error,
+  correctionSource,
   onNavigate,
   onSignOut,
   onEvaluate,
@@ -845,6 +848,7 @@ function RequesterSubmitPage({
   data: BootstrapData | null;
   busy: boolean;
   error: string | null;
+  correctionSource: OperationsInvoice | null;
   onNavigate: (view: WorkspaceView) => void;
   onSignOut: () => void;
   onEvaluate: (
@@ -856,11 +860,7 @@ function RequesterSubmitPage({
   const [submissionStarted, setSubmissionStarted] = useState(false);
   const [submissionStage, setSubmissionStage] = useState(1);
   const [submittedRun, setSubmittedRun] = useState<RunResult | null>(null);
-  const savedNoticeRef = useRef<HTMLElement>(null);
-  const onNavigateRef = useRef(onNavigate);
-  useEffect(() => {
-    onNavigateRef.current = onNavigate;
-  }, [onNavigate]);
+  const [resultOpen, setResultOpen] = useState(false);
   useEffect(() => {
     if (!submissionStarted) return;
     if (error) {
@@ -872,50 +872,57 @@ function RequesterSubmitPage({
       return;
     }
     if (!submittedRun) return;
-    setSubmissionStage(3);
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const scrollTimer = window.setTimeout(() => {
-      savedNoticeRef.current?.scrollIntoView({
-        behavior: reducedMotion ? 'auto' : 'smooth',
-        block: 'center',
-      });
-    }, 0);
-    const queueTimer = window.setTimeout(() => setSubmissionStage(4), reducedMotion ? 0 : 420);
-    const redirectTimer = window.setTimeout(
-      () => onNavigateRef.current('portal'),
-      reducedMotion ? 900 : 1900,
-    );
-    return () => {
-      window.clearTimeout(scrollTimer);
-      window.clearTimeout(queueTimer);
-      window.clearTimeout(redirectTimer);
-    };
+    setSubmissionStage(4);
+    setResultOpen(true);
   }, [busy, error, submittedRun, submissionStarted]);
   const submitEvidence = (files: EvidenceFileBundle, overrides: EvidenceFieldOverrides) => {
     setSubmissionStarted(true);
     setSubmissionStage(2);
     setSubmittedRun(null);
+    setResultOpen(false);
     onEvaluate(files, overrides, setSubmittedRun);
   };
   const submitSteps = [
     ['Add evidence', 'Choose or replace three source files'],
     ['Seal request', 'Persist verified bytes and extracted fields'],
     ['Policy result', 'Run deterministic finance controls'],
-    ['Finance queue', 'Make the decision visible to both portals'],
+    ['Decision visible', 'See the outcome and next handoff'],
   ] as const;
+  const action = submittedRun?.decision.final_action;
+  const autoPaid = submittedRun?.autopay?.status === 'SETTLED';
+  const autoSimulated = autoPaid && submittedRun?.autopay?.payment?.receipt.provider === 'arc-simulator';
+  const blocked = action === 'REJECT' || action === 'HOLD';
+  const issue = submittedRun?.decision.rules.find((rule) => rule.disposition === 'REJECT' || rule.disposition === 'HOLD');
+  const resultTitle = autoPaid ? autoSimulated ? 'Demo payment completed' : 'Payment confirmed on Arc' : action === 'REJECT' ? 'Request returned for correction' : action === 'HOLD' ? 'Request paused for review' : action === 'ESCALATE' ? 'Independent approval required' : action === 'SCHEDULE' ? 'Payment scheduled' : 'Checks passed — awaiting settlement';
+  const nextAction = autoPaid ? autoSimulated ? 'Your simulation receipt is available in My requests. No funds moved.' : 'Your final receipt is available in My requests.' : action === 'REJECT' ? 'Correct the evidence and submit a new request. The original remains sealed for audit.' : action === 'HOLD' ? 'Finance will review the flagged evidence before any payment can be authorized.' : action === 'ESCALATE' ? 'A finance reviewer must approve this request. No funds have been sent.' : action === 'SCHEDULE' ? 'Finance will release payment on the scheduled date after revalidation.' : 'Finance must complete settlement before this request is marked Paid.';
   return (
     <div className="requester-app">
       <RequesterTopbar active="submit" onNavigate={onNavigate} onSignOut={onSignOut} />
       <main className="requester-submit">
-        <header><button type="button" onClick={() => onNavigate('portal')}>← My requests</button><span>NEW PAYMENT REQUEST</span><h1>Submit an invoice for payment</h1><p>Add the three records finance needs. AI extracts the fields, but you confirm them before anything is saved.</p></header>
+        <header><button type="button" onClick={() => onNavigate('portal')}>← My requests</button><span>{correctionSource ? `CORRECTING ${correctionSource.invoice_number}` : 'NEW PAYMENT REQUEST'}</span><h1>{correctionSource ? 'Submit corrected evidence' : 'Submit an invoice for payment'}</h1><p>{correctionSource ? 'The previous request remains sealed. Upload corrected documents, review the extracted fields, and submit a new request.' : 'Add the three records finance needs. AI extracts the fields, but you confirm them before anything is saved.'}</p></header>
+        {correctionSource ? <aside className="requester-correction"><WarningAltFilled size={20} /><div><strong>Returned request · {correctionSource.invoice_number}</strong><p>{correctionSource.decision_findings?.map((finding) => finding.message).join(' ') || 'Review the source evidence and the finance feedback before retrying.'}</p><small>Start with sample documents or upload your own. Confirm every corrected field before sealing.</small></div></aside> : null}
         <div className="requester-submit__steps">{submitSteps.map(([label, detail], index) => <span className={index + 1 < submissionStage ? 'is-complete' : index + 1 === submissionStage ? 'is-active' : ''} key={label}><b>{index + 1 < submissionStage ? '✓' : index + 1}</b><em>{label}<small>{detail}</small></em></span>)}</div>
         {error ? <InlineNotification kind="error" title="Submission stopped" subtitle={error} lowContrast /> : null}
         <section className="requester-submit__card">
           {data ? <LiveEvidenceWorkbench busy={busy} submitted={Boolean(submittedRun)} operatorToken={data.sessions.operator} onEvaluate={submitEvidence} /> : <div className="premium-loading"><SkeletonText heading /><SkeletonText paragraph lineCount={5} /></div>}
         </section>
         {submissionStarted && busy ? <aside className="requester-submit__processing"><span className="requester-submit__pulse" /><div><strong>{submissionStage === 2 ? 'Sealing your evidence' : 'Running payment controls'}</strong><small>The uploaded bytes are being hashed and matched. A clean request settles automatically only when both no-touch limits remain available.</small></div></aside> : null}
-        {submissionStarted && submittedRun && !busy ? <aside ref={savedNoticeRef} className="requester-submit__saved" role="status" aria-live="polite"><CheckmarkFilled className="requester-submit__success-icon" size={22} /><span><strong>{submittedRun.autopay?.status === 'SETTLED' ? `${submittedRun.invoice.invoice_number} was automatically paid` : `${submittedRun.invoice.invoice_number} was submitted successfully`}</strong><small>{submittedRun.autopay?.status === 'SETTLED' ? `${formatMoney(submittedRun.autopay.payment?.receipt.confirmed_amount_usdc ?? submittedRun.invoice.amount)} ${submittedRun.invoice.currency} settled without final manual review · receipt ${shorten(submittedRun.autopay.payment?.receipt.transaction_hash ?? '', 10, 8)}` : `${ACTION_LABEL[submittedRun.decision.final_action]} · requested ${formatMoney(submittedRun.invoice.amount)} ${submittedRun.invoice.currency} · no funds sent yet`}</small><span className="requester-submit__handoff" aria-label="Submission handoff progress"><i className={submissionStage >= 2 ? 'is-complete' : ''}>Evidence sealed</i><i className={submissionStage >= 3 ? 'is-complete' : ''}>Controls checked</i><i className={submittedRun.autopay?.status === 'SETTLED' || submissionStage >= 4 ? 'is-complete' : ''}>{submittedRun.autopay?.status === 'SETTLED' ? 'Auto-paid on Arc' : 'Finance queued'}</i></span><em>Opening the request timeline…</em></span><button type="button" onClick={() => onNavigate('portal')}>Open request now <ArrowRight size={14} /></button></aside> : null}
+        {submittedRun && !busy ? <aside className="requester-submit__saved" role="status"><CheckmarkFilled size={22} /><span><strong>{submittedRun.invoice.invoice_number} · {resultTitle}</strong><small>{nextAction}</small></span><button type="button" onClick={() => setResultOpen(true)}>Review outcome <ArrowRight size={14} /></button></aside> : null}
       </main>
+      <Modal open={resultOpen && Boolean(submittedRun)} passiveModal modalHeading={resultTitle} modalLabel="PAYMENT REQUEST RESULT" className="request-result-modal" onRequestClose={() => setResultOpen(false)}>
+        {submittedRun ? <div className="request-result">
+          <div className={`request-result__hero ${blocked ? 'is-blocked' : autoPaid ? 'is-paid' : 'is-pending'}`}><span>{blocked ? '!' : autoPaid ? '✓' : '→'}</span><div><strong>{submittedRun.invoice.invoice_number}</strong><p>{formatMoney(submittedRun.invoice.amount)} {submittedRun.invoice.currency} requested · {autoPaid ? autoSimulated ? 'Demo receipt recorded · no funds moved' : 'Arc receipt confirmed' : 'No funds sent yet'}</p></div></div>
+          <ol className="request-result__steps" aria-label="Request progress">
+            <li className="is-complete"><b>✓</b><span><strong>Evidence received</strong><small>Three source files sealed</small></span></li>
+            <li className="is-complete"><b>✓</b><span><strong>Controls evaluated</strong><small>{submittedRun.decision.rules.length} policy checks recorded</small></span></li>
+            <li className={blocked ? 'is-blocked' : autoPaid ? 'is-complete' : 'is-current'}><b>{blocked ? '!' : autoPaid ? '✓' : '3'}</b><span><strong>{blocked ? 'Action needed' : autoPaid ? 'Payment authorized' : action === 'ESCALATE' ? 'Awaiting independent approval' : 'Finance handoff'}</strong><small>{blocked ? issue?.message ?? ACTION_LABEL[action ?? 'HOLD'] : autoPaid ? 'Within finance-configured autonomy limits' : nextAction}</small></span></li>
+            <li className={autoPaid ? 'is-complete' : ''}><b>{autoPaid ? '✓' : '4'}</b><span><strong>{autoSimulated ? 'Demo settlement & receipt' : 'Arc settlement & receipt'}</strong><small>{autoPaid ? autoSimulated ? 'Simulated · no funds moved' : shorten(submittedRun.autopay?.payment?.receipt.transaction_hash ?? '', 12, 10) : 'Not yet confirmed'}</small></span></li>
+          </ol>
+          {blocked ? <div className="request-result__reason"><strong>Why it stopped</strong><p>{issue?.message ?? submittedRun.decision.reason_codes.join(' · ')}</p><small>{issue?.remediation ?? submittedRun.decision.remediation[0] ?? nextAction}</small></div> : null}
+          <p className="request-result__next"><strong>What happens next</strong>{nextAction}</p>
+          <div className="request-result__actions"><button type="button" className="is-secondary" onClick={() => setResultOpen(false)}>Stay on this page</button><button type="button" onClick={() => onNavigate('portal')}>View request timeline <ArrowRight size={16} /></button></div>
+        </div> : null}
+      </Modal>
     </div>
   );
 }
@@ -1045,7 +1052,13 @@ function PremiumPayablesPage({
     return true;
   };
   const filtered = queue.filter((item) => tabMatches(item) && (!normalizedQuery || [item.invoice_number, item.vendor_id, item.status, item.source_document_hash].some((value) => value.toLowerCase().includes(normalizedQuery))));
-  const selected = drawerOpen ? filtered.find((item) => item.id === selectedId) ?? filtered[0] ?? null : null;
+  useEffect(() => {
+    if (!filtered.length || filtered.some((item) => item.id === selectedId)) return;
+    setSelectedId(filtered[0].id);
+    setBatchIds([filtered[0].id]);
+    setDrawerOpen(true);
+  }, [filtered, selectedId]);
+  const selected = drawerOpen ? filtered.find((item) => item.id === selectedId) ?? null : null;
   const ready = queue.filter(isSettlementReady);
   const attention = queue.filter(needsFinanceAttention);
   const scheduled = queue.filter((item) => item.settlement_status !== 'CONFIRMED' && (item.decision_action === 'SCHEDULE' || item.status === 'SCHEDULED'));
@@ -1089,11 +1102,11 @@ function PremiumPayablesPage({
             <button type="button" className="payables-filter" onClick={onRunSchedules} disabled={busy}><Renew size={14} /> Run due schedules</button>
           </div>
           <section className="payables-table" aria-label="Invoice payables">
-            <div className="payables-table__head"><span>Batch</span><span>Invoice ↓</span><span>Vendor</span><span>Amount</span><span>Due ↕</span><span>Evidence</span><span>Decision</span><span>Status</span></div>
+            <div className="payables-table__head"><span aria-label="Select invoices" title="Select invoices">✓</span><span>Invoice ↓</span><span>Vendor</span><span>Amount</span><span>Due ↕</span><span>Evidence</span><span>Decision</span><span>Status</span></div>
             {filtered.length ? filtered.map((item) => (
-              <div className={selected?.id === item.id ? 'payables-table__row is-selected' : 'payables-table__row'} key={item.id} onClick={() => { setSelectedId(item.id); setDrawerOpen(true); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') { setSelectedId(item.id); setDrawerOpen(true); } }}>
-                <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number} for batch settlement`} checked={batchIds.includes(item.id)} disabled={!isSettlementReady(item)} onChange={(event) => setBatchChecked(item.id, event.target.checked)} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
-                <button type="button" className="payable-link" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setDrawerOpen(true); if (item.decision_id) onOpenReview(item); }}><strong>{item.invoice_number}</strong><small>{shorten(item.id, 7, 4)}</small></button>
+              <div className={batchIds.includes(item.id) ? 'payables-table__row is-selected' : 'payables-table__row'} key={item.id} onClick={() => { setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') { setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); } }}>
+                <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number}`} checked={batchIds.includes(item.id)} onChange={(event) => { setSelectedId(item.id); setDrawerOpen(true); setBatchChecked(item.id, event.target.checked); }} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
+                <button type="button" className="payable-link" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); if (item.decision_id) onOpenReview(item); }}><strong>{item.invoice_number}</strong><small>{shorten(item.id, 7, 4)}</small></button>
                 <span className="vendor-cell"><strong>{vendorLabel(item.vendor_id)}</strong><small>{isDemoScenarioInvoice(item) ? 'Sample case · ' : ''}{shorten(item.payment_wallet_address, 7, 5)}</small></span>
                 <strong>{formatMoney(item.amount)} {item.currency}</strong><span>{dueLabel(item.due_date)}</span>
                 <span className={item.decision_id ? 'evidence-state is-good' : 'evidence-state'}><i />{item.decision_id ? 'Decision sealed' : 'Evidence needed'}</span>
@@ -1102,7 +1115,7 @@ function PremiumPayablesPage({
             )) : <div className="payables-empty"><Document size={24} /><strong>No payment requests are waiting.</strong><span>{settlementMode === 'circle-live' ? 'User submissions appear here after evidence is confirmed. The treasury balance is read directly from Circle and verified against Arc.' : 'User submissions appear here after evidence is confirmed. Load a realistic queue to inspect the finance workflow.'}</span><div><button type="button" onClick={() => onNavigate('approvals')}>Open approvals</button>{settlementMode === 'circle-live' ? <button type="button" className="is-secondary" onClick={onRefreshTreasury} disabled={busy}>Refresh Arc balance</button> : <button type="button" className="is-secondary" onClick={onSeedShowcase} disabled={busy}>Load sample requests</button>}</div></div>}
             <footer><span>Showing {filtered.length} of {queue.length} invoices</span><span>{operations?.as_of ? `Snapshot ${new Date(operations.as_of).toLocaleString()}` : 'Waiting for live operations data'}</span></footer>
           </section>
-          <section className="payables-batchbar"><div><strong>{selectedBatch.length} settlement-ready invoices selected</strong><span>Each item is revalidated against current policy before transfer.</span></div><button type="button" disabled={busy || selectedBatch.length === 0} onClick={() => onSettleBatch(selectedBatch)}>Settle selected on Arc <ArrowRight size={15} /></button></section>
+          <section className="payables-batchbar"><div><strong>{batchIds.length} selected · {selectedBatch.length} ready for settlement</strong><span>Rows needing approval or correction can be selected for review, but cannot be paid. Ready items are revalidated before transfer.</span></div><button type="button" disabled={busy || selectedBatch.length === 0} onClick={() => onSettleBatch(selectedBatch)}>Settle ready selection on Arc <ArrowRight size={15} /></button></section>
           {batch ? <InlineNotification kind={batch.failed ? 'warning' : 'success'} title={`${batch.succeeded} of ${batch.requested} payments confirmed`} subtitle={`${batch.failed} failed · every item was revalidated before settlement`} lowContrast hideCloseButton /> : null}
           {scheduleRun ? <InlineNotification kind="info" title="Schedule runner completed" subtitle={`${scheduleRun.scanned} scanned · ${scheduleRun.settled} settled · ${scheduleRun.waiting} waiting · ${scheduleRun.revalidated} revalidated`} lowContrast hideCloseButton /> : null}
           {ledgerExport ? <InlineNotification kind="success" title="Accounting ledger exported" subtitle={`${ledgerExport.rows} rows · SHA-256 ${shorten(ledgerExport.hash, 14, 10)}`} lowContrast hideCloseButton /> : null}
@@ -1115,7 +1128,7 @@ function PremiumPayablesPage({
             <div className="drawer-request-link"><span>{isDemoScenarioInvoice(selected) ? 'Preloaded example' : 'Matching user request'}</span><strong>{selected.invoice_number}</strong><small>{isDemoScenarioInvoice(selected) ? 'A complete decision path you can inspect without uploading a file.' : 'The same request ID, amount, and source hash appear in both portals.'}</small></div>
             <dl className="invoice-facts"><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{dueLabel(selected.due_date)}</dd></div><div><dt>Decision</dt><dd>{financeDecisionLabel(selected)}</dd></div><div><dt>Settlement</dt><dd>{settlementStatusLabel(selected)}</dd></div></dl>
             <section className="drawer-section"><header><strong>Evidence & decision</strong><span>{selected.decision_id ? 'Replayable' : 'Not evaluated'}</span></header><div className="drawer-evidence"><span>▤</span><strong>Source document</strong><small>{shorten(selected.source_document_hash, 14, 10)}</small><i>✓</i></div><div className="drawer-evidence"><span>♢</span><strong>Policy action</strong><small>{selected.decision_action ? ACTION_LABEL[selected.decision_action] : 'Awaiting evaluation'}</small><i>{selected.decision_id ? '✓' : '•'}</i></div></section>
-            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;{settlementMode === 'circle-live' ? 'LIVE' : 'SIMULATION'}</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? settlementMode === 'circle-live' ? 'Circle transfer confirmed by independent Arc RPC proof' : 'Confirmed simulation receipt recorded' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>Actually sent</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : 'No transaction yet'}</p></article></div></section>
+            <section className="drawer-section"><header><strong>Settlement</strong><span className="arc-label"><i />Arc Testnet&nbsp;&nbsp;{settlementMode === 'circle-live' ? 'LIVE' : 'SIMULATION'}</span></header><div className="wallet-line"><span>Payout wallet</span><code>{shorten(selected.payment_wallet_address, 10, 8)}&nbsp; □</code><small>{selected.settlement_retryable ? 'Retryable incident detected' : selected.settled_amount_usdc ? settlementMode === 'circle-live' ? 'Circle transfer confirmed by independent Arc RPC proof' : 'Simulation receipt recorded · no funds moved' : 'No transfer has been submitted yet'}</small></div><div className="drawer-cards"><article><span>♢</span><small>Requested</small><strong>{formatMoney(selected.amount)} {selected.currency}</strong><p>{financeDecisionLabel(selected)}</p></article><article><span>▤</span><small>{settlementMode === 'circle-live' ? 'Actually sent' : 'Demo settled'}</small><strong>{selected.settled_amount_usdc ? `${formatMoney(selected.settled_amount_usdc)} ${selected.currency}` : '0.00 USDC'}</strong><p>{settlementMode === 'circle-live' && selected.settlement_transaction_hash ? shorten(selected.settlement_transaction_hash, 10, 8) : settlementMode === 'circle-live' ? 'No transaction yet' : 'No funds moved'}</p></article></div></section>
             <button type="button" className="drawer-primary" disabled={busy || !selected.decision_id} onClick={() => selected.decision_id && onOpenReview(selected)}>{busy ? 'Loading live record…' : selected.decision_id ? 'Review evidence & controls' : 'Waiting for requester evidence'}</button>
             <small className="simulation-note">{settlementMode === 'circle-live' ? 'Live mode: final authorization submits USDC through Circle and accepts the result only after independent Arc RPC verification.' : 'Public judge workspace is forced simulation. The same workflow supports configured Circle/Arc adapters.'}</small>
             <section className="audit-mini"><header><strong>Traceability</strong><button type="button" onClick={() => onNavigate('audit')}>Open audit ledger →</button></header><ol><li><i />Invoice persisted<small>Tenant-scoped workspace record</small><time>{new Date(selected.created_at).toLocaleString()}</time></li><li><i />Latest state recorded<small>{statusLabel(selected)}</small><time>{new Date(selected.updated_at).toLocaleString()}</time></li>{selected.decision_id ? <li><i />Decision snapshot sealed<small>{shorten(selected.decision_id, 12, 8)}</small><time>Replay available</time></li> : null}</ol></section>
@@ -1138,12 +1151,12 @@ function PaymentLifecycle({ run, approval, payment, busy }: { run: RunResult | n
     { label: 'Invoice received', detail: run ? run.invoice.invoice_number : 'Waiting for a supplier bill', state: run ? 'complete' : evaluating ? 'current' : 'pending' },
     { label: 'AI & policy checks', detail: run ? ACTION_LABEL[run.decision.final_action] : evaluating ? 'Reading evidence and applying controls' : 'Not started', state: run ? 'complete' : evaluating ? 'current' : 'pending' },
     { label: 'Independent approval', detail: !run ? 'Waiting for checks' : !needsApproval ? 'Not required by policy' : rejected ? 'Rejected with reason' : approved ? 'Approved by finance controller' : approval ? 'Waiting for approver' : 'Ready to submit', state: !run ? 'pending' : !needsApproval || approved ? 'complete' : rejected ? 'rejected' : 'current' },
-    { label: 'Arc settlement', detail: payment ? `${formatMoney(payment.receipt.confirmed_amount_usdc)} USDC confirmed` : settling ? 'Submitting and reconciling' : rejected ? 'Locked after rejection' : 'Waiting for authorization', state: payment ? 'complete' : settling ? 'current' : 'pending' },
+    { label: payment?.receipt.provider === 'arc-simulator' ? 'Demo settlement' : 'Arc settlement', detail: payment ? `${formatMoney(payment.receipt.confirmed_amount_usdc)} USDC ${payment.receipt.provider === 'arc-simulator' ? 'simulated' : 'confirmed'}` : settling ? 'Submitting and reconciling' : rejected ? 'Locked after rejection' : 'Waiting for authorization', state: payment ? 'complete' : settling ? 'current' : 'pending' },
     { label: 'Receipt', detail: payment ? 'Audit-ready proof available' : 'Created after reconciliation', state: payment ? 'complete' : 'pending' },
   ];
   return (
     <footer className="payment-lifecycle" aria-label="Payment request progress">
-      <div className="payment-lifecycle__label"><strong>Payment status</strong><small>{rejected ? 'Stopped by independent review' : payment ? 'Complete and reconciled' : 'Every handoff is visible'}</small></div>
+      <div className="payment-lifecycle__label"><strong>Payment status</strong><small>{rejected ? 'Stopped by independent review' : payment ? payment.receipt.provider === 'arc-simulator' ? 'Simulation complete · no funds moved' : 'Complete and reconciled' : 'Every handoff is visible'}</small></div>
       {steps.map((step, index) => <article className={`is-${step.state}`} key={step.label}><span>{step.state === 'complete' ? '✓' : step.state === 'rejected' ? '×' : index + 1}</span><div><strong>{step.label}</strong><small>{step.detail}</small></div></article>)}
     </footer>
   );
@@ -1285,9 +1298,18 @@ function InvoiceReviewPage({
   const settlementEligible = run?.decision.final_action === 'PAY' || (run?.decision.final_action === 'ESCALATE' && approval?.status === 'APPROVED');
   const approvalRejected = approval?.status === 'REJECTED';
   const action = !run ? onRun : run.decision.final_action === 'ESCALATE' && !approval ? onRequestApproval : approval?.status === 'PENDING' ? () => onNavigate('approvals') : settlementEligible ? onSettle : () => onNavigate('evidence');
-  const label = busy ? busy : payment ? 'View confirmed receipt' : !run ? 'Review sample invoice' : run.decision.final_action === 'ESCALATE' && !approval ? 'Submit for independent approval' : approval?.status === 'PENDING' ? 'Open approver portal' : approvalRejected ? 'Rejected — review reason below' : settlementEligible ? `Settle ${formatMoney(run.invoice.amount)} USDC on Arc` : `${ACTION_LABEL[run.decision.final_action]} — settlement locked`;
+  const label = busy ? busy : payment ? payment.receipt.provider === 'arc-simulator' ? 'View simulation receipt' : 'View confirmed receipt' : !run ? 'Review sample invoice' : run.decision.final_action === 'ESCALATE' && !approval ? 'Submit for independent approval' : approval?.status === 'PENDING' ? 'Open approver portal' : approvalRejected ? 'Rejected — review reason below' : settlementEligible ? `Settle ${formatMoney(run.invoice.amount)} USDC on Arc` : `${ACTION_LABEL[run.decision.final_action]} — settlement locked`;
   const handlePrimary = () => {
-    if (payment?.receipt.explorer_url) { window.open(payment.receipt.explorer_url, '_blank', 'noopener,noreferrer'); return; }
+    if (payment) {
+      if (payment.receipt.provider !== 'arc-simulator' && payment.receipt.explorer_url) {
+        window.open(payment.receipt.explorer_url, '_blank', 'noopener,noreferrer');
+      } else {
+        const details = document.querySelector<HTMLDetailsElement>('.review-deep-dive');
+        if (details) details.open = true;
+        window.requestAnimationFrame(() => document.querySelector('.receipt-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      }
+      return;
+    }
     action();
   };
   const invoice = run?.invoice;
@@ -1319,7 +1341,7 @@ function InvoiceReviewPage({
   const decisionOutcome = approvalRejected
     ? { tone: 'rejected', title: 'Rejected — no funds sent', detail: approval?.resolution_note ?? 'The independent approver returned this request.' }
     : payment
-      ? { tone: 'paid', title: `Paid ${formatMoney(payment.receipt.confirmed_amount_usdc)} USDC`, detail: `Confirmed on ${payment.receipt.network} · ${shorten(payment.receipt.transaction_hash, 12, 10)}` }
+      ? { tone: 'paid', title: `${payment.receipt.provider === 'arc-simulator' ? 'Demo payment completed' : 'Paid'} ${formatMoney(payment.receipt.confirmed_amount_usdc)} USDC`, detail: payment.receipt.provider === 'arc-simulator' ? 'Simulation receipt · no funds moved' : `Confirmed on ${payment.receipt.network} · ${shorten(payment.receipt.transaction_hash, 12, 10)}` }
       : approval?.status === 'PENDING'
         ? { tone: 'review', title: 'Waiting for independent approval', detail: `${formatMoney(invoice?.amount ?? '0')} USDC requested · no funds sent` }
         : settlementEligible
@@ -1339,12 +1361,12 @@ function InvoiceReviewPage({
       <div className="review-layout">
         <aside className="review-nav"><nav>{([['Payment requests',Document,'finance'],['Approval queue',CheckmarkFilled,'approvals'],['Evidence lab',ListChecked,'evidence'],['Policies',DocumentSecurity,'policies'],['Agent runs',Rule,'automation'],['Audit',Locked,'audit']] as const).map(([name, Icon, view], index) => <button type="button" className={index === 0 ? 'is-active' : ''} key={name} onClick={() => onNavigate(view)}><Icon size={17} /><span>{name}</span></button>)}</nav><div><small>Finance backend<br />controller access</small><span><i />Testnet<br />Connected</span></div></aside>
         <main className="review-main">
-          <header className="review-title"><div><h1>Invoice review</h1><p>{invoice ? `${invoice.invoice_number} · ${vendorName} · sealed evidence and policy state` : 'Verify evidence. Approve with confidence.'}</p></div><div className="review-pager"><strong>{payment ? 'Paid on Arc' : approval?.status === 'APPROVED' ? 'Approved by finance' : approvalRejected ? 'Rejected by approver' : decision ? ACTION_LABEL[decision.final_action] : 'No decision loaded'}</strong><button type="button" onClick={onBack}>View all invoices</button></div></header>
+          <header className="review-title"><div><h1>Invoice review</h1><p>{invoice ? `${invoice.invoice_number} · ${vendorName} · sealed evidence and policy state` : 'Verify evidence. Approve with confidence.'}</p></div><div className="review-pager"><strong>{payment ? payment.receipt.provider === 'arc-simulator' ? 'Demo settled' : 'Paid on Arc' : approval?.status === 'APPROVED' ? 'Approved by finance' : approvalRejected ? 'Rejected by approver' : decision ? ACTION_LABEL[decision.final_action] : 'No decision loaded'}</strong><button type="button" onClick={onBack}>View all invoices</button></div></header>
           <div className="review-workspace">
             <section className="invoice-stage">
               <article className="invoice-paper">
                 <header><div className="atlas-mark">▲</div><div><h2>{vendorName}</h2><p>Verified supplier record on Arc.</p></div><strong>INVOICE</strong></header>
-                <div className="invoice-parties"><div><strong>{vendorName}</strong><span>Tenant vendor identity<br /><span className="invoice-source-inline" data-review-source="wallet">Wallet {shorten(invoice?.payment_wallet_address ?? 'not available', 10, 8)}</span><br />Arc settlement network</span><strong>Bill To</strong><span><b>TallyGuard workspace</b><br />Role-separated finance operations<br />Evidence-bound settlement</span></div><dl><div><dt>Invoice No.</dt><dd className="is-linked" data-review-source="invoice">{invoice?.invoice_number ?? '—'}</dd></div><div><dt>Created</dt><dd>{invoice ? new Date(invoice.created_at).toLocaleDateString() : '—'}</dd></div><div><dt>Due Date</dt><dd className="is-linked" data-review-source="due">{invoice?.due_date ?? '—'}</dd></div><div><dt>Status</dt><dd>{payment ? 'PAID' : invoice?.status.replaceAll('_', ' ') ?? '—'}</dd></div><div className="spaced"><dt>Document proof</dt><dd className="is-linked">{shorten(invoice?.source_document_hash ?? 'not available', 8, 5)}</dd></div><div><dt>Decision</dt><dd>{shorten(decision?.id ?? 'not evaluated', 8, 5)}</dd></div><div><dt>Version</dt><dd>v{invoice?.version ?? 0}</dd></div></dl></div>
+                <div className="invoice-parties"><div><strong>{vendorName}</strong><span>Tenant vendor identity<br /><span className="invoice-source-inline" data-review-source="wallet">Wallet {shorten(invoice?.payment_wallet_address ?? 'not available', 10, 8)}</span><br />Arc settlement network</span><strong>Bill To</strong><span><b>TallyGuard workspace</b><br />Role-separated finance operations<br />Evidence-bound settlement</span></div><dl><div><dt>Invoice No.</dt><dd className="is-linked" data-review-source="invoice">{invoice?.invoice_number ?? '—'}</dd></div><div><dt>Created</dt><dd>{invoice ? new Date(invoice.created_at).toLocaleDateString() : '—'}</dd></div><div><dt>Due Date</dt><dd className="is-linked" data-review-source="due">{invoice?.due_date ?? '—'}</dd></div><div><dt>Status</dt><dd>{payment ? payment.receipt.provider === 'arc-simulator' ? 'DEMO SETTLED' : 'PAID' : invoice?.status.replaceAll('_', ' ') ?? '—'}</dd></div><div className="spaced"><dt>Document proof</dt><dd className="is-linked">{shorten(invoice?.source_document_hash ?? 'not available', 8, 5)}</dd></div><div><dt>Decision</dt><dd>{shorten(decision?.id ?? 'not evaluated', 8, 5)}</dd></div><div><dt>Version</dt><dd>v{invoice?.version ?? 0}</dd></div></dl></div>
                 <div className="invoice-lines"><div className="invoice-lines__head"><span>Description</span><span>Qty</span><span>Unit Price</span><span>Amount</span></div><div><span>Governed vendor payment<br />Immutable source evidence attached</span><span>1</span><span>{formatMoney(invoice?.amount ?? '0')}</span><span className="is-linked" data-review-source="amount">{formatMoney(invoice?.amount ?? '0')} {invoice?.currency ?? 'USDC'}</span></div></div>
                 <div className="invoice-total"><span>Subtotal</span><strong>{formatMoney(invoice?.amount ?? '0')} {invoice?.currency ?? 'USDC'}</strong><span>Total Due</span><strong className="is-linked">{formatMoney(invoice?.amount ?? '0')} {invoice?.currency ?? 'USDC'}</strong></div>
                 <footer>Source hash {shorten(invoice?.source_document_hash ?? 'not available', 16, 12)}</footer>
@@ -1375,7 +1397,7 @@ function InvoiceReviewPage({
             </aside>
           </div>
         </main>
-        <aside className={approvalRejected ? 'review-status is-rejected' : settlementEligible || payment ? 'review-status' : 'review-status is-blocked'}><div className="review-status__hero"><span>{approvalRejected ? '×' : settlementEligible || payment ? '✓' : '!'}</span><div><strong>{approvalRejected ? 'Rejected by approver' : payment ? 'Confirmed on Arc' : settlementEligible ? 'Approved for payment' : decision ? ACTION_LABEL[decision.final_action] : 'Awaiting evaluation'}</strong><small>{approvalRejected ? 'Reason is visible in the decision packet' : payment ? 'Reconciled receipt available' : settlementEligible ? 'Finance settlement is the next separate step' : approval?.status === 'PENDING' ? 'Waiting for independent approver' : 'Policy controls the next action'}</small></div></div></aside>
+        <aside className={approvalRejected ? 'review-status is-rejected' : settlementEligible || payment ? 'review-status' : 'review-status is-blocked'}><div className="review-status__hero"><span>{approvalRejected ? '×' : settlementEligible || payment ? '✓' : '!'}</span><div><strong>{approvalRejected ? 'Rejected by approver' : payment ? payment.receipt.provider === 'arc-simulator' ? 'Demo payment completed' : 'Confirmed on Arc' : settlementEligible ? 'Approved for payment' : decision ? ACTION_LABEL[decision.final_action] : 'Awaiting evaluation'}</strong><small>{approvalRejected ? 'Reason is visible in the decision packet' : payment ? payment.receipt.provider === 'arc-simulator' ? 'Simulation receipt · no funds moved' : 'Reconciled receipt available' : settlementEligible ? 'Finance settlement is the next separate step' : approval?.status === 'PENDING' ? 'Waiting for independent approver' : 'Policy controls the next action'}</small></div></div></aside>
       </div>
       <PaymentLifecycle run={run} approval={approval} payment={payment} busy={busy} />
       {run ? <details className="review-deep-dive"><summary><span><small>ADVANCED VERIFICATION</small><strong>Evidence, replay, simulation and audit proof</strong></span><em>Open tools</em></summary><section className="review-detail-stack"><div className="review-detail-stack__intro"><span>DEEP VERIFICATION</span><h2>Inspect the controls behind this decision.</h2><p>Replay sealed inputs, download original evidence, run non-persistent policy what-if cases, and inspect the proof chain. These tools support audit work; they are not required for a normal approval.</p></div><div className="result-grid"><EvidencePanel run={run} documents={evidenceDocuments} busy={Boolean(busy)} onDownloadDocument={onDownloadSourceEvidence} /><DecisionPanel run={run} approval={approval} payment={payment} busy={busy} replay={replay} simulation={simulation} settlementStopped={settlementStopped} settlementRetryNeeded={settlementRetryNeeded} onRequestApproval={onRequestApproval} onApprove={() => onNavigate('approvals')} onSettle={onSettle} onVerifyReplay={onVerifyReplay} onSimulatePolicy={onSimulatePolicy} /></div>{payment ? <ReceiptPanel payment={payment} /> : null}{auditTrail ? <AuditTimeline trail={auditTrail} packetHash={packetHash} busy={Boolean(busy)} onDownloadPacket={onDownloadPacket} /> : null}</section></details> : null}
@@ -2907,15 +2929,15 @@ function ReceiptPanel({ payment }: { payment: Payment }) {
     <section className="receipt-panel">
       <div className="receipt-panel__title">
         <div className="receipt-icon"><CheckmarkFilled size={24} /></div>
-        <div><span className="eyebrow">{simulated ? 'Reconciled simulation' : 'Reconciled settlement'}</span><h2>{formatMoney(receipt.confirmed_amount_usdc)} USDC confirmed</h2></div>
+        <div><span className="eyebrow">{simulated ? 'Reconciled simulation' : 'Reconciled settlement'}</span><h2>{formatMoney(receipt.confirmed_amount_usdc)} USDC {simulated ? 'simulated' : 'confirmed'}</h2></div>
         <Tag type={simulated ? 'cool-gray' : 'green'}>{simulated ? 'SIMULATED' : receipt.status}</Tag>
       </div>
       <div className="receipt-grid">
         <div><span>Execution provider</span><strong>{receipt.provider}</strong></div>
         <div><span>Arc network</span><strong>{receipt.network}</strong></div>
-        <div><span>Block</span><strong>#{receipt.block_number.toLocaleString()}</strong></div>
+        <div><span>Block</span><strong>{simulated ? 'Simulated' : `#${receipt.block_number.toLocaleString()}`}</strong></div>
         <div><span>Exactly-once guard</span><strong>{payment.reused_receipt ? 'Existing receipt reused' : 'New intent persisted'}</strong></div>
-        <div className="receipt-grid__wide"><span>Transaction hash</span><code>{receipt.transaction_hash}</code></div>
+        <div className="receipt-grid__wide"><span>{simulated ? 'Simulation receipt ID' : 'Transaction hash'}</span><code>{receipt.transaction_hash}</code></div>
       </div>
       {simulated ? (
         <InlineNotification
@@ -3189,6 +3211,7 @@ function App() {
   const [portalRole, setPortalRole] = useState<PortalRole | null>(readPortalRole);
   const portalRoleRef = useRef<PortalRole | null>(portalRole);
   const [requestApprovals, setRequestApprovals] = useState<Record<string, Approval | null>>({});
+  const [correctionSource, setCorrectionSource] = useState<OperationsInvoice | null>(null);
   const [arcActivity, setArcActivity] = useState<ArcActivityResponse | null>(null);
   const [arcActivityError, setArcActivityError] = useState<string | null>(null);
 
@@ -3724,6 +3747,7 @@ function App() {
     setActiveView(view);
   };
   const navigateToView = (view: WorkspaceView) => {
+    if (view === 'submit') setCorrectionSource(null);
     if (REQUESTER_VIEWS.includes(view) && portalRoleRef.current !== 'requester') {
       setView('login-user');
       return;
@@ -3733,6 +3757,10 @@ function App() {
       return;
     }
     setView(view);
+  };
+  const startCorrection = (item: OperationsInvoice) => {
+    setCorrectionSource(item);
+    setView('submit');
   };
   const enterPortal = (role: PortalRole) => {
     window.sessionStorage.setItem(PORTAL_ROLE_KEY, role);
@@ -3837,9 +3865,9 @@ function App() {
         ) : !data ? (
           <div className="premium-loading" aria-label="Loading finance workspace"><SkeletonText heading width="32%" /><SkeletonText paragraph lineCount={8} /></div>
         ) : activeView === 'portal' ? (
-          <RequesterPortalPage operations={operations} approvals={requestApprovals} busy={busy !== null} settlementMode={data.readiness.settlement_mode} onNavigate={navigateToView} onSignOut={signOutPortal} />
+          <RequesterPortalPage operations={operations} approvals={requestApprovals} busy={busy !== null} settlementMode={data.readiness.settlement_mode} onNavigate={navigateToView} onStartCorrection={startCorrection} onSignOut={signOutPortal} />
         ) : activeView === 'submit' ? (
-          <RequesterSubmitPage data={data} busy={busy !== null} error={error} onNavigate={navigateToView} onSignOut={signOutPortal} onEvaluate={handleUploadedEvidence} />
+          <RequesterSubmitPage data={data} busy={busy !== null} error={error} correctionSource={correctionSource} onNavigate={navigateToView} onSignOut={signOutPortal} onEvaluate={handleUploadedEvidence} />
         ) : activeView === 'finance' || activeView === 'payables' ? (
           <PremiumPayablesPage
             operations={operations}

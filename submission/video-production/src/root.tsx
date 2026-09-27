@@ -5,7 +5,7 @@ import {Film} from './Film';
 export const Root: React.FC = () => <Composition
   id="TallyGuardFilm"
   component={Film}
-  durationInFrames={179 * 30}
+  durationInFrames={195 * 30}
   fps={30}
   width={1920}
   height={1080}
