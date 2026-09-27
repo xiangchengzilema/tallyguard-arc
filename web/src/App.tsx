@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Content,
@@ -158,6 +158,10 @@ const RULE_PRESENTATION: Record<string, { title: string; why: string; passNext: 
   KILL_SWITCH_ACTIVE: { title: 'Payments paused by finance', why: 'The emergency stop prevents any automated settlement while an incident is reviewed.', passNext: 'Wait for a treasury owner to reopen payment processing.' },
   INVOICE_UNIQUE: { title: 'No duplicate invoice found', why: 'The source fingerprint has not appeared in another payment request.', passNext: 'Continue to supplier identity checks.' },
   DUPLICATE_INVOICE: { title: 'Duplicate invoice blocked', why: 'The same source evidence has already been recorded and must not be paid twice.', passNext: 'Open the existing request or submit corrected evidence.' },
+  VENDOR_INVOICE_NUMBER_REUSED: { title: 'Possible duplicate — review required', why: 'This supplier invoice number appears in another request even though the document or amount changed. The earlier request ID is shown in the finding.', passNext: 'Compare both sealed evidence packets and payment histories. An independent approver must document whether this is a correction or a duplicate.' },
+  NEAR_DUPLICATE_INVOICE_FIELDS: { title: 'Near-matching invoice — review required', why: 'The supplier, amount, due date, and extracted fields closely resemble a previous request despite a different invoice number. Similarity is a review signal, not proof of fraud.', passNext: 'Compare both source documents, service periods, and payment history before recording a decision.' },
+  PO_CUMULATIVE_EXCEEDED: { title: 'Purchase order would be overused', why: 'Other active requests already use part of this purchase-order authorization; the combined amount is too high.', passNext: 'Correct or cancel an overlapping request, or attach an approved PO amendment and re-evaluate.' },
+  DELIVERY_CUMULATIVE_EXCEEDED: { title: 'Delivery proof would be overused', why: 'The combined requests exceed the value accepted in this delivery record.', passNext: 'Provide new delivery proof or correct the overlapping invoice before payment.' },
   VENDOR_APPROVED: { title: 'Supplier is approved', why: 'The supplier is active and matches the identity named on the invoice.', passNext: 'Verify the payout wallet.' },
   VENDOR_ID_MISMATCH: { title: 'Supplier identity does not match', why: 'The invoice and selected supplier record point to different identities.', passNext: 'Attach the correct supplier record or correct the invoice.' },
   VENDOR_INACTIVE: { title: 'Supplier is inactive', why: 'Inactive suppliers cannot receive controlled payments.', passNext: 'Finance must re-verify and reactivate the supplier.' },
@@ -1159,18 +1163,13 @@ const REVIEW_CONNECTOR_PAIRS = [
   { id: 'amount-authority', source: 'amount', target: 'authority' },
 ] as const;
 
-function ReviewConnectors({ rootRef, revision }: { rootRef: RefObject<HTMLDivElement | null>; revision: string }) {
+function ReviewConnectors({ revision }: { revision: string }) {
+  const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [lines, setLines] = useState<ReviewConnectorGeometry[]>([]);
-  const fallbackLines: ReviewConnectorGeometry[] = [
-    { id: 'invoice-evidence', sourceX: 490, sourceY: 276, path: 'M 490 276 C 512 276, 520 319, 544 319' },
-    { id: 'wallet-vendor', sourceX: 156, sourceY: 327, path: 'M 156 327 C 320 327, 500 415, 544 415' },
-    { id: 'due-treasury', sourceX: 490, sourceY: 359, path: 'M 490 359 C 512 359, 520 510, 544 510' },
-    { id: 'amount-authority', sourceX: 486, sourceY: 748, path: 'M 486 748 C 520 748, 520 606, 544 606' },
-  ];
 
   useLayoutEffect(() => {
-    const root = rootRef.current;
+    const root = svgRef.current?.parentElement;
     if (!root) return undefined;
     const panel = root.querySelector<HTMLElement>('.review-decision-panel');
     const measure = () => {
@@ -1218,15 +1217,13 @@ function ReviewConnectors({ rootRef, revision }: { rootRef: RefObject<HTMLDivEle
       window.removeEventListener('resize', measure);
       panel?.removeEventListener('scroll', measure);
     };
-  }, [rootRef, revision]);
+  }, [revision]);
 
-  if (revision === 'empty:0') return null;
-  const measured = Boolean(size.width && size.height && lines.length);
-  const renderedLines = measured ? lines : fallbackLines;
+  const measured = Boolean(size.width && size.height);
   return (
-    <svg className="evidence-connectors" viewBox={measured ? `0 0 ${size.width} ${size.height}` : '0 0 1000 1000'} preserveAspectRatio="none" aria-hidden="true">
+    <svg ref={svgRef} className="evidence-connectors" viewBox={measured ? `0 0 ${size.width} ${size.height}` : '0 0 1 1'} preserveAspectRatio="none" aria-hidden="true">
       <defs><marker id="review-connector-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" /></marker></defs>
-      {renderedLines.map((line) => <g key={line.id}><path d={line.path} markerEnd="url(#review-connector-arrow)" /><circle cx={line.sourceX} cy={line.sourceY} r="4" /></g>)}
+      {measured && revision !== 'empty:0' ? lines.map((line) => <g key={line.id}><path d={line.path} markerEnd="url(#review-connector-arrow)" /><circle cx={line.sourceX} cy={line.sourceY} r="4" /></g>) : null}
     </svg>
   );
 }
@@ -1285,7 +1282,6 @@ function InvoiceReviewPage({
   onSignOut: () => void;
   settlementMode: BootstrapData['readiness']['settlement_mode'];
 }) {
-  const reviewWorkspaceRef = useRef<HTMLDivElement>(null);
   const settlementEligible = run?.decision.final_action === 'PAY' || (run?.decision.final_action === 'ESCALATE' && approval?.status === 'APPROVED');
   const approvalRejected = approval?.status === 'REJECTED';
   const action = !run ? onRun : run.decision.final_action === 'ESCALATE' && !approval ? onRequestApproval : approval?.status === 'PENDING' ? () => onNavigate('approvals') : settlementEligible ? onSettle : () => onNavigate('evidence');
@@ -1297,6 +1293,12 @@ function InvoiceReviewPage({
   const invoice = run?.invoice;
   const decision = run?.decision;
   const reviewRules = decision?.rules ?? [];
+  const duplicateReviewRule = reviewRules.find((rule) => rule.code === 'VENDOR_INVOICE_NUMBER_REUSED' || rule.code === 'NEAR_DUPLICATE_INVOICE_FIELDS');
+  const cumulativeHoldRule = reviewRules.find((rule) => rule.code === 'PO_CUMULATIVE_EXCEEDED' || rule.code === 'DELIVERY_CUMULATIVE_EXCEEDED');
+  const decisiveException = reviewRules.find((rule) => rule.disposition === 'HOLD' || rule.disposition === 'ESCALATE' || rule.disposition === 'REJECT');
+  const agentReviewSummary = decision?.agent_disagreed
+    ? `The document analyst suggested ${decision.agent_recommendation?.action ?? 'a different action'}, but the deterministic policy decision is ${decision.final_action}. ${decisiveException?.message ?? 'The policy controls below explain the override.'} The agent cannot authorize payment.`
+    : decision?.agent_recommendation?.summary ?? 'The deterministic engine remains the sole payment authority.';
   const reviewGroups = ([
     ['evidence', 'Evidence package', 'Invoice, order, and delivery records are sealed and cross-checked.'],
     ['vendor', 'Vendor & payout', 'Supplier identity and payout destination are independently verified.'],
@@ -1305,7 +1307,13 @@ function InvoiceReviewPage({
   ] as const).map(([key, title, detail]) => {
     const rules = reviewRules.filter((rule) => reviewControlGroup(rule.code) === key);
     const exception = rules.find((rule) => rule.disposition !== 'PASS');
-    return { key, title, detail, rules, exception };
+    return {
+      key,
+      title: key === 'evidence' && duplicateReviewRule ? 'Possible duplicate invoice' : title,
+      detail: key === 'evidence' && duplicateReviewRule ? 'Compare this request with the earlier invoice before authorizing payment.' : detail,
+      rules,
+      exception,
+    };
   });
   const vendorName = invoice?.vendor_id.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Awaiting invoice';
   const decisionOutcome = approvalRejected
@@ -1316,6 +1324,10 @@ function InvoiceReviewPage({
         ? { tone: 'review', title: 'Waiting for independent approval', detail: `${formatMoney(invoice?.amount ?? '0')} USDC requested · no funds sent` }
         : settlementEligible
           ? { tone: 'approved', title: 'Approved for payment', detail: `${formatMoney(invoice?.amount ?? '0')} USDC authorized · transfer not sent yet` }
+          : decision?.final_action === 'ESCALATE' && duplicateReviewRule
+            ? { tone: 'review', title: 'Possible duplicate — review required', detail: duplicateReviewRule.message }
+          : decision?.final_action === 'HOLD' && cumulativeHoldRule
+            ? { tone: 'blocked', title: 'Evidence value exceeded — payment blocked', detail: cumulativeHoldRule.message }
           : decision?.final_action === 'SCHEDULE'
             ? { tone: 'scheduled', title: 'Scheduled — no funds sent', detail: 'Settlement remains locked until the policy-controlled payment window.' }
           : decision
@@ -1328,7 +1340,7 @@ function InvoiceReviewPage({
         <aside className="review-nav"><nav>{([['Payment requests',Document,'finance'],['Approval queue',CheckmarkFilled,'approvals'],['Evidence lab',ListChecked,'evidence'],['Policies',DocumentSecurity,'policies'],['Agent runs',Rule,'automation'],['Audit',Locked,'audit']] as const).map(([name, Icon, view], index) => <button type="button" className={index === 0 ? 'is-active' : ''} key={name} onClick={() => onNavigate(view)}><Icon size={17} /><span>{name}</span></button>)}</nav><div><small>Finance backend<br />controller access</small><span><i />Testnet<br />Connected</span></div></aside>
         <main className="review-main">
           <header className="review-title"><div><h1>Invoice review</h1><p>{invoice ? `${invoice.invoice_number} · ${vendorName} · sealed evidence and policy state` : 'Verify evidence. Approve with confidence.'}</p></div><div className="review-pager"><strong>{payment ? 'Paid on Arc' : approval?.status === 'APPROVED' ? 'Approved by finance' : approvalRejected ? 'Rejected by approver' : decision ? ACTION_LABEL[decision.final_action] : 'No decision loaded'}</strong><button type="button" onClick={onBack}>View all invoices</button></div></header>
-          <div className="review-workspace" ref={reviewWorkspaceRef}>
+          <div className="review-workspace">
             <section className="invoice-stage">
               <article className="invoice-paper">
                 <header><div className="atlas-mark">▲</div><div><h2>{vendorName}</h2><p>Verified supplier record on Arc.</p></div><strong>INVOICE</strong></header>
@@ -1338,7 +1350,7 @@ function InvoiceReviewPage({
                 <footer>Source hash {shorten(invoice?.source_document_hash ?? 'not available', 16, 12)}</footer>
               </article>
             </section>
-            <ReviewConnectors rootRef={reviewWorkspaceRef} revision={`${decision?.id ?? 'empty'}:${reviewRules.length}`} />
+            <ReviewConnectors revision={`${decision?.id ?? 'empty'}:${reviewRules.length}`} />
             <aside className="review-decision-panel">
               <header><h2>Evidence and decision</h2><div><span>Policy&nbsp;&nbsp;<strong>{decision?.policy_version ?? 'Not evaluated'}</strong></span><small>Arc Testnet&nbsp; • &nbsp;{run?.correlation_id ? shorten(run.correlation_id, 10, 6) : 'Awaiting run'}</small></div></header>
               <section className={`review-outcome is-${decisionOutcome.tone}`}><span>{decisionOutcome.tone === 'rejected' || decisionOutcome.tone === 'blocked' ? '×' : decisionOutcome.tone === 'review' || decisionOutcome.tone === 'pending' || decisionOutcome.tone === 'scheduled' ? '!' : '✓'}</span><div><strong>{decisionOutcome.title}</strong><small>{decisionOutcome.detail}</small></div></section>
@@ -1358,7 +1370,7 @@ function InvoiceReviewPage({
                 </details>
               </> : <div className="decision-empty"><Rule size={20} /><strong>No invoice has been reviewed yet.</strong><p>Open a sample invoice to see AI extraction, evidence matching, policy controls, and the payment decision together.</p><button type="button" onClick={onRun}>Review sample invoice</button></div>}
               {approvalRejected ? <section className="approval-rejection"><WarningAltFilled size={19} /><div><strong>Payment request rejected</strong><p>{approval.resolution_note ?? 'The approver rejected this request without an available note.'}</p><small>{approval.resolved_by_user_id ? `Resolved by ${approval.resolved_by_user_id}` : 'Independent approver'}{approval.requested_at ? ` · requested ${new Date(approval.requested_at).toLocaleString()}` : ''}</small></div></section> : null}
-              <section className="agent-recommendation"><header><span>✦</span><strong>Agent recommendation</strong><em>Cannot override policy</em></header><p>{decision?.agent_recommendation?.summary ?? 'The deterministic engine remains the sole payment authority.'}</p><div>{decision ? `${payment && approval?.status === 'APPROVED' ? 'Original policy exception, resolved by independent approval' : ACTION_LABEL[decision.final_action]} · ${decision.reason_codes.join(' · ') || 'all mandatory controls passed'}` : 'Run an evaluation to create a replayable recommendation and policy decision.'}</div></section>
+              <section className="agent-recommendation"><header><span>✦</span><strong>{decision?.agent_disagreed ? 'Policy overrode the agent' : 'Agent recommendation'}</strong><em>Cannot override policy</em></header><p>{agentReviewSummary}</p><div>{decision ? `${payment && approval?.status === 'APPROVED' ? 'Original policy exception, resolved by independent approval' : ACTION_LABEL[decision.final_action]} · ${decision.reason_codes.join(' · ') || 'all mandatory controls passed'}` : 'Run an evaluation to create a replayable recommendation and policy decision.'}</div></section>
               <div className="review-actions"><button type="button" className="review-primary" disabled={Boolean(busy) || Boolean(run && !settlementEligible && run.decision.final_action !== 'ESCALATE')} onClick={handlePrimary}>{label}<ArrowRight size={16} /></button><button type="button" disabled={!run || Boolean(busy)} onClick={onDownloadPacket}><Download size={16} />Download evidence packet</button><button type="button" aria-label="Open audit ledger" onClick={() => onNavigate('audit')}><Locked size={16} /></button></div>
             </aside>
           </div>

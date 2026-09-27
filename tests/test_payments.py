@@ -1,11 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import json
 from threading import Barrier
 
 import pytest
 
 from tallyguard.auth import Role
+from tallyguard.evidence import EvidenceStore, EvidenceType, ExtractedField, ExtractionMethod, SourceLocation
 from tallyguard.models import Invoice, TreasurySnapshot
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.payments import PaymentOrchestrator
@@ -380,6 +382,96 @@ def test_atomic_treasury_reservation_prevents_concurrent_daily_limit_overspend(t
         outcomes = tuple(pool.map(reserve, (1, 2)))
 
     assert sorted(outcomes) == ["ACCEPTED", "DAILY_LIMIT_EXCEEDED"]
+
+
+def test_atomic_intent_reservation_prevents_two_invoices_overusing_one_po(tmp_path):
+    database = tmp_path / "po-race.sqlite3"
+    now = datetime.now(timezone.utc)
+    setup = SqliteRepository(database)
+    setup.create_organization(organization_id="org-1", name="Finance Team")
+    for user_id, role in (("admin-1", Role.ADMIN), ("operator-1", Role.FINANCE_OPERATOR)):
+        setup.create_user(
+            organization_id="org-1", user_id=user_id, display_name=user_id,
+            roles=(role.value,),
+        )
+    setup.activate_policy(
+        Policy(
+            version="po-guard", organization_id="org-1",
+            daily_payment_limit_usdc=Decimal("500"),
+            minimum_cash_reserve_usdc=Decimal("0"),
+            maximum_autonomous_payment_usdc=Decimal("200"),
+            autonomous_payments_enabled=True,
+        ),
+        activated_by_user_id="admin-1", activated_at=now,
+    )
+    setup.record_treasury_snapshot(
+        TreasurySnapshot(
+            organization_id="org-1", available_usdc=Decimal("1000"),
+            spent_today_usdc=Decimal("0"),
+        ),
+        source_reference="test-snapshot", recorded_by_user_id="operator-1", recorded_at=now,
+    )
+    store = EvidenceStore()
+    for index in (1, 2):
+        invoice_id = f"invoice-{index}"
+        setup.create_invoice(
+            Invoice(
+                id=invoice_id, organization_id="org-1", vendor_id="vendor-1",
+                invoice_number=f"INV-{index}", currency="USDC", amount=Decimal("70"),
+                due_date=date(2026, 10, 8), payment_wallet_address=WALLET,
+                source_document_hash=str(index) * 64,
+            ), status=InvoiceStatus.READY, created_at=now,
+        )
+        for evidence_type, values in (
+            (EvidenceType.PURCHASE_ORDER, {
+                "purchase_order_id": f"po-record-{index}", "po_number": "PO-100",
+                "authorized_amount": "100",
+            }),
+            (EvidenceType.DELIVERY, {
+                "delivery_id": "delivery-100", "purchase_order_id": f"po-record-{index}",
+                "delivered_value": "100",
+            }),
+        ):
+            doc_id = f"{evidence_type.value.lower()}-{index}"
+            content = json.dumps(values, sort_keys=True).encode("utf-8")
+            record = store.ingest(
+                document_id=doc_id, organization_id="org-1", evidence_type=evidence_type,
+                filename=f"{doc_id}.json", mime_type="application/json", content=content,
+                fields=tuple(
+                    ExtractedField(
+                        name=name, raw_value=value, normalized_value=value,
+                        confidence=Decimal("1"), method=ExtractionMethod.JSON,
+                        source=SourceLocation(document_id=doc_id, json_pointer=f"/{name}"),
+                    )
+                    for name, value in values.items()
+                ),
+            )
+            setup.save_and_link_invoice_evidence(record, content=content, invoice_id=invoice_id)
+    setup.close()
+
+    barrier = Barrier(2)
+
+    def reserve(index: int) -> str:
+        repo = SqliteRepository(database)
+        intent = PaymentIntent(
+            id=f"payment-{index}", organization_id="org-1", invoice_id=f"invoice-{index}",
+            decision_id=f"decision-{index}", recipient=WALLET, amount_usdc=Decimal("70"),
+            network=ArcNetwork.TESTNET, idempotency_key=f"key-{index}",
+        )
+        barrier.wait()
+        try:
+            repo.create_or_get_payment_intent(
+                intent, created_at=now + timedelta(seconds=1), enforce_active_controls=True,
+            )
+            return "ACCEPTED"
+        except SettlementExecutionBlocked as exc:
+            return exc.control_code
+        finally:
+            repo.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = tuple(pool.map(reserve, (1, 2)))
+    assert sorted(outcomes) == ["ACCEPTED", "PO_CUMULATIVE_EXCEEDED"]
 
 
 def test_treasury_reservation_fails_closed_on_stale_snapshot(tmp_path):

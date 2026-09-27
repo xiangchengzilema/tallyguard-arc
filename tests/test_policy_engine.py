@@ -1,11 +1,20 @@
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+import json
 
 import pytest
 
 from tallyguard.models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
-from tallyguard.policy import DecisionAction, Policy, PolicyEngine
+from tallyguard.policy import (
+    DELIVERY_COMMITMENT_SIGNAL,
+    NEAR_DUPLICATE_SIGNAL,
+    PO_COMMITMENT_SIGNAL,
+    VENDOR_INVOICE_NUMBER_SIGNAL,
+    DecisionAction,
+    Policy,
+    PolicyEngine,
+)
 
 
 WALLET = "0x1111111111111111111111111111111111111111"
@@ -102,6 +111,72 @@ def test_duplicate_invoice_is_rejected(case):
     decision = evaluate(case, known_invoice_fingerprints={invoice.fingerprint})
     assert decision.action == DecisionAction.REJECT
     assert "DUPLICATE_INVOICE" in decision.reason_codes
+
+
+def test_reexported_vendor_invoice_number_requires_independent_review(case):
+    original = case[1]
+    corrected = replace(
+        original,
+        id="invoice-2",
+        invoice_number="inv 1007",
+        amount=Decimal("1201"),
+        source_document_hash="c" * 64,
+    )
+    match = f"{VENDOR_INVOICE_NUMBER_SIGNAL}{corrected.fingerprint}:{original.id}"
+
+    decision = evaluate(
+        case,
+        invoice=corrected,
+        purchase_order=replace(case[2], authorized_amount=Decimal("1201")),
+        delivery=replace(case[3], delivered_value=Decimal("1201")),
+        known_invoice_fingerprints={match},
+    )
+
+    assert decision.action == DecisionAction.ESCALATE
+    assert "VENDOR_INVOICE_NUMBER_REUSED" in decision.reason_codes
+    assert original.id in next(
+        rule.message for rule in decision.rule_results
+        if rule.code == "VENDOR_INVOICE_NUMBER_REUSED"
+    )
+
+
+def test_near_matching_fields_route_to_review_but_do_not_auto_reject(case):
+    invoice = case[1]
+    signal = NEAR_DUPLICATE_SIGNAL + json.dumps({
+        "fingerprint": invoice.fingerprint,
+        "previous_id": "earlier-invoice",
+        "similarity": "0.9500",
+    })
+    decision = evaluate(case, known_invoice_fingerprints=(signal,))
+    assert decision.action == DecisionAction.ESCALATE
+    assert "NEAR_DUPLICATE_INVOICE_FIELDS" in decision.reason_codes
+    assert "earlier-invoice" in next(
+        rule.message for rule in decision.rule_results
+        if rule.code == "NEAR_DUPLICATE_INVOICE_FIELDS"
+    )
+
+
+@pytest.mark.parametrize("committed, expected", [
+    ("400", DecisionAction.PAY),
+    ("600", DecisionAction.HOLD),
+])
+def test_po_and_delivery_partial_invoices_respect_cumulative_value(case, committed, expected):
+    invoice = case[1]
+    signals = tuple(prefix + json.dumps({
+        "fingerprint": invoice.fingerprint,
+        "committed_usdc": committed,
+        "request_ids": "earlier-invoice",
+    }) for prefix in (PO_COMMITMENT_SIGNAL, DELIVERY_COMMITMENT_SIGNAL))
+    po = replace(case[2], authorized_amount=Decimal("1600"))
+    delivery = replace(case[3], delivered_value=Decimal("1600"))
+    decision = evaluate(
+        case, purchase_order=po, delivery=delivery,
+        known_invoice_fingerprints=signals,
+    )
+    assert decision.action == expected
+    if expected == DecisionAction.HOLD:
+        assert "PO_CUMULATIVE_EXCEEDED" in decision.reason_codes
+        assert "DELIVERY_CUMULATIVE_EXCEEDED" in decision.reason_codes
 
 
 def test_changed_vendor_wallet_is_held(case):

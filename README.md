@@ -67,6 +67,7 @@ clip to the three source captures, dimensions, duration, and SHA-256.
 - Credential-free evidence analyst emits a structured recommendation, confidence, reason codes, and immutable package citations while the separate policy engine remains the only payment authority
 - Optional OpenAI-compatible hosted analyst uses a strict recommendation-only schema, omits raw wallet addresses from its prompt, rejects transaction-shaped output, and falls back safely without changing policy authority
 - Deterministic payment policy with duplicate, wallet-change, PO, delivery, autonomy, daily-limit, reserve, and kill-switch controls
+- Duplicate boundary: identical source bytes and exact invoice fingerprints are blocked within a tenant. Reused supplier invoice numbers and high-similarity extracted fields (same vendor, near amount and due date) route to independent review with the prior request ID, never automatic rejection. Across invoices, cumulative PO/delivery commitments are checked at evaluation and atomically rechecked when a payment intent is reserved; an overage blocks settlement. This is field similarity, not a semantic OCR or fraud verdict; scanned sources still need provenance-bound extraction.
 - Tamper-evident append-only audit chain
 - Canonical Arc Mainnet/Testnet configuration
 - Mainnet settlement locked behind an explicit runtime flag and a durable, decision-bound approval requested by an operator and resolved by a different approver

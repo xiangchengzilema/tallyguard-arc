@@ -2184,6 +2184,9 @@ def create_app(
             known_invoice_fingerprints=repository.known_invoice_fingerprints(
                 organization_id=g.principal.organization_id,
                 exclude_invoice_id=invoice_id,
+                candidate_invoice=stored.invoice,
+                candidate_evidence=normalized,
+                candidate_records=records,
             ),
             asset=stored.invoice.currency,
             network=network_config.name.value,
@@ -3368,6 +3371,10 @@ def create_app(
             organization_id=organization_id,
             vendor_id=vendor.id,
         )[-1]
+        release_records = repository.list_invoice_evidence(
+            organization_id=organization_id,
+            invoice_id=stored.invoice.id,
+        )
         release = decision_service.evaluate(
             evidence=inputs.evidence,
             vendor=vendor,
@@ -3377,6 +3384,9 @@ def create_app(
             known_invoice_fingerprints=repository.known_invoice_fingerprints(
                 organization_id=organization_id,
                 exclude_invoice_id=stored.invoice.id,
+                candidate_invoice=stored.invoice,
+                candidate_evidence=inputs.evidence,
+                candidate_records=release_records,
             ),
             asset=stored.invoice.currency,
             network=network_config.name.value,

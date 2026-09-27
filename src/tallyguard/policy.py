@@ -11,12 +11,31 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
+import json
 from typing import Iterable
 
 from .models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
 
 
 WALLET_CHANGE_COOLDOWN_DAYS = 2
+VENDOR_INVOICE_NUMBER_SIGNAL = "vendor-invoice-number:"
+NEAR_DUPLICATE_SIGNAL = "near-duplicate-fields:"
+PO_COMMITMENT_SIGNAL = "po-commitment:"
+DELIVERY_COMMITMENT_SIGNAL = "delivery-commitment:"
+
+
+def _frozen_signal(fingerprints: Iterable[str], prefix: str, invoice: Invoice) -> dict[str, object] | None:
+    """Read a tenant-scoped, point-in-time signal sealed with replay inputs."""
+    for value in fingerprints:
+        if not value.startswith(prefix):
+            continue
+        try:
+            payload = json.loads(value[len(prefix):])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("fingerprint") == invoice.fingerprint:
+            return payload
+    return None
 
 
 class DecisionAction(StrEnum):
@@ -137,10 +156,11 @@ class PolicyEngine:
         vendor_wallet_verified_date: date | None = None,
     ) -> Decision:
         resolved_evaluation_date = evaluation_date or date.today()
+        frozen_signals = tuple(known_invoice_fingerprints)
         results = (
             self._kill_switch(policy),
             self._tenant_boundary(invoice, vendor, purchase_order, delivery, treasury, policy),
-            self._duplicate(invoice, known_invoice_fingerprints),
+            self._duplicate(invoice, frozen_signals),
             self._vendor(invoice, vendor),
             self._wallet(invoice, vendor),
             self._wallet_change_cooldown(
@@ -149,8 +169,8 @@ class PolicyEngine:
                 resolved_evaluation_date,
             ),
             self._asset_and_network(asset, network, policy),
-            self._purchase_order(invoice, vendor, purchase_order, policy),
-            self._delivery(invoice, purchase_order, delivery, policy),
+            self._purchase_order(invoice, vendor, purchase_order, policy, frozen_signals),
+            self._delivery(invoice, purchase_order, delivery, policy, frozen_signals),
             self._autonomous_payments_enabled(policy),
             self._autonomy_limit(invoice, vendor, policy),
             self._daily_autonomy_limit(invoice, treasury, policy),
@@ -211,12 +231,45 @@ class PolicyEngine:
 
     @staticmethod
     def _duplicate(invoice: Invoice, fingerprints: Iterable[str]) -> RuleResult:
-        if invoice.fingerprint in set(fingerprints):
+        known = set(fingerprints)
+        if invoice.fingerprint in known:
             return RuleResult(
                 code="DUPLICATE_INVOICE",
                 disposition=RuleDisposition.REJECT,
                 message="The invoice fingerprint has already been recorded.",
                 remediation="Use the existing invoice record or submit corrected source evidence.",
+            )
+        marker = f"{VENDOR_INVOICE_NUMBER_SIGNAL}{invoice.fingerprint}:"
+        previous = next((value[len(marker):] for value in sorted(known) if value.startswith(marker)), None)
+        if previous is not None:
+            return RuleResult(
+                code="VENDOR_INVOICE_NUMBER_REUSED",
+                disposition=RuleDisposition.ESCALATE,
+                message=(
+                    f"The same vendor invoice number is already present in request {previous}; "
+                    "autonomous payment is blocked."
+                ),
+                remediation=(
+                    "Compare the sealed documents and payment history for both requests. "
+                    "Record whether this is a correction or a duplicate before independent approval."
+                ),
+            )
+        near_duplicate = _frozen_signal(known, NEAR_DUPLICATE_SIGNAL, invoice)
+        if near_duplicate is not None:
+            previous_id = str(near_duplicate["previous_id"])
+            similarity = str(near_duplicate["similarity"])
+            return RuleResult(
+                code="NEAR_DUPLICATE_INVOICE_FIELDS",
+                disposition=RuleDisposition.ESCALATE,
+                message=(
+                    f"Invoice fields closely resemble request {previous_id} "
+                    f"({similarity} similarity) despite a changed invoice number; "
+                    "autonomous payment is blocked."
+                ),
+                remediation=(
+                    "Compare source documents, service periods, and prior payment status. "
+                    "Record whether this is a separate obligation or a corrected duplicate."
+                ),
             )
         return PolicyEngine._pass("INVOICE_UNIQUE", "No duplicate invoice fingerprint was found.")
 
@@ -300,6 +353,7 @@ class PolicyEngine:
         vendor: Vendor,
         po: PurchaseOrder | None,
         policy: Policy,
+        frozen_signals: Iterable[str] = (),
     ) -> RuleResult:
         if po is None:
             return RuleResult(
@@ -322,6 +376,24 @@ class PolicyEngine:
                 message="Invoice amount exceeds the authorized purchase-order amount.",
                 remediation="Approve a PO amendment or submit a corrected invoice.",
             )
+        commitment = _frozen_signal(frozen_signals, PO_COMMITMENT_SIGNAL, invoice)
+        if commitment is not None:
+            prior = Decimal(str(commitment["committed_usdc"]))
+            if prior + invoice.amount > po.authorized_amount + policy.po_amount_tolerance_usdc:
+                return RuleResult(
+                    code="PO_CUMULATIVE_EXCEEDED",
+                    disposition=RuleDisposition.HOLD,
+                    message=(
+                        f"This PO already backs {prior} USDC in other active requests "
+                        f"({commitment['request_ids']}); adding {invoice.amount} USDC "
+                        f"exceeds its {po.authorized_amount} USDC authorization."
+                    ),
+                    remediation="Correct or cancel the overlapping request, or attach an authorized PO amendment and re-evaluate.",
+                )
+            return PolicyEngine._pass(
+                "PO_MATCHED",
+                f"Current request plus {prior} USDC already committed remains within the PO authorization.",
+            )
         return PolicyEngine._pass("PO_MATCHED", "Invoice is within the authorized PO amount.")
 
     @staticmethod
@@ -330,6 +402,7 @@ class PolicyEngine:
         po: PurchaseOrder | None,
         delivery: DeliveryEvidence | None,
         policy: Policy,
+        frozen_signals: Iterable[str] = (),
     ) -> RuleResult:
         if delivery is None:
             return RuleResult(
@@ -358,6 +431,24 @@ class PolicyEngine:
                 disposition=RuleDisposition.HOLD,
                 message="Delivered value does not cover the requested invoice amount.",
                 remediation="Provide additional delivery proof or reduce the invoice amount.",
+            )
+        commitment = _frozen_signal(frozen_signals, DELIVERY_COMMITMENT_SIGNAL, invoice)
+        if commitment is not None:
+            prior = Decimal(str(commitment["committed_usdc"]))
+            if prior + invoice.amount > delivery.delivered_value + policy.po_amount_tolerance_usdc:
+                return RuleResult(
+                    code="DELIVERY_CUMULATIVE_EXCEEDED",
+                    disposition=RuleDisposition.HOLD,
+                    message=(
+                        f"This delivery record already backs {prior} USDC in other active requests "
+                        f"({commitment['request_ids']}); adding {invoice.amount} USDC "
+                        f"exceeds its {delivery.delivered_value} USDC accepted value."
+                    ),
+                    remediation="Correct or cancel the overlapping request, or attach new delivery evidence and re-evaluate.",
+                )
+            return PolicyEngine._pass(
+                "DELIVERY_MATCHED",
+                f"Current request plus {prior} USDC already committed remains within the delivery value.",
             )
         return PolicyEngine._pass("DELIVERY_MATCHED", "Delivery evidence covers the invoice amount.")
 

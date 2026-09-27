@@ -64,7 +64,8 @@ Implemented foundation:
 - Immutable PDF/image/JSON intake with MIME signature validation and SHA-256 content addressing
 - Field-level extraction confidence and page/bounding-box/JSON-pointer provenance
 - Tenant-safe, deterministic evidence-package manifest hashes
-- Atomic duplicate detection using content hash, vendor/invoice number, business keys, and near-duplicate text
+- Durable tenant-scoped exact document-hash uniqueness and invoice-fingerprint rejection; same-vendor invoice-number reuse (even after a PDF re-export or amount change) now escalates with the prior request ID and blocks autonomous settlement
+- Live evaluation compares persisted, provenance-bound invoice fields for near matches within one vendor, a narrow amount and due-date window, and routes strong similarities to review. This bounded field comparator is not full-document semantic understanding; the separate in-memory text registry remains a test component.
 - Explicit fail-closed outcomes for missing PO and delivery evidence
 - Evidence normalization into invoice, PO, and delivery domain records with confidence gates
 - Verified vendor-wallet onboarding and append-only wallet replacement history
@@ -81,12 +82,18 @@ Implemented foundation:
 - Delivery/acceptance evidence import
 - Source file hashing and immutable evidence references (API complete)
 - Structured extraction confidence and field-level provenance
-- Duplicate detection across invoice number, content hash, amount, vendor, and near-duplicate text
+- Live duplicate controls: exact source bytes and invoice fingerprint; same-vendor invoice-number reuse and near-matching extracted fields require independent review. Shared PO and delivery allowances are aggregated across active requests, with an atomic settlement reservation recheck.
 
 Exit criteria:
 
 - Every extracted field links back to its source evidence.
 - Changed vendor wallet, duplicate invoice, PO overage, and missing delivery are caught deterministically.
+
+Remaining AP fraud-hardening, in risk order:
+
+1. Add provenance-bound OCR and optional semantic comparison for scanned or unlabelled files. Keep uncertain similarities as review signals, not automatic rejection or payment authority.
+2. Give finance an explicit correction/void-and-resubmit workflow with a required reason and linkage to the original request, so duplicate controls do not force operators to invent a new invoice number.
+3. Test two concurrent distinct invoice IDs with the same business invoice number and require an explicit duplicate-resolution note before independent approval. The current atomic PO/delivery reservation protects aggregate value, but the invoice-number review path is not yet an atomic cross-invoice payment lock.
 
 ### Milestone 3 — Agent decision service
 
@@ -256,7 +263,7 @@ Implemented foundation:
 - The work queue exposes a one-click, content-addressed accounting ledger export and immediately displays its row count and SHA-256 fingerprint
 - Scheduled rows display their earliest release date and expose a schedule-run action whose result distinguishes waiting, settled, policy-revalidated, and failed items
 - A persistent finance-governance panel surfaces the active policy hash and limits beside a global exception inbox with role-separated approve/reject actions; browser acceptance covers empty state, request, and rejection with no console errors
-- The private local website completed a real capped `0.01 USDC` browser-to-receipt Arc Testnet run on 2026-09-25: requester submission, finance escalation, independent approval, final finance settlement, and requester receipt. The exact Transfer was rechecked independently through Arc RPC; see `docs/reports/ARC_TESTNET_BROWSER_ACCEPTANCE_20260925.md`. The public judge site remains simulation-only and undeployed.
+- The private local website completed a real capped `0.01 USDC` browser-to-receipt Arc Testnet run on 2026-09-25: requester submission, finance escalation, independent approval, final finance settlement, and requester receipt. The exact Transfer was rechecked independently through Arc RPC; see `docs/reports/ARC_TESTNET_BROWSER_ACCEPTANCE_20260925.md`. The publicly deployed judge site remains simulation-only; it shows historical Testnet proof separately from its interactive workspace.
 - The governance panel stages monetary, scheduling, and emergency-stop changes as a new immutable version and renders the server-computed field diff after activation
 - A settlement-capacity module shows observed balance, durably committed amount, daily headroom, reserve floor, snapshot freshness, and the maximum currently admissible payment
 - A vendor trust directory exposes legal identity, risk tier, autopay ceiling, exact invoice-wallet match state, and append-only wallet verification history; the wallet-change scenario visibly resolves to `MISMATCH — HOLD`

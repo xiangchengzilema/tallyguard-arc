@@ -779,6 +779,145 @@ def test_real_evidence_policy_and_treasury_can_autopay_an_idempotent_pay_decisio
         result["decision"]["evidence_manifest_hash"],
     ]
 
+    # Re-exporting a document with a changed amount must not bypass the
+    # existing vendor invoice number and trigger another automatic transfer.
+    reexported_invoice = {
+        "invoice_id": "invoice-reexported",
+        "vendor_id": "vendor-live",
+        "invoice_number": "inv live 001",
+        "currency": "USDC",
+        "amount": "1201",
+        "due_date": "2026-10-08",
+        "payment_wallet_address": vendor_wallet,
+    }
+    reexported_bytes = json.dumps(reexported_invoice, separators=(",", ":")).encode("utf-8")
+    assert client.post(
+        "/api/invoices",
+        json={
+            "id": "invoice-reexported",
+            "vendor_id": "vendor-live",
+            "invoice_number": "inv live 001",
+            "currency": "USDC",
+            "amount": "1201",
+            "due_date": "2026-10-08",
+            "payment_wallet_address": vendor_wallet,
+            "source_document_hash": hashlib.sha256(reexported_bytes).hexdigest(),
+        },
+        headers=headers(operator),
+    ).status_code == 201
+    reexported_documents = (
+        ("INVOICE", reexported_bytes),
+        (
+            "PURCHASE_ORDER",
+            json.dumps({
+                "purchase_order_id": "po-live-002",
+                "vendor_id": "vendor-live",
+                "po_number": "PO-LIVE-002",
+                "currency": "USDC",
+                "authorized_amount": "1201",
+            }, separators=(",", ":")).encode("utf-8"),
+        ),
+        (
+            "DELIVERY",
+            json.dumps({
+                "delivery_id": "delivery-live-002",
+                "purchase_order_id": "po-live-002",
+                "delivered_value": "1201",
+            }, separators=(",", ":")).encode("utf-8"),
+        ),
+    )
+    for evidence_type, content in reexported_documents:
+        assert client.post(
+            "/api/invoices/invoice-reexported/evidence",
+            data={
+                "evidence_type": evidence_type,
+                "file": (BytesIO(content), f"{evidence_type.lower()}.json", "application/json"),
+            },
+            content_type="multipart/form-data",
+            headers=headers(operator),
+        ).status_code == 201
+    duplicate_review = client.post(
+        "/api/invoices/invoice-reexported/evaluate?auto_settle=true",
+        headers=headers(operator, "evaluate-duplicate-reexport"),
+    )
+    assert duplicate_review.status_code == 200
+    duplicate_result = duplicate_review.get_json()
+    assert duplicate_result["decision"]["final_action"] == "ESCALATE"
+    assert "VENDOR_INVOICE_NUMBER_REUSED" in duplicate_result["decision"]["reason_codes"]
+    assert duplicate_result["autopay"]["payment"] is None
+    assert client.get(
+        f"/api/decisions/{duplicate_result['decision']['id']}/replay",
+        headers=headers(auditor, "replay-duplicate-reexport"),
+    ).get_json()["verification"]["verified"] is True
+
+    def evaluate_related_invoice(
+        *, invoice_id: str, number: str, amount: str,
+        po_number: str, delivery_id: str,
+    ) -> dict:
+        po_id = f"po-{invoice_id}"
+        invoice_fields = {
+            "invoice_id": invoice_id,
+            "vendor_id": "vendor-live",
+            "invoice_number": number,
+            "currency": "USDC",
+            "amount": amount,
+            "due_date": "2026-10-08",
+            "payment_wallet_address": vendor_wallet,
+        }
+        invoice_bytes = json.dumps(invoice_fields, separators=(",", ":")).encode("utf-8")
+        assert client.post(
+            "/api/invoices",
+            json={**invoice_fields, "id": invoice_id,
+                  "source_document_hash": hashlib.sha256(invoice_bytes).hexdigest()},
+            headers=headers(operator),
+        ).status_code == 201
+        documents = (
+            ("INVOICE", invoice_bytes),
+            ("PURCHASE_ORDER", json.dumps({
+                "purchase_order_id": po_id, "vendor_id": "vendor-live",
+                "po_number": po_number, "currency": "USDC", "authorized_amount": "1200",
+            }, separators=(",", ":")).encode("utf-8")),
+            ("DELIVERY", json.dumps({
+                "delivery_id": delivery_id, "purchase_order_id": po_id,
+                "delivered_value": "1200",
+            }, separators=(",", ":")).encode("utf-8")),
+        )
+        for evidence_type, content in documents:
+            assert client.post(
+                f"/api/invoices/{invoice_id}/evidence",
+                data={"evidence_type": evidence_type,
+                      "file": (BytesIO(content), f"{evidence_type.lower()}.json", "application/json")},
+                content_type="multipart/form-data",
+                headers=headers(operator),
+            ).status_code == 201
+        response = client.post(
+            f"/api/invoices/{invoice_id}/evaluate?auto_settle=true",
+            headers=headers(operator, f"evaluate-{invoice_id}"),
+        )
+        assert response.status_code == 200
+        result = response.get_json()
+        assert result["autopay"]["payment"] is None
+        assert client.get(
+            f"/api/decisions/{result['decision']['id']}/replay",
+            headers=headers(auditor, f"replay-{invoice_id}"),
+        ).get_json()["verification"]["verified"] is True
+        return result
+
+    near_match = evaluate_related_invoice(
+        invoice_id="invoice-near", number="INV-LIVE-002", amount="1200",
+        po_number="PO-OTHER-002", delivery_id="delivery-other-002",
+    )
+    assert near_match["decision"]["final_action"] == "ESCALATE"
+    assert "NEAR_DUPLICATE_INVOICE_FIELDS" in near_match["decision"]["reason_codes"]
+
+    overused_evidence = evaluate_related_invoice(
+        invoice_id="invoice-overused", number="INV-OTHER-900", amount="100",
+        po_number="PO-LIVE-001", delivery_id="delivery-live-001",
+    )
+    assert overused_evidence["decision"]["final_action"] == "HOLD"
+    assert "PO_CUMULATIVE_EXCEEDED" in overused_evidence["decision"]["reason_codes"]
+    assert "DELIVERY_CUMULATIVE_EXCEEDED" in overused_evidence["decision"]["reason_codes"]
+
     assert client.post(
         "/api/policies",
         json={

@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from datetime import timedelta
@@ -18,7 +19,7 @@ from tallyguard.models import Invoice, TreasurySnapshot, Vendor
 from tallyguard.network import ArcNetwork
 from tallyguard.persistence import PersistenceError, SqliteRepository
 from tallyguard.policies import PolicyRepositoryError
-from tallyguard.policy import Policy
+from tallyguard.policy import VENDOR_INVOICE_NUMBER_SIGNAL, Policy
 from tallyguard.settlement import PaymentIntent, SettlementReceipt, SettlementStatus
 from tallyguard.workflow import InvoiceStatus, WorkflowError
 from tallyguard.vendors import WalletVerificationMethod
@@ -69,6 +70,40 @@ def evidence_record() -> EvidenceRecord:
         ),
         ingested_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
     )
+
+
+def test_duplicate_signal_survives_reexported_invoice_and_stays_tenant_scoped(tmp_path):
+    repo = repository(tmp_path)
+    first = invoice()
+    changed = replace(
+        first,
+        id="invoice-2",
+        invoice_number="inv 1007",
+        amount=Decimal("1201"),
+        source_document_hash="b" * 64,
+    )
+    other_vendor = replace(
+        first,
+        id="invoice-3",
+        vendor_id="vendor-2",
+        source_document_hash="c" * 64,
+    )
+    repo.create_invoice(first)
+    repo.create_invoice(changed)
+    repo.create_invoice(other_vendor)
+
+    signals = repo.known_invoice_fingerprints(
+        organization_id="org-1",
+        exclude_invoice_id=changed.id,
+        candidate_invoice=changed,
+    )
+    assert first.fingerprint in signals
+    assert f"{VENDOR_INVOICE_NUMBER_SIGNAL}{changed.fingerprint}:{first.id}" in signals
+    assert not any(signal.endswith(f":{other_vendor.id}") for signal in signals)
+    assert repo.known_invoice_fingerprints(
+        organization_id="org-2",
+        candidate_invoice=replace(changed, organization_id="org-2"),
+    ) == ()
 
 
 def test_evidence_round_trips_with_provenance(tmp_path):

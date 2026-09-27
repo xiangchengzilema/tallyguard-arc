@@ -6,9 +6,11 @@ from dataclasses import asdict, dataclass
 import base64
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from difflib import SequenceMatcher
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 from threading import RLock
 
@@ -26,6 +28,7 @@ from .evidence import (
     SourceLocation,
 )
 from .models import Invoice, TreasurySnapshot, Vendor, normalize_wallet
+from .normalization import NormalizedEvidence
 from .network import ArcNetwork
 from .policies import (
     PolicyFieldChange,
@@ -33,7 +36,17 @@ from .policies import (
     StoredPolicy,
     policy_content_hash,
 )
-from .policy import Decision, DecisionAction, Policy, RuleDisposition, RuleResult
+from .policy import (
+    DELIVERY_COMMITMENT_SIGNAL,
+    NEAR_DUPLICATE_SIGNAL,
+    PO_COMMITMENT_SIGNAL,
+    VENDOR_INVOICE_NUMBER_SIGNAL,
+    Decision,
+    DecisionAction,
+    Policy,
+    RuleDisposition,
+    RuleResult,
+)
 from .settlement import (
     PaymentIntent,
     SettlementAttempt,
@@ -67,6 +80,32 @@ class SettlementExecutionBlocked(PersistenceError):
         super().__init__(message)
         self.control_code = control_code
         self.details = details or {}
+
+
+def _business_key(value: str) -> str:
+    return "".join(character for character in value.casefold() if character.isalnum())
+
+
+def _evidence_values(fields: list[dict[str, object]]) -> dict[str, str]:
+    return {
+        str(field["name"]): str(field["normalized_value"]).strip()
+        for field in fields
+    }
+
+
+def _invoice_field_signature(fields: list[dict[str, object]]) -> str:
+    """Bounded comparison of sealed observations, excluding our own request ID."""
+    values = _evidence_values(fields)
+    parts = [
+        f"{name} {values[name]}"
+        for name in sorted(values)
+        if name not in {"invoice_id", "source_document_hash"}
+    ]
+    return re.sub(r"[^\w]+", " ", " ".join(parts).casefold()).strip()[:2048]
+
+
+def _risk_signal(prefix: str, payload: dict[str, object]) -> str:
+    return prefix + json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1806,7 +1845,22 @@ class SqliteRepository:
         *,
         organization_id: str,
         exclude_invoice_id: str | None = None,
+        candidate_invoice: Invoice | None = None,
+        candidate_evidence: NormalizedEvidence | None = None,
+        candidate_records: tuple[EvidenceRecord, ...] = (),
     ) -> tuple[str, ...]:
+        """Freeze tenant-scoped duplicate and obligation-use signals for replay.
+
+        Similar fields and reused numbers are review-only. PO/delivery totals
+        are hard holds. All signals derive from persisted, provenance-bound
+        evidence and are frozen with the decision rather than re-read on replay.
+        """
+        if candidate_invoice is not None and candidate_invoice.organization_id != organization_id:
+            raise PersistenceError("Duplicate checks cannot cross an organization boundary.")
+        if candidate_evidence is not None and (
+            candidate_invoice is None or candidate_evidence.invoice != candidate_invoice
+        ):
+            raise PersistenceError("Duplicate check evidence must match the candidate invoice.")
         query = "SELECT * FROM invoices WHERE organization_id = ?"
         values: list[object] = [organization_id]
         if exclude_invoice_id is not None:
@@ -1815,7 +1869,134 @@ class SqliteRepository:
         query += " ORDER BY id"
         with self._guard:
             rows = self._connection.execute(query, values).fetchall()
-        return tuple(self._stored_invoice(row).invoice.fingerprint for row in rows)
+            prior_evidence = (
+                self._connection.execute(
+                    """
+                    SELECT ie.invoice_id, ie.evidence_type, d.fields_json
+                    FROM invoice_evidence ie
+                    JOIN evidence_documents d
+                      ON d.organization_id = ie.organization_id AND d.id = ie.document_id
+                    JOIN invoices i
+                      ON i.organization_id = ie.organization_id AND i.id = ie.invoice_id
+                    WHERE i.organization_id = ? AND i.vendor_id = ? AND i.id <> ?
+                    ORDER BY ie.invoice_id, ie.evidence_type
+                    """,
+                    (organization_id, candidate_invoice.vendor_id, exclude_invoice_id or candidate_invoice.id),
+                ).fetchall()
+                if candidate_invoice is not None and (candidate_evidence is not None or candidate_records)
+                else ()
+            )
+        known = {self._stored_invoice(row).invoice.fingerprint for row in rows}
+        if candidate_invoice is not None:
+            candidate_number = _business_key(candidate_invoice.invoice_number)
+            if candidate_number:
+                for row in rows:
+                    previous = self._stored_invoice(row).invoice
+                    previous_number = _business_key(previous.invoice_number)
+                    if (
+                        previous.vendor_id == candidate_invoice.vendor_id
+                        and previous_number == candidate_number
+                        and previous.fingerprint != candidate_invoice.fingerprint
+                    ):
+                        known.add(
+                            f"{VENDOR_INVOICE_NUMBER_SIGNAL}"
+                            f"{candidate_invoice.fingerprint}:{previous.id}"
+                        )
+            evidence_by_invoice: dict[str, dict[str, list[dict[str, object]]]] = {}
+            for row in prior_evidence:
+                evidence_by_invoice.setdefault(str(row["invoice_id"]), {})[
+                    str(row["evidence_type"])
+                ] = json.loads(str(row["fields_json"]))
+
+            current_invoice_record = next(
+                (item for item in candidate_records if item.document.evidence_type == EvidenceType.INVOICE),
+                None,
+            )
+            if current_invoice_record is not None:
+                current_fields = [
+                    {"name": field.name, "normalized_value": field.normalized_value}
+                    for field in current_invoice_record.fields
+                ]
+                current_signature = _invoice_field_signature(current_fields)
+                best_match: tuple[Decimal, str] | None = None
+                if len(current_signature) >= 80:
+                    for row in rows:
+                        previous = self._stored_invoice(row)
+                        prior_fields = evidence_by_invoice.get(previous.invoice.id, {}).get("INVOICE")
+                        if (
+                            previous.invoice.vendor_id != candidate_invoice.vendor_id
+                            or previous.invoice.currency != candidate_invoice.currency
+                            or previous.status in {InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED}
+                            or _business_key(previous.invoice.invoice_number) == candidate_number
+                            or prior_fields is None
+                            or abs((previous.invoice.due_date - candidate_invoice.due_date).days) > 14
+                            or abs(previous.invoice.amount - candidate_invoice.amount)
+                            > max(Decimal("0.01"), candidate_invoice.amount * Decimal("0.02"))
+                        ):
+                            continue
+                        prior_signature = _invoice_field_signature(prior_fields)
+                        if len(prior_signature) < 80:
+                            continue
+                        similarity = Decimal(
+                            str(SequenceMatcher(None, current_signature, prior_signature, autojunk=False).ratio())
+                        ).quantize(Decimal("0.0001"))
+                        if similarity >= Decimal("0.92") and (
+                            best_match is None or similarity > best_match[0]
+                        ):
+                            best_match = (similarity, previous.invoice.id)
+                if best_match is not None:
+                    known.add(_risk_signal(NEAR_DUPLICATE_SIGNAL, {
+                        "fingerprint": candidate_invoice.fingerprint,
+                        "previous_id": best_match[1],
+                        "similarity": format(best_match[0], "f"),
+                    }))
+
+            if candidate_evidence is not None:
+                po = candidate_evidence.purchase_order
+                delivery = candidate_evidence.delivery
+                committed_statuses = {
+                    InvoiceStatus.READY, InvoiceStatus.ESCALATED, InvoiceStatus.SCHEDULED,
+                    InvoiceStatus.SUBMITTING, InvoiceStatus.SUBMITTED,
+                    InvoiceStatus.CONFIRMED, InvoiceStatus.RECONCILED,
+                    InvoiceStatus.SUBMISSION_FAILED, InvoiceStatus.CONFIRMATION_TIMEOUT,
+                    InvoiceStatus.RECONCILIATION_MISMATCH,
+                }
+                po_ids: list[str] = []
+                delivery_ids: list[str] = []
+                po_committed = Decimal("0")
+                delivery_committed = Decimal("0")
+                for row in rows:
+                    previous = self._stored_invoice(row)
+                    if (
+                        previous.status not in committed_statuses
+                        or previous.invoice.vendor_id != candidate_invoice.vendor_id
+                        or previous.invoice.currency != candidate_invoice.currency
+                    ):
+                        continue
+                    prior = evidence_by_invoice.get(previous.invoice.id, {})
+                    prior_po = _evidence_values(prior["PURCHASE_ORDER"]) if "PURCHASE_ORDER" in prior else {}
+                    same_po = bool(
+                        po and _business_key(prior_po.get("po_number", "")) == _business_key(po.po_number)
+                    )
+                    if same_po:
+                        po_committed += previous.invoice.amount
+                        po_ids.append(previous.invoice.id)
+                    if same_po and delivery and "DELIVERY" in prior:
+                        prior_delivery = _evidence_values(prior["DELIVERY"])
+                        if _business_key(prior_delivery.get("delivery_id", "")) == _business_key(delivery.id):
+                            delivery_committed += previous.invoice.amount
+                            delivery_ids.append(previous.invoice.id)
+                for prefix, amount, ids in (
+                    (PO_COMMITMENT_SIGNAL, po_committed, po_ids),
+                    (DELIVERY_COMMITMENT_SIGNAL, delivery_committed, delivery_ids),
+                ):
+                    if amount:
+                        known.add(_risk_signal(prefix, {
+                            "fingerprint": candidate_invoice.fingerprint,
+                            "committed_usdc": format(amount, "f"),
+                            "request_ids": ", ".join(ids[:3]) + (f" (+{len(ids)-3} more)" if len(ids) > 3 else ""),
+                        }))
+        return tuple(sorted(known))
 
     def transition_invoice(
         self,
@@ -2468,6 +2649,11 @@ class SqliteRepository:
                 },
             )
 
+        # This runs inside the same BEGIN IMMEDIATE transaction as the intent
+        # insert. Two distinct invoices cannot each reserve the final slice of
+        # one PO or delivery record after reading an earlier policy snapshot.
+        self._assert_evidence_commitment_allowed(intent=intent, policy_row=policy_row)
+
         snapshot_row = self._connection.execute(
             """
             SELECT * FROM treasury_snapshots
@@ -2550,6 +2736,94 @@ class SqliteRepository:
                 "Settlement would reduce reserved treasury funds below the active minimum.",
                 details=treasury_details,
             )
+
+    def _assert_evidence_commitment_allowed(
+        self, *, intent: PaymentIntent, policy_row: sqlite3.Row
+    ) -> None:
+        rows = self._connection.execute(
+            """
+            SELECT ie.evidence_type, d.fields_json
+            FROM invoice_evidence ie JOIN evidence_documents d
+              ON d.organization_id = ie.organization_id AND d.id = ie.document_id
+            WHERE ie.organization_id = ? AND ie.invoice_id = ?
+              AND ie.evidence_type IN ('PURCHASE_ORDER', 'DELIVERY')
+            """,
+            (intent.organization_id, intent.invoice_id),
+        ).fetchall()
+        current = {
+            str(row["evidence_type"]): _evidence_values(json.loads(str(row["fields_json"])))
+            for row in rows
+        }
+        po = current.get("PURCHASE_ORDER")
+        delivery = current.get("DELIVERY")
+        # Older direct repository clients may not attach evidence; the API's
+        # payable decisions require it. Do not invent an obligation identity.
+        if po is None or delivery is None:
+            return
+        vendor_row = self._connection.execute(
+            "SELECT vendor_id FROM invoices WHERE organization_id = ? AND id = ?",
+            (intent.organization_id, intent.invoice_id),
+        ).fetchone()
+        if vendor_row is None:
+            raise SettlementExecutionBlocked("INVOICE_MISSING", "Settlement invoice no longer exists.")
+        prior_rows = self._connection.execute(
+            """
+            SELECT p.invoice_id, p.amount_usdc,
+                   po_doc.fields_json AS po_fields_json,
+                   delivery_doc.fields_json AS delivery_fields_json
+            FROM payment_intents p
+            JOIN invoices i ON i.organization_id = p.organization_id AND i.id = p.invoice_id
+            LEFT JOIN invoice_evidence po_link ON
+              po_link.organization_id = p.organization_id AND po_link.invoice_id = p.invoice_id
+              AND po_link.evidence_type = 'PURCHASE_ORDER'
+            LEFT JOIN evidence_documents po_doc ON
+              po_doc.organization_id = po_link.organization_id AND po_doc.id = po_link.document_id
+            LEFT JOIN invoice_evidence delivery_link ON
+              delivery_link.organization_id = p.organization_id AND delivery_link.invoice_id = p.invoice_id
+              AND delivery_link.evidence_type = 'DELIVERY'
+            LEFT JOIN evidence_documents delivery_doc ON
+              delivery_doc.organization_id = delivery_link.organization_id
+              AND delivery_doc.id = delivery_link.document_id
+            WHERE p.organization_id = ? AND i.vendor_id = ? AND p.id <> ?
+            """,
+            (intent.organization_id, str(vendor_row["vendor_id"]), intent.id),
+        ).fetchall()
+        po_key = _business_key(po.get("po_number", ""))
+        delivery_key = _business_key(delivery.get("delivery_id", ""))
+        po_committed = Decimal("0")
+        delivery_committed = Decimal("0")
+        for prior in prior_rows:
+            if prior["po_fields_json"] is None:
+                continue
+            prior_po = _evidence_values(json.loads(str(prior["po_fields_json"])))
+            if not po_key or _business_key(prior_po.get("po_number", "")) != po_key:
+                continue
+            amount = Decimal(str(prior["amount_usdc"]))
+            po_committed += amount
+            if prior["delivery_fields_json"] is not None and delivery_key:
+                prior_delivery = _evidence_values(json.loads(str(prior["delivery_fields_json"])))
+                if _business_key(prior_delivery.get("delivery_id", "")) == delivery_key:
+                    delivery_committed += amount
+        tolerance = Decimal(str(policy_row["po_amount_tolerance_usdc"]))
+        for code, committed, ceiling, label in (
+            ("PO_CUMULATIVE_EXCEEDED", po_committed, po.get("authorized_amount"), "purchase order"),
+            ("DELIVERY_CUMULATIVE_EXCEEDED", delivery_committed, delivery.get("delivered_value"), "delivery record"),
+        ):
+            if ceiling is None:
+                raise SettlementExecutionBlocked(
+                    "EVIDENCE_VALUE_MISSING", f"The {label} has no sealed value."
+                )
+            limit = Decimal(str(ceiling)) + tolerance
+            if committed + intent.amount_usdc > limit:
+                raise SettlementExecutionBlocked(
+                    code,
+                    f"Payment would exceed the {label}'s cumulative authorized value.",
+                    details={
+                        "committed_usdc": format(committed, "f"),
+                        "requested_amount_usdc": format(intent.amount_usdc, "f"),
+                        "maximum_usdc": format(limit, "f"),
+                    },
+                )
 
     def get_payment_intent(
         self,

@@ -48,7 +48,7 @@ Strongly encouraged:
 - Multi-tenant policy and settlement safety kernel implemented
 - Arc Mainnet and Testnet configuration implemented
 - Immutable PDF/image/JSON evidence intake and field-level provenance implemented
-- Tenant-scoped exact and near-duplicate invoice detection implemented
+- Tenant-scoped exact source-hash and invoice-fingerprint controls are live. Same-vendor invoice-number reuse and high-similarity sealed fields now route to independent review with the previous request ID, even when a file or number changes. PO and delivery records can support legitimate partial invoices, but cumulative overuse is held at evaluation and blocked again by an atomic payment-intent check. These are deterministic review/control signals, not an AI fraud verdict or full-document OCR.
 - Missing PO and delivery evidence now fail closed with explicit remediation
 - Agent recommendations are separated from deterministic, evidence-bound control decisions
 - Versioned policy history, policy diffs, and scheduled-payment outcomes implemented
