@@ -2868,6 +2868,11 @@ button, input, select, textarea { font: inherit; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes requester-review-enter {
+  from { transform: translateY(10px); }
+  to { transform: translateY(0); }
+}
+
 @keyframes requester-success-mark {
   from { opacity: 0; transform: scale(.72) rotate(-12deg); }
   to { opacity: 1; transform: scale(1) rotate(0); }
@@ -2961,7 +2966,7 @@ button, input, select, textarea { font: inherit; }
 
 /* The submission decision is a focused handoff, not a notice below the form. */
 .request-result-modal .cds--modal-container { width: min(680px, calc(100vw - 32px)); max-height: min(90vh, 760px); border: 1px solid #cddbd3; background: #fcfdfa; box-shadow: 0 28px 90px rgba(8, 35, 27, .24); }
-.request-result-modal.cds--modal.is-visible .cds--modal-container { animation: requester-saved-enter 280ms cubic-bezier(.22, 1, .36, 1) both; }
+.request-result-modal.cds--modal.is-visible .cds--modal-container { animation: requester-review-enter 280ms cubic-bezier(.22, 1, .36, 1) both; }
 .request-result-modal .cds--modal-header { padding: 28px 32px 16px; }
 .request-result-modal .cds--modal-header__label { color: #087557; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
 .request-result-modal .cds--modal-header__heading { margin-top: 8px; color: #132a22; font-family: Georgia, serif; font-size: clamp(26px, 3vw, 35px); line-height: 1.14; }
