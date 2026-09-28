@@ -865,14 +865,27 @@ function RequesterSubmitPage({
   const [submissionStage, setSubmissionStage] = useState(1);
   const [submittedRun, setSubmittedRun] = useState<RunResult | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
+  const progressTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => progressTimers.current.forEach(clearTimeout), []);
   const submitEvidence = (files: EvidenceFileBundle, overrides: EvidenceFieldOverrides) => {
+    progressTimers.current.forEach(clearTimeout);
+    progressTimers.current = [];
     setSubmissionStarted(true);
-    setSubmissionStage(2);
+    setSubmissionStage(1);
     setSubmittedRun(null);
     setResultOpen(true);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      setSubmissionStage(4);
+    } else {
+      progressTimers.current = [
+        setTimeout(() => setSubmissionStage(2), 560),
+        setTimeout(() => setSubmissionStage(3), 1190),
+        setTimeout(() => setSubmissionStage(4), 2050),
+      ];
+    }
     onEvaluate(files, overrides, (result) => {
       setSubmittedRun(result);
-      setSubmissionStage(4);
       setResultOpen(true);
     });
   };
@@ -883,6 +896,7 @@ function RequesterSubmitPage({
     ['Decision visible', 'See the outcome and next handoff'],
   ] as const;
   const action = submittedRun?.decision.final_action;
+  const revealResult = Boolean(submittedRun && submissionStage === 4);
   const autoPaid = submittedRun?.autopay?.status === 'SETTLED';
   const autoSimulated = autoPaid && submittedRun?.autopay?.payment?.receipt.provider === 'arc-simulator';
   const blocked = action === 'REJECT' || action === 'HOLD';
@@ -900,11 +914,11 @@ function RequesterSubmitPage({
         <section className="requester-submit__card">
           {data ? <LiveEvidenceWorkbench busy={busy} submitted={Boolean(submittedRun)} operatorToken={data.sessions.operator} onEvaluate={submitEvidence} /> : <div className="premium-loading"><SkeletonText heading /><SkeletonText paragraph lineCount={5} /></div>}
         </section>
-        {submissionStarted && busy ? <aside className="requester-submit__processing"><span className="requester-submit__pulse" /><div><strong>{submissionStage === 2 ? 'Sealing your evidence' : 'Running payment controls'}</strong><small>The uploaded bytes are being hashed and matched. A clean request settles automatically only when both no-touch limits remain available.</small></div></aside> : null}
-        {submittedRun && !busy ? <aside className="requester-submit__saved" role="status"><CheckmarkFilled size={22} /><span><strong>{submittedRun.invoice.invoice_number} · {resultTitle}</strong><small>{nextAction}</small></span><button type="button" onClick={() => setResultOpen(true)}>Review outcome <ArrowRight size={14} /></button></aside> : null}
+        {submissionStarted && busy ? <aside className="requester-submit__processing"><span className="requester-submit__pulse" /><div><strong>Reviewing your request</strong><small>Evidence, finance controls, and the next handoff are being recorded.</small></div></aside> : null}
+        {revealResult && submittedRun && !busy ? <aside className="requester-submit__saved" role="status"><CheckmarkFilled size={22} /><span><strong>{submittedRun.invoice.invoice_number} · {resultTitle}</strong><small>{nextAction}</small></span><button type="button" onClick={() => setResultOpen(true)}>Review outcome <ArrowRight size={14} /></button></aside> : null}
       </main>
-      <Modal open={resultOpen && submissionStarted} passiveModal modalHeading={submittedRun ? resultTitle : error ? 'Request could not be submitted' : 'Reviewing your request'} modalLabel="PAYMENT REQUEST" className="request-result-modal" onRequestClose={() => setResultOpen(false)}>
-        {submittedRun ? <div className="request-result">
+      <Modal open={resultOpen && submissionStarted} passiveModal modalHeading={revealResult ? resultTitle : error ? 'Request could not be submitted' : 'Reviewing your request'} modalLabel="PAYMENT REQUEST" className="request-result-modal" onRequestClose={() => setResultOpen(false)}>
+        {revealResult && submittedRun ? <div className="request-result">
           <div className={`request-result__hero ${blocked ? 'is-blocked' : autoPaid ? 'is-paid' : 'is-pending'}`}><span>{blocked ? '!' : autoPaid ? '✓' : '→'}</span><div><strong>{submittedRun.invoice.invoice_number}</strong><p>{formatMoney(submittedRun.invoice.amount)} {submittedRun.invoice.currency} requested · {autoPaid ? autoSimulated ? 'Demo receipt recorded · no funds moved' : 'Arc receipt confirmed' : 'No funds sent yet'}</p></div></div>
           <ol className="request-result__steps" aria-label="Request progress">
             <li className="is-complete"><b>✓</b><span><strong>Evidence received</strong><small>Three source files sealed</small></span></li>
@@ -915,7 +929,13 @@ function RequesterSubmitPage({
           {blocked ? <div className="request-result__reason"><strong>Why it stopped</strong><p>{issue?.message ?? submittedRun.decision.reason_codes.join(' · ')}</p><small>{issue?.remediation ?? submittedRun.decision.remediation[0] ?? nextAction}</small></div> : null}
           <p className="request-result__next"><strong>What happens next</strong>{nextAction}</p>
           <div className="request-result__actions"><button type="button" className="is-secondary" onClick={() => setResultOpen(false)}>Stay on this page</button><button type="button" onClick={() => onNavigate('portal')}>View request timeline <ArrowRight size={16} /></button></div>
-        </div> : error ? <div className="request-result__error" role="alert"><WarningAltFilled size={24} /><div><strong>Nothing was submitted</strong><p>{error}</p><small>Review the issue, then try again. No payment was sent.</small></div></div> : <div className="request-result__working" role="status" aria-live="polite"><span className="requester-submit__pulse" /><div><strong>Sealing evidence and checking controls</strong><p>The three source files are being verified. The result will appear here as soon as the decision is recorded.</p></div></div>}
+        </div> : error ? <div className="request-result__error" role="alert"><WarningAltFilled size={24} /><div><strong>Nothing was submitted</strong><p>{error}</p><small>Review the issue, then try again. No payment was sent.</small></div></div> : <div className="request-result__review" role="status" aria-live="polite">
+          <div className="request-result__review-heading"><span className="request-result__review-mark"><DocumentSecurity size={23} /></span><div><span>REQUEST REVIEW</span><strong>{submissionStage === 1 ? 'Receiving your evidence' : submissionStage === 2 ? 'Sealing the source files' : submissionStage === 3 ? 'Evaluating payment controls' : 'Recording the decision'}</strong><p>One request, one traceable decision. Payment only follows the configured approval rules.</p></div></div>
+          <div className="request-result__review-progress" aria-hidden="true"><span style={{ width: `${Math.min(submissionStage, 3) * 33.333}%` }} /></div>
+          <ol className="request-result__review-steps">
+            {([['Evidence received', 'Invoice, order, and delivery proof'], ['Source files sealed', 'Hashes and extracted fields recorded'], ['Finance controls checked', 'Limits, matching, and approval boundary']] as const).map(([label, detail], index) => <li className={submissionStage > index + 1 ? 'is-done' : submissionStage === index + 1 ? 'is-active' : ''} key={label}><b>{submissionStage > index + 1 ? '✓' : <span />}</b><span><strong>{label}</strong><small>{detail}</small></span></li>)}
+          </ol><p className="request-result__review-footnote">{submissionStage === 4 && !submittedRun ? 'The checks are still finishing. Your result will appear here automatically.' : 'Keep this window open to see the outcome and next step.'}</p>
+        </div>}
       </Modal>
     </div>
   );
