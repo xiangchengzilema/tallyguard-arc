@@ -402,6 +402,58 @@ def test_payment_intent_and_receipt_survive_repository_restart(tmp_path):
     ) == receipt
 
 
+def test_approved_payment_does_not_consume_no_touch_daily_ceiling(tmp_path):
+    repo = repository(tmp_path)
+    repo.create_user(
+        organization_id="org-1", user_id="admin-1", display_name="Admin",
+        roles=(Role.ADMIN.value,),
+    )
+    repo.create_user(
+        organization_id="org-1", user_id="operator-1", display_name="Operator",
+        roles=(Role.FINANCE_OPERATOR.value,),
+    )
+    repo.activate_policy(
+        Policy(
+            version="v-no-touch", organization_id="org-1",
+            daily_payment_limit_usdc=Decimal("5000"),
+            daily_autonomous_payment_limit_usdc=Decimal("500"),
+            autonomous_payments_enabled=True,
+            minimum_cash_reserve_usdc=Decimal("0"),
+            maximum_autonomous_payment_usdc=Decimal("50"),
+        ),
+        activated_by_user_id="admin-1",
+    )
+    repo.record_treasury_snapshot(
+        TreasurySnapshot(
+            organization_id="org-1", available_usdc=Decimal("5000"),
+            spent_today_usdc=Decimal("0"),
+        ),
+        source_reference="fresh", recorded_by_user_id="operator-1",
+    )
+    repo.create_invoice(invoice())
+    repo.create_invoice(replace(
+        invoice(), id="invoice-2", invoice_number="INV-1008",
+        amount=Decimal("40"), source_document_hash="b" * 64,
+    ))
+    manual = PaymentIntent(
+        id="payment-manual", organization_id="org-1", invoice_id="invoice-1",
+        decision_id="decision-manual", recipient=WALLET,
+        amount_usdc=Decimal("1200"), network=ArcNetwork.TESTNET,
+        idempotency_key="manual-key", approval_reference="approval-1",
+    )
+    auto = PaymentIntent(
+        id="payment-auto", organization_id="org-1", invoice_id="invoice-2",
+        decision_id="decision-auto", recipient=WALLET,
+        amount_usdc=Decimal("40"), network=ArcNetwork.TESTNET,
+        idempotency_key="auto-key",
+    )
+    assert repo.create_or_get_payment_intent(manual, enforce_active_controls=True)[1]
+    assert repo.create_or_get_payment_intent(auto, enforce_active_controls=True)[1]
+    capacity = repo.settlement_capacity(organization_id="org-1")
+    assert capacity.committed_since_snapshot_usdc == Decimal("1240")
+    assert capacity.autonomous_daily_remaining_usdc == Decimal("460")
+
+
 def test_opaque_session_survives_restart_and_revocation_is_durable(tmp_path):
     database = tmp_path / "tallyguard.sqlite3"
     repo = repository(tmp_path)

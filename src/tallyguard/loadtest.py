@@ -464,7 +464,10 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 body={
                     "version": f"contention-{uuid4().hex}",
                     "daily_payment_limit_usdc": "5000",
-                    "daily_autonomous_payment_limit_usdc": "5000",
+                    # Earlier synthetic payments in this tenant still count toward
+                    # the no-touch UTC-day budget even after a new treasury snapshot.
+                    # Keep this contention drill focused on the hard daily limit.
+                    "daily_autonomous_payment_limit_usdc": "50000",
                     "autonomous_payments_enabled": True,
                     "minimum_cash_reserve_usdc": "3000",
                     "maximum_autonomous_payment_usdc": "2000",

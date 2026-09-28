@@ -1060,9 +1060,25 @@ class SqliteRepository:
                 """,
                 (organization_id, recorded_at.isoformat()),
             ).fetchall()
+            autonomous_rows = self._connection.execute(
+                """
+                SELECT amount_usdc FROM payment_intents
+                WHERE organization_id = ? AND created_at >= ? AND created_at < ?
+                  AND (approval_reference IS NULL OR approval_reference = '')
+                """,
+                (
+                    organization_id,
+                    timestamp.astimezone(timezone.utc).date().isoformat(),
+                    (timestamp.astimezone(timezone.utc).date() + timedelta(days=1)).isoformat(),
+                ),
+            ).fetchall()
 
         committed = sum(
             (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
+            Decimal("0"),
+        )
+        autonomous_committed_today = sum(
+            (Decimal(str(row["amount_usdc"])) for row in autonomous_rows),
             Decimal("0"),
         )
         available = Decimal(str(snapshot_row["available_usdc"]))
@@ -1075,7 +1091,7 @@ class SqliteRepository:
         effective_available = available - committed
         daily_remaining = max(daily_limit - spent_today - committed, Decimal("0"))
         autonomous_daily_remaining = max(
-            daily_autonomous_limit - spent_today - committed,
+            daily_autonomous_limit - autonomous_committed_today,
             Decimal("0"),
         )
         balance_headroom = max(effective_available - reserve_floor, Decimal("0"))
@@ -1100,6 +1116,25 @@ class SqliteRepository:
             minimum_cash_reserve_usdc=reserve_floor,
             maximum_new_payment_usdc=min(daily_remaining, balance_headroom),
         )
+
+    def autonomous_spent_today(
+        self, *, organization_id: str, as_of: datetime | None = None
+    ) -> Decimal:
+        """Count durable no-touch reservations for the UTC day, excluding approved payments."""
+        timestamp = as_of or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise PersistenceError("Autonomous spend timestamp must be timezone-aware.")
+        day = timestamp.astimezone(timezone.utc).date()
+        with self._guard:
+            rows = self._connection.execute(
+                """
+                SELECT amount_usdc FROM payment_intents
+                WHERE organization_id = ? AND created_at >= ? AND created_at < ?
+                  AND (approval_reference IS NULL OR approval_reference = '')
+                """,
+                (organization_id, day.isoformat(), (day + timedelta(days=1)).isoformat()),
+            ).fetchall()
+        return sum((Decimal(str(row["amount_usdc"])) for row in rows), Decimal("0"))
 
     def onboard_vendor(
         self,
@@ -2688,8 +2723,25 @@ class SqliteRepository:
             """,
             (intent.organization_id, recorded_at.isoformat(), intent.id),
         ).fetchall()
+        autonomous_rows = self._connection.execute(
+            """
+            SELECT amount_usdc FROM payment_intents
+            WHERE organization_id = ? AND created_at >= ? AND created_at < ?
+              AND id <> ? AND (approval_reference IS NULL OR approval_reference = '')
+            """,
+            (
+                intent.organization_id,
+                timestamp.astimezone(timezone.utc).date().isoformat(),
+                (timestamp.astimezone(timezone.utc).date() + timedelta(days=1)).isoformat(),
+                intent.id,
+            ),
+        ).fetchall()
         committed_since_snapshot = sum(
             (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
+            Decimal("0"),
+        )
+        autonomous_committed_today = sum(
+            (Decimal(str(row["amount_usdc"])) for row in autonomous_rows),
             Decimal("0"),
         )
         available = Decimal(str(snapshot_row["available_usdc"]))
@@ -2700,6 +2752,7 @@ class SqliteRepository:
         )
         reserve_floor = Decimal(str(policy_row["minimum_cash_reserve_usdc"]))
         projected_daily_spend = spent_today + committed_since_snapshot + intent.amount_usdc
+        projected_autonomous_spend = autonomous_committed_today + intent.amount_usdc
         projected_available = available - committed_since_snapshot - intent.amount_usdc
         treasury_details = {
             **policy_details,
@@ -2708,6 +2761,7 @@ class SqliteRepository:
             "committed_since_snapshot_usdc": format(committed_since_snapshot, "f"),
             "requested_amount_usdc": format(intent.amount_usdc, "f"),
             "projected_daily_spend_usdc": format(projected_daily_spend, "f"),
+            "projected_autonomous_spend_usdc": format(projected_autonomous_spend, "f"),
             "daily_payment_limit_usdc": format(daily_limit, "f"),
             "daily_autonomous_payment_limit_usdc": format(
                 daily_autonomous_limit, "f"
@@ -2723,7 +2777,7 @@ class SqliteRepository:
             )
         if (
             not intent.approval_reference
-            and projected_daily_spend > daily_autonomous_limit
+            and projected_autonomous_spend > daily_autonomous_limit
         ):
             raise SettlementExecutionBlocked(
                 "DAILY_AUTONOMY_LIMIT_EXCEEDED",

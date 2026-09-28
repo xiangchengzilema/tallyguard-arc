@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import hashlib
@@ -53,16 +53,21 @@ class DecisionReplayInputs:
     evaluation_date: date
     vendor_wallet_event_type: str | None = None
     vendor_wallet_verified_date: date | None = None
+    autonomous_spent_today_usdc: Decimal | None = None
 
     @property
     def content_hash(self) -> str:
-        return hashlib.sha256(canonical_json(self).encode("utf-8")).hexdigest()
+        payload = asdict(self)
+        if payload["autonomous_spent_today_usdc"] is None:
+            # Preserve the hash of decisions sealed before this counter existed.
+            payload.pop("autonomous_spent_today_usdc")
+        return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
     def to_payload(self) -> dict[str, object]:
         invoice = self.evidence.invoice
         purchase_order = self.evidence.purchase_order
         delivery = self.evidence.delivery
-        return {
+        payload = {
             "evidence": {
                 "package_id": self.evidence.package_id,
                 "manifest_hash": self.evidence.manifest_hash,
@@ -146,6 +151,11 @@ class DecisionReplayInputs:
                 ),
             },
         }
+        if self.autonomous_spent_today_usdc is not None:
+            payload["autonomous_spent_today_usdc"] = format(
+                self.autonomous_spent_today_usdc, "f"
+            )
+        return payload
 
     @classmethod
     def from_payload(cls, payload: dict[str, object]) -> DecisionReplayInputs:
@@ -260,6 +270,11 @@ class DecisionReplayInputs:
                 if wallet_verified_date is not None
                 else None
             ),
+            autonomous_spent_today_usdc=(
+                Decimal(str(payload["autonomous_spent_today_usdc"]))
+                if payload.get("autonomous_spent_today_usdc") is not None
+                else None
+            ),
         )
 
 
@@ -355,6 +370,7 @@ class DecisionService:
         evaluation_date: date | None = None,
         vendor_wallet_event_type: str | None = None,
         vendor_wallet_verified_date: date | None = None,
+        autonomous_spent_today_usdc: Decimal | None = None,
         created_at: datetime | None = None,
     ) -> DecisionRecord:
         organization_id = evidence.invoice.organization_id
@@ -376,6 +392,7 @@ class DecisionService:
             evaluation_date=resolved_evaluation_date,
             vendor_wallet_event_type=vendor_wallet_event_type,
             vendor_wallet_verified_date=vendor_wallet_verified_date,
+            autonomous_spent_today_usdc=autonomous_spent_today_usdc,
         )
         replay_input_hash = replay_inputs.content_hash
         decision = self.policy_engine.evaluate(
@@ -391,6 +408,7 @@ class DecisionService:
             evaluation_date=resolved_evaluation_date,
             vendor_wallet_event_type=replay_inputs.vendor_wallet_event_type,
             vendor_wallet_verified_date=replay_inputs.vendor_wallet_verified_date,
+            autonomous_spent_today_usdc=replay_inputs.autonomous_spent_today_usdc,
         )
         policy_hash = policy_content_hash(policy)
         decision_id = self._decision_id(
@@ -458,6 +476,7 @@ class DecisionService:
             evaluation_date=inputs.evaluation_date,
             vendor_wallet_event_type=inputs.vendor_wallet_event_type,
             vendor_wallet_verified_date=inputs.vendor_wallet_verified_date,
+            autonomous_spent_today_usdc=inputs.autonomous_spent_today_usdc,
         )
         snapshot_hash = inputs.content_hash
         replayed_id = self._decision_id(

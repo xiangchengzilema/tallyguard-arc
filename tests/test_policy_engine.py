@@ -293,6 +293,24 @@ def test_daily_no_touch_ceiling_routes_an_otherwise_valid_payment_to_human_revie
     assert "DAILY_LIMIT_EXCEEDED" not in decision.reason_codes
 
 
+def test_manual_spend_does_not_exhaust_separate_no_touch_ceiling(case):
+    vendor, invoice, po, delivery, treasury, policy = case
+    decision = evaluate(
+        case,
+        invoice=replace(invoice, amount=Decimal("40")),
+        purchase_order=replace(po, authorized_amount=Decimal("40")),
+        delivery=replace(delivery, delivered_value=Decimal("40")),
+        treasury=replace(treasury, spent_today_usdc=Decimal("1486.25")),
+        policy=replace(
+            policy,
+            maximum_autonomous_payment_usdc=Decimal("50"),
+            daily_autonomous_payment_limit_usdc=Decimal("450"),
+        ),
+        autonomous_spent_today_usdc=Decimal("0"),
+    )
+    assert decision.action == DecisionAction.PAY
+
+
 def test_minimum_reserve_blocks_payment(case):
     treasury = TreasurySnapshot(
         organization_id="org-1",

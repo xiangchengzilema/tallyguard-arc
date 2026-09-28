@@ -1844,6 +1844,7 @@ def create_app(
             evaluation_date=inputs.evaluation_date,
             vendor_wallet_event_type=inputs.vendor_wallet_event_type,
             vendor_wallet_verified_date=inputs.vendor_wallet_verified_date,
+            autonomous_spent_today_usdc=inputs.autonomous_spent_today_usdc,
         )
 
         changed_fields = []
@@ -2175,6 +2176,9 @@ def create_app(
             vendor=vendor,
             treasury=treasury,
             policy=policy,
+            autonomous_spent_today_usdc=repository.autonomous_spent_today(
+                organization_id=g.principal.organization_id,
+            ),
             agent_recommendation=evidence_analyst.recommend(
                 evidence=normalized,
                 vendor=vendor,
@@ -3394,6 +3398,9 @@ def create_app(
             vendor=vendor,
             treasury=treasury,
             policy=policy,
+            autonomous_spent_today_usdc=repository.autonomous_spent_today(
+                organization_id=organization_id,
+            ),
             agent_recommendation=source.agent_recommendation,
             known_invoice_fingerprints=repository.known_invoice_fingerprints(
                 organization_id=organization_id,

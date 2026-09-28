@@ -27,8 +27,8 @@ const OpeningOverlay:React.FC=()=>{const f=useCurrentFrame(),title=tween(f,6,40)
 const ApprovalBridge:React.FC=()=>{const f=useCurrentFrame(),cover=tween(f,354,378),mark=tween(f,378,404),result=tween(f,401,427);return <AbsoluteFill style={{background:'#0d1514',color:'#f8f9f7',opacity:cover,pointerEvents:'none',display:'grid',placeItems:'center'}}>
   <div style={{textAlign:'center',transform:'translateY('+((1-mark)*24)+'px)',opacity:mark}}><div style={{margin:'0 auto 32px',width:104,height:104,borderRadius:'50%',border:'2px solid #52ccb3',color:'#52ccb3',fontSize:66,display:'grid',placeItems:'center'}}>✓</div><div style={{fontFamily:'Georgia, serif',fontSize:83,letterSpacing:-2}}>Finance decision recorded.</div><div style={{marginTop:22,fontSize:29,color:'#bdd1ca'}}>TG-E1A30ADD · 1,486.25 USDC</div><div style={{marginTop:39,opacity:result,fontSize:22,color:'#52ccb3',letterSpacing:.5}}>APPROVED FOR PAYMENT · SETTLEMENT STILL PENDING</div></div>
 </AbsoluteFill>};
-const UIShot:React.FC<ScreenProps&{index:string;title:string;footer:string;test?:boolean}>=({index:_index,title,footer,test:_test,compactCaption=false,...screen})=>{const f=useCurrentFrame(),a=tween(f,2,20);return <AbsoluteFill style={{background:'#0d1514'}}>
-  <Screen {...screen}/>
+const UIShot:React.FC<ScreenProps&{index:string;title:string;footer:string;test?:boolean;alternateClip?:string;alternateAt?:number;alternateSpeed?:number}>=({index:_index,title,footer,test:_test,compactCaption=false,alternateClip,alternateAt,alternateSpeed=1,...screen})=>{const f=useCurrentFrame(),a=tween(f,2,20),cut=alternateAt===undefined?null:Math.round(alternateAt*FPS);return <AbsoluteFill style={{background:'#0d1514'}}>
+  {alternateClip&&cut!==null?<><Sequence from={0} durationInFrames={cut}><Screen {...screen}/></Sequence><Sequence from={cut}><Screen clip={alternateClip} speed={alternateSpeed}/></Sequence></>:<Screen {...screen}/>}
   <div style={{position:'absolute',left:0,right:0,bottom:0,height:compactCaption?150:202,background:'linear-gradient(0deg,rgba(10,25,24,.95),rgba(10,25,24,.67) 55%,transparent)',pointerEvents:'none'}}/>
   <div style={{position:'absolute',left:65,right:65,bottom:compactCaption?20:39,color:'#fff',opacity:a,transform:'translateY('+((1-a)*20)+'px)'}}>
     <div style={{display:'flex',alignItems:'center',gap:18}}><div style={{width:compactCaption?36:32,height:compactCaption?36:32,background:'#4bceb3',color:'#0d1d1c',fontWeight:900,fontSize:compactCaption?25:23,display:'grid',placeItems:'center'}}>T</div><span style={{fontSize:compactCaption?27:26,fontWeight:850,letterSpacing:-.5}}>TallyGuard</span><span style={{color:'#85a9a1',fontSize:compactCaption?27:24}}> / </span><span style={{fontSize:compactCaption?44:39,fontWeight:780,letterSpacing:-.8}}>{title}</span></div>
@@ -37,56 +37,21 @@ const UIShot:React.FC<ScreenProps&{index:string;title:string;footer:string;test?
   </div>
 </AbsoluteFill>};
 
-const FinanceShot:React.FC=()=><AbsoluteFill>
-  <Sequence from={0} durationInFrames={7*FPS}><UIShot index="04" title="Finance selects the same request" footer="TG-BE9B131D · the checkbox, amount, and evidence record agree" clip="manual-v13.mp4" start={6.7} speed={.055} compactCaption label="Visible selection"/></Sequence>
-  <Sequence from={7*FPS} durationInFrames={7*FPS}><UIShot index="04" title="Evidence meets policy" footer="Supplier, wallet, timing, and spending limits explain the approval boundary" clip="manual-v13.mp4" start={8.7} speed={.055} compactCaption label="Finance review"/></Sequence>
-</AbsoluteFill>;
-
-const ApprovalShot:React.FC=()=><AbsoluteFill>
-  <Sequence from={0} durationInFrames={7*FPS}><UIShot index="05" title="A separate approver reviews the evidence" footer="TG-BE9B131D · read-only packet · an approval reason is required" clip="manual-v13.mp4" start={9.55} speed={.135} compactCaption label="Independent authority"/></Sequence>
-  <Sequence from={7*FPS} durationInFrames={6*FPS}><AbsoluteFill>
-    <UIShot index="05" title="The decision and its reason are recorded" footer="TG-BE9B131D · approved for payment · transfer not sent yet" clip="manual-v13.mp4" start={10.95} speed={.012} zoom={1.9} zoomEnd={1.94} origin="0%" originY="75%" compactCaption label="Public demo · simulation"/>
-    <div style={{position:'absolute',top:0,left:0,right:0,height:88,background:'#f8f9f7',borderBottom:'1px solid #d5dcda',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 66px',color:'#101817'}}>
-      <span style={{fontSize:29,fontWeight:800}}>TallyGuard / Independent approval</span><span style={{fontSize:22,color:'#007d79',fontWeight:750}}>Decision recorded</span>
-    </div>
-    <div style={{position:'absolute',top:223,right:78,width:750,padding:'34px 40px 37px',background:'rgba(10,28,25,.96)',border:'1px solid #5fae9d',color:'#fff',boxShadow:'0 24px 70px rgba(5,15,14,.24)'}}>
-      <div style={{fontSize:17,fontWeight:800,letterSpacing:2.5,color:'#88d9c7'}}>SEALED APPROVAL RECORD</div>
-      <div style={{marginTop:13,fontFamily:'Georgia, serif',fontSize:51}}>TG-BE9B131D</div>
-      <div style={{height:1,background:'#41665d',margin:'22px 0'}}/>
-      <div style={{fontSize:25,lineHeight:1.45,color:'#d7eae5'}}>“Evidence and supplier wallet verified. Approve the request for finance settlement.”</div>
-      <div style={{display:'flex',justifyContent:'space-between',gap:15,marginTop:28,fontSize:20,fontWeight:850,color:'#81d9c5'}}><span>APPROVED FOR PAYMENT</span><span>NO FUNDS SENT YET</span></div>
-    </div>
-  </AbsoluteFill></Sequence>
-</AbsoluteFill>;
-
-const FinanceSettlementShot:React.FC=()=><AbsoluteFill>
-  <UIShot index="06" title="Finance executes settlement" footer="Approval is not payment; finance separately authorizes the final transfer" clip="manual-v13.mp4" start={12.0} speed={.15} zoom={1.04} zoomEnd={1.08} motionFrames={420} compactCaption label="Public demo · simulation"/>
-  <div style={{position:'absolute',left:104,top:51,width:520,height:93,background:'#fff',padding:'8px 24px',color:'#101817'}}>
-    <div style={{fontSize:35,fontWeight:720,letterSpacing:0}}>Invoice review</div>
-    <div style={{marginTop:1,fontSize:16,color:'#687875'}}>TG-BE9B131D · Vendor Atlas Compute</div>
-  </div>
-</AbsoluteFill>;
-
-const AutoRequestShot:React.FC=()=><AbsoluteFill>
-  <Sequence from={0} durationInFrames={4*FPS}><UIShot index="09" title="A 40 USDC request enters" footer="The requester confirms three sources and a 40 USDC amount" clip="auto-closed-loop.mp4" start={8.1} speed={.68} compactCaption label="TG-AUTO-40B · demo"/></Sequence>
-  <Sequence from={4*FPS} durationInFrames={10*FPS}><UIShot index="09" title="Evidence and limits are checked" footer="Supplier, wallet, treasury, and policy are evaluated before the result" clip="auto-closed-loop.mp4" start={10.05} speed={.25} compactCaption label="Public demo · simulation"/></Sequence>
-</AbsoluteFill>;
-
 const MixedOutcomesShot:React.FC=()=><AbsoluteFill style={{background:'#0d1514'}}>
-  <Screen clip="features.mp4" start={9} speed={.26}/>
+  <Screen clip="features.mp4" start={9} speed={.7}/>
   <div style={{position:'absolute',left:0,right:0,bottom:0,height:82,background:'rgba(7,22,20,.94)',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 45px',color:'#fff'}}>
     <span style={{fontWeight:800,fontSize:29}}>Different evidence. Different decisions.</span>
     <span style={{fontWeight:750,fontSize:21,color:'#b5e8dc'}}>SETTLE · APPROVE · SCHEDULE · HOLD</span>
   </div>
 </AbsoluteFill>;
 
-const PainOpen:React.FC=()=>{const f=useCurrentFrame(),a=tween(f,3,28),b=tween(f,62,92),c=tween(f,139,170);return <AbsoluteFill style={{background:'#0d1514',color:'#f8f9f7',overflow:'hidden'}}>
+const PainOpen:React.FC=()=>{const f=useCurrentFrame(),a=tween(f,3,28),c=tween(f,275,315);const pains=['Scattered invoice, PO, and delivery proof','Duplicate invoices and wallet risk','Slow multi-person approvals','No clear reason or request status','Bank cutoffs and delayed settlement','AI cannot hold unchecked payment authority'];return <AbsoluteFill style={{background:'#0d1514',color:'#f8f9f7',overflow:'hidden'}}>
   <div style={{position:'absolute',inset:0,background:'radial-gradient(circle at 86% 12%, #174039 0, transparent 34%), radial-gradient(circle at 10% 95%, #14302c 0, transparent 37%)'}}/>
   <div style={{position:'absolute',top:66,left:105,display:'flex',alignItems:'center',gap:20,opacity:a}}><Mark size={51} inverse/><span style={{fontSize:23,fontWeight:850}}>TallyGuard</span><span style={{fontSize:15,color:'#8fafaa',letterSpacing:2.4,marginLeft:22}}>INTELLIGENT ACCOUNTS PAYABLE</span></div>
   <div style={{position:'absolute',top:212,left:105,right:100,opacity:a,transform:'translateY('+((1-a)*42)+'px)'}}><div style={{color:'#80b7ac',fontSize:19,fontWeight:850,letterSpacing:3}}>THE COST OF A FRAGMENTED PAYMENT</div><div style={{fontFamily:'Georgia, serif',fontSize:105,lineHeight:1.04,letterSpacing:-4,marginTop:20}}>The invoice is ready.<br/><span style={{color:'#f1b990'}}>The decision is not.</span></div></div>
-  <div style={{position:'absolute',top:544,left:105,right:105,display:'flex',gap:18,opacity:b}}>{['Scattered evidence','Approval bottlenecks','Unclear payment status'].map((v,i)=><div key={v} style={{flex:1,border:'1px solid #38534c',background:'#17302b',padding:'27px 30px',fontSize:24,color:'#dceae5',transform:'translateY('+((1-b)*(30+i*12))+'px)'}}><span style={{fontFamily:'Consolas, monospace',fontSize:15,color:'#e7a785',marginRight:20}}>0{i+1}</span>{v}</div>)}</div>
-  <div style={{position:'absolute',left:105,right:105,bottom:116,display:'flex',alignItems:'center',gap:27,opacity:c,transform:'translateY('+((1-c)*24)+'px)'}}><div style={{width:48,height:48,borderRadius:'50%',display:'grid',placeItems:'center',background:'#4bceb3',color:'#102420',fontSize:30}}>→</div><div style={{fontSize:32,fontWeight:760}}>AI checks the evidence. Finance sets the rules. Arc settles with proof.</div></div>
-  <div style={{position:'absolute',bottom:56,left:105,right:105,height:2,background:'#2b423c'}}><div style={{height:'100%',width:(tween(f,0,234)*100)+'%',background:'#4bceb3'}}/></div>
+  <div style={{position:'absolute',top:535,left:105,right:105,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:15}}>{pains.map((v,i)=>{const p=tween(f,60+i*32,90+i*32);return <div key={v} style={{border:'1px solid #38534c',background:'#17302b',minHeight:90,padding:'19px 21px',fontSize:20,color:'#dceae5',opacity:p,transform:'translateY('+((1-p)*24)+'px)'}}><span style={{fontFamily:'Consolas, monospace',fontSize:15,color:'#e7a785',marginRight:15}}>0{i+1}</span>{v}</div>})}</div>
+  <div style={{position:'absolute',left:105,right:105,bottom:105,display:'flex',alignItems:'center',gap:25,opacity:c,transform:'translateY('+((1-c)*24)+'px)'}}><div style={{width:43,height:43,borderRadius:'50%',display:'grid',placeItems:'center',background:'#4bceb3',color:'#102420',fontSize:28}}>→</div><div style={{fontSize:27,fontWeight:760}}>AI checks evidence. Finance sets authority. Arc settles with proof.</div></div>
+  <div style={{position:'absolute',bottom:45,left:105,right:105,height:2,background:'#2b423c'}}><div style={{height:'100%',width:(tween(f,0,414)*100)+'%',background:'#4bceb3'}}/></div>
 </AbsoluteFill>};
 
 const Intro:React.FC=()=>{const f=useCurrentFrame(),m=tween(f,5,28),l=tween(f,20,48),b=tween(f,78,105);return <AbsoluteFill style={{...base,padding:'87px 125px'}}>
@@ -111,21 +76,22 @@ const ArcBridge:React.FC=()=>{const f=useCurrentFrame(),appear=tween(f,0,26),pho
 const Outro:React.FC=()=>{const f=useCurrentFrame(),scale=interpolate(f,[0,42],[1.4,1],{extrapolateRight:'clamp',easing:ease}),a=tween(f,4,35),b=tween(f,35,83);return <AbsoluteFill style={{...base,background:'#0d1514',color:'#f8f9f7',display:'grid',placeItems:'center'}}><div style={{display:'flex',alignItems:'center',gap:32,transform:'scale('+scale+')',opacity:a}}><Mark size={108} inverse/><div style={{fontSize:67,fontWeight:850,letterSpacing:-2}}>TallyGuard</div></div><div style={{position:'absolute',top:670,left:0,right:0,textAlign:'center',fontFamily:'Georgia, serif',fontSize:45,opacity:b,transform:'translateY('+((1-b)*18)+'px)'}}>Agent speed. Finance control. Proof on Arc.</div><div style={{position:'absolute',bottom:80,fontSize:17,letterSpacing:2,color:'#4bceb3'}}>INTELLIGENT ACCOUNTS PAYABLE</div></AbsoluteFill>};
 
 const shots:[number,number,React.ReactNode][]=[
-  [0,8,<PainOpen/>],
-  [8,18,<UIShot index="01" title="One controlled path from invoice to receipt" footer="Five visible steps: evidence · match · policy · settlement · audit" clip="landing-final.mp4" start={0} speed={1} compactCaption/>],
-  [26,13,<UIShot index="02" title="One request · three evidence sources" footer="Invoice + purchase order + delivery proof; the requester confirms extracted fields" clip="manual-v13.mp4" start={.6} speed={.13} compactCaption label="Editable sample documents"/>],
-  [39,14,<UIShot index="03" title="Submission shows exactly what happens next" footer="TG-BE9B131D · 1,486.25 USDC · awaiting independent approval · no funds sent" clip="manual-v13.mp4" start={2.9} speed={.09} compactCaption/>],
-  [53,14,<FinanceShot/>],
-  [67,13,<ApprovalShot/>],
-  [80,14,<FinanceSettlementShot/>],
-  [94,11,<UIShot index="07" title="The requester receives proof" footer="TG-BE9B131D · demo status, finance note, settlement progress, and receipt" clip="manual-v13.mp4" start={15.1} speed={.15} compactCaption label="Public demo · simulation"/>],
-  [105,16,<UIShot index="08" title="Finance defines the no-touch limit" footer="50 USDC per request · 500 USDC per day · versioned policy" clip="auto-closed-loop.mp4" start={3.7} speed={.025} zoom={1} zoomEnd={1.065} motionFrames={480} compactCaption label="Finance-configured authority"/>],
-  [121,14,<AutoRequestShot/>],
-  [135,13,<UIShot index="10" title="Within bounds · automatically settled" footer="No independent approval needed; the requester sees a final receipt" clip="auto-complete.mp4" start={0} speed={1} compactCaption label="Public demo · simulation"/>],
-  [148,16,<MixedOutcomesShot/>],
-  [164,14,<UIShot index="12" title="Circle wallets · Arc settlement" footer="Always-on programmable USDC, with a receipt tied back to the invoice" clip="arc-proof.mp4" start={0} speed={.72} compactCaption label="Separate historical Testnet verification" test/>],
-  [178,11,<UIShot index="13" title="Verifiable on Arc Explorer" footer="50 workflow tests · 40 confirmed Testnet transfers of 0.01 USDC" clip="arc-proof.mp4" start={39} speed={.26} compactCaption label="Historical transaction · not the filmed request" test/>],
-  [189,6,<Outro/>]
+  [0,14,<PainOpen/>],
+  [14,18,<UIShot index="01" title="One controlled path from invoice to receipt" footer="Five visible steps: evidence · match · policy · settlement · audit" clip="landing-final.mp4" start={0} speed={1} compactCaption/>],
+  [32,11,<UIShot index="02" title="One request · three evidence sources" footer="Invoice + purchase order + delivery proof; a person confirms the extracted fields" clip="manual-v17.mp4" start={1.55} speed={.31} compactCaption label="Real web interaction"/>],
+  [43,12,<UIShot index="03" title="Submission opens a live result" footer="TG-33628CF4 · evidence checked · finance review required · no funds sent" clip="manual-v17.mp4" start={4.98} speed={.37} compactCaption label="Live submission modal"/>],
+  [55,12,<UIShot index="04" title="Finance selects and reviews the same request" footer="The checkbox, evidence, supplier, wallet, and policy decision remain linked" clip="manual-v17.mp4" start={9.42} speed={.287} compactCaption label="Finance backend"/>],
+  [67,11,<UIShot index="05" title="Independent approval records a reason" footer="An approver reviews the sealed packet; the agent cannot approve its own exception" clip="manual-v17.mp4" start={12.87} speed={.378} compactCaption label="Separate authority"/>],
+  [78,10,<UIShot index="06" title="Finance executes a separate settlement step" footer="Approval is not payment; finance still authorizes the final transfer" clip="manual-v17.mp4" start={17.03} speed={.242} compactCaption label="Public demo · simulation"/>],
+  [88,8,<UIShot index="07" title="The requester receives a final receipt" footer="TG-33628CF4 · status, finance note, progress, and receipt under one ID" clip="manual-v17.mp4" start={19.45} speed={.25} compactCaption label="Public demo · simulation"/>],
+  [96,13,<UIShot index="08" title="Finance explicitly enables no-touch authority" footer="50 USDC per payment · 450 USDC per day · emergency stop · versioned policy" clip="auto-v17.mp4" start={0} speed={.297} compactCaption label="Off until finance enables it"/>],
+  [109,11,<UIShot index="09" title="A 40 USDC request is checked" footer="A person confirms the amount; evidence, wallet, budget, and policy are evaluated" clip="auto-v17.mp4" start={3.86} speed={.28} compactCaption label="Live submit and decision"/>],
+  [120,8,<UIShot index="10" title="Within the limits · automatically settled" footer="No human exception was needed; the requester opens the simulation receipt" clip="auto-v17.mp4" start={6.95} speed={.66} compactCaption label="Public demo · simulation"/>],
+  [128,18,<UIShot index="11" title="A rejected request carries its reason" footer="The approver enters a reason; the requester opens it and starts a corrected request" clip="return-v17.mp4" start={0} speed={.56} alternateClip="correction-v19.mp4" alternateAt={14} alternateSpeed={1.25} compactCaption label="Real rejection and correction"/>],
+  [146,14,<MixedOutcomesShot/>],
+  [160,14,<UIShot index="13" title="Circle wallets · Arc settlement" footer="Always-on programmable USDC, with a receipt tied to the invoice" clip="arc-proof.mp4" start={0} speed={.9} compactCaption label="Separate historical Testnet verification" test/>],
+  [174,11,<UIShot index="14" title="Verifiable on Arc Explorer" footer="50 workflow tests · 40 confirmed Testnet transfers of 0.01 USDC" clip="arc-proof.mp4" start={38} speed={.36} zoom={1} zoomEnd={1.08} motionFrames={330} origin="45%" originY="36%" compactCaption label="Historical transaction · not the filmed request" test/>],
+  [185,7,<Outro/>]
 ];
 export const Film:React.FC<{withBgm:boolean}>=({withBgm})=><AbsoluteFill style={base}>
   {shots.map(([from,duration,node],i)=><Sequence key={i} from={from*FPS} durationInFrames={duration*FPS}>{node}</Sequence>)}

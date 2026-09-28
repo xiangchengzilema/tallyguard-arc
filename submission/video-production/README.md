@@ -1,10 +1,10 @@
-# TallyGuard product film · v16
+# TallyGuard product film · v19
 
-The current cut is a 3:15, 1920 × 1080, 30 fps product film. It opens with the business pain, gives the animated five-step homepage workflow 18 seconds, then uses actual recorded web-product interaction rather than static page images. The primary workflow follows request `TG-BE9B131D` from editable evidence through the new submit-result modal, finance review, independent approval, simulated finance settlement, and the requester-visible receipt. The second workflow follows `TG-AUTO-40B`, a 40 USDC request automatically settled under a finance-enabled, versioned policy capped at 50 USDC per request and 500 USDC per day.
+The current cut is a 3:12, 1920 × 1080, 30 fps product film. It opens with six business pains, holds on the homepage's animated five-step workflow, then uses continuous recordings of real web interactions. The manual-request footage shows user submission and result modal, finance selection/review, independent approval, finance-triggered simulated settlement, and the user's receipt under request `TG-33628CF4`. The low-value footage shows finance explicitly enabling a versioned no-touch policy (50 USDC per request, 450 USDC per day), then a 40 USDC request automatically completing in the simulation workspace under request `TG-3CA63499`. A third recording shows approver rejection with a written reason, the user seeing it, clicking **Correct and resubmit**, and opening a corrected new request with the same finance reason under `TG-151377B2`.
 
-Both filmed workflows run in the **public simulation workspace**. Their receipt screens show simulated outcomes; no funds moved from the filmed clicks. The closing Arc Activity and Explorer footage shows **separate historical Arc Testnet evidence**: 50 workflow test runs with 40 confirmed transfers of 0.01 test USDC. Those are not the transactions caused by the filmed requests. No tests are presented as customers or production adoption.
+All filmed payment outcomes are **public simulation workspace** outcomes; filmed clicks do not move funds. The Arc Activity and Explorer footage is **separate historical Arc Testnet evidence**: 50 workflow runs and 40 confirmed transfers of 0.01 test USDC. Do not claim those are transfers from the filmed requests or real customers.
 
-English narration is in `voiceover.json`; the Chinese owner-review copy is in `CHINESE_SUBTITLES.md` and `CHINESE_SUBTITLES.srt`. The final output remains English on-screen. The raw new manual-workflow recording and screenshots are in `../../artifacts/video-recording/`. Binary media and renders are local ignored assets under `public/media/` and `out/`.
+English narration is in `voiceover.json`; the complete Chinese owner-review copy is in `CHINESE_SUBTITLES.md` and `CHINESE_SUBTITLES.srt`. The raw dynamic browser recordings and frame-QA images are in `../../artifacts/video-recording/`. Binary media and renders are local ignored assets under `public/media/` and `out/`.
 
 ## Render
 
@@ -12,8 +12,8 @@ From this directory:
 
 ```powershell
 npm install
-npx remotion render src/index.ts TallyGuardFilm out/TallyGuard-product-film-final-v16.mp4 --codec h264 --audio-codec aac --concurrency 4 --crf 20
-npx remotion render src/index.ts TallyGuardFilm out/TallyGuard-product-film-final-v16-nobgm.mp4 --codec h264 --audio-codec aac --concurrency 4 --crf 20 --props nobgm-props.json
+npx remotion render src/index.ts TallyGuardFilm out/TallyGuard-product-film-final-v19.mp4 --codec h264 --audio-codec aac --concurrency 4 --timeout 120000 --crf 20
+npx remotion render src/index.ts TallyGuardFilm out/TallyGuard-product-film-final-v19-nobgm.mp4 --codec h264 --audio-codec aac --concurrency 4 --timeout 120000 --crf 20 --props nobgm-props.json
 ```
 
-The narration-only version keeps the same visual timeline and voice track without background music. The music asset is `house-vibez.mp3` by Lily J, sourced from Mixkit. [Mixkit's music license](https://mixkit.co/license/modal/musicFree/) covers web/social video use; recheck if the distribution channel changes.
+The music asset is `house-vibez.mp3` by Lily J, sourced from Mixkit. [Mixkit's music license](https://mixkit.co/license/modal/musicFree/) covers web/social video use; recheck if the distribution channel changes.

@@ -2955,6 +2955,7 @@ button, input, select, textarea { font: inherit; }
 
 /* The submission decision is a focused handoff, not a notice below the form. */
 .request-result-modal .cds--modal-container { width: min(680px, calc(100vw - 32px)); max-height: min(90vh, 760px); border: 1px solid #cddbd3; background: #fcfdfa; box-shadow: 0 28px 90px rgba(8, 35, 27, .24); }
+.request-result-modal.cds--modal.is-visible .cds--modal-container { animation: requester-saved-enter 280ms cubic-bezier(.22, 1, .36, 1) both; }
 .request-result-modal .cds--modal-header { padding: 28px 32px 16px; }
 .request-result-modal .cds--modal-header__label { color: #087557; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
 .request-result-modal .cds--modal-header__heading { margin-top: 8px; color: #132a22; font-family: Georgia, serif; font-size: clamp(26px, 3vw, 35px); line-height: 1.14; }
@@ -2986,6 +2987,13 @@ button, input, select, textarea { font: inherit; }
 .request-result__actions { display: flex; justify-content: flex-end; gap: 9px; }
 .request-result__actions button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; padding: 0 16px; border: 1px solid #087557; background: #087557; color: white; font-size: 12px; font-weight: 750; cursor: pointer; }
 .request-result__actions button.is-secondary { border-color: #d1ded6; background: white; color: #345344; }
+.request-result__working, .request-result__error { display: flex; align-items: center; gap: 16px; min-height: 100px; padding: 20px; border: 1px solid #d3e3dc; background: #f1f8f4; }
+.request-result__working > div, .request-result__error > div { display: grid; gap: 7px; }
+.request-result__working strong, .request-result__error strong { font-size: 15px; }
+.request-result__working p, .request-result__error p { margin: 0; color: #536b60; font-size: 12px; line-height: 1.55; }
+.request-result__error { align-items: flex-start; border-color: #edcbc4; background: #fff5f2; color: #a64a3e; }
+.request-result__error p { color: #693c38; }
+.request-result__error small { color: #865b53; font-size: 11px; }
 .requester-correction { display: flex; gap: 12px; margin: 20px 0; padding: 17px 19px; border: 1px solid #eacdbd; background: #fff7ee; color: #854937; }
 .requester-correction strong { font-size: 14px; }
 .requester-correction p { margin: 5px 0; font-size: 12px; line-height: 1.5; }

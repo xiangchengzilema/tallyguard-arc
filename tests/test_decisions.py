@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from tallyguard.audit import AuditChain
-from tallyguard.decisions import AgentRecommendation, DecisionService
+from tallyguard.decisions import AgentRecommendation, DecisionReplayInputs, DecisionService
 from tallyguard.models import DeliveryEvidence, Invoice, PurchaseOrder, TreasurySnapshot, Vendor
 from tallyguard.normalization import NormalizedEvidence
 from tallyguard.persistence import SqliteRepository
@@ -169,6 +169,33 @@ def test_decision_replay_recomputes_every_bound_input_exactly():
     assert verification.replayed_decision_id == record.id
     assert verification.input_snapshot_hash == record.replay_input_hash
     assert all(check.passed for check in verification.checks)
+
+
+def test_autonomous_spend_counter_is_sealed_and_replayed_separately():
+    evidence, vendor, treasury, policy = case()
+    evidence = replace(
+        evidence,
+        invoice=replace(evidence.invoice, amount=Decimal("40")),
+        purchase_order=replace(evidence.purchase_order, authorized_amount=Decimal("40")),
+        delivery=replace(evidence.delivery, delivered_value=Decimal("40")),
+    )
+    service = DecisionService()
+    record = service.evaluate(
+        evidence=evidence,
+        vendor=vendor,
+        treasury=replace(treasury, spent_today_usdc=Decimal("300")),
+        policy=replace(
+            policy,
+            daily_autonomous_payment_limit_usdc=Decimal("200"),
+            maximum_autonomous_payment_usdc=Decimal("50"),
+        ),
+        autonomous_spent_today_usdc=Decimal("0"),
+    )
+    assert record.final_action == DecisionAction.PAY
+    assert record.replay_inputs is not None
+    restored = DecisionReplayInputs.from_payload(record.replay_inputs.to_payload())
+    assert restored.content_hash == record.replay_input_hash
+    assert service.verify_replay(record).verified is True
 
 
 def test_wallet_replacement_cooldown_is_sealed_and_replayed():

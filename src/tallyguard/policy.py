@@ -154,6 +154,7 @@ class PolicyEngine:
         evaluation_date: date | None = None,
         vendor_wallet_event_type: str | None = None,
         vendor_wallet_verified_date: date | None = None,
+        autonomous_spent_today_usdc: Decimal | None = None,
     ) -> Decision:
         resolved_evaluation_date = evaluation_date or date.today()
         frozen_signals = tuple(known_invoice_fingerprints)
@@ -173,7 +174,7 @@ class PolicyEngine:
             self._delivery(invoice, purchase_order, delivery, policy, frozen_signals),
             self._autonomous_payments_enabled(policy),
             self._autonomy_limit(invoice, vendor, policy),
-            self._daily_autonomy_limit(invoice, treasury, policy),
+            self._daily_autonomy_limit(invoice, treasury, policy, autonomous_spent_today_usdc),
             self._daily_limit(invoice, treasury, policy),
             self._cash_reserve(invoice, treasury, policy),
             self._payment_timing(invoice, policy, resolved_evaluation_date),
@@ -483,8 +484,13 @@ class PolicyEngine:
         invoice: Invoice,
         treasury: TreasurySnapshot,
         policy: Policy,
+        autonomous_spent_today_usdc: Decimal | None = None,
     ) -> RuleResult:
-        projected = treasury.spent_today_usdc + invoice.amount
+        projected = (
+            treasury.spent_today_usdc
+            if autonomous_spent_today_usdc is None
+            else Decimal(str(autonomous_spent_today_usdc))
+        ) + invoice.amount
         limit = policy.daily_autonomous_payment_limit_usdc
         assert limit is not None
         if projected > limit:

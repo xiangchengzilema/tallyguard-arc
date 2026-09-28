@@ -770,7 +770,7 @@ def test_real_evidence_policy_and_treasury_can_autopay_an_idempotent_pay_decisio
     assert result["autopay"]["status"] == "SETTLED"
     assert result["autopay"]["payment"]["receipt"]["confirmed_amount_usdc"] == "1200"
     assert result["autopay"]["payment"]["intent"]["approval_reference"] is None
-    assert result["autopay"]["daily_autonomous_remaining_usdc"] == "300"
+    assert result["autopay"]["daily_autonomous_remaining_usdc"] == "800"
     assert result["autopay"]["hard_daily_payment_limit_usdc"] == "5000"
     assert result["decision"]["reason_codes"] == []
     assert result["decision"]["agent_recommendation"]["action"] == "PAY"
