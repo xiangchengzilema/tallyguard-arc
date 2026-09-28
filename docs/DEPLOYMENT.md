@@ -1,7 +1,8 @@
 # Deployment model
 
-TallyGuard ships as one container that builds the React judge console and serves
-the static bundle from the Flask API. The checked-in Render Blueprint starts in
+TallyGuard can ship as one container that builds the React judge console and
+serves the static bundle from the Flask API, or as a native Gunicorn service
+behind Caddy on Tencent Cloud. The checked-in Render Blueprint starts in
 safe simulation mode, issues one isolated role bundle per browser, and never
 requires wallet credentials. Public demo identities are enabled only because
 the Blueprint is hard-locked to the deterministic simulator; the release audit
@@ -18,10 +19,13 @@ restart-safe. The remaining one-process constraint comes from the in-process
 rate limiter; multiple threads still allow concurrent
 judge traffic without presenting the service as horizontally scalable.
 
-SQLite stores invoices, state transitions, payment intents, and receipts. On a
-free ephemeral host the database can reset after a restart or idle spin-down.
-This is acceptable for the seeded public judge playground, which creates each
-scenario on demand. It is not an acceptable production persistence model.
+SQLite stores invoices, state transitions, payment intents, and receipts. On
+the free Render fallback the database can reset after a restart or idle
+spin-down. The Tencent Cloud judge deployment instead stores SQLite under
+`/var/lib/tallyguard` on persistent disk; this survives application restarts
+but still needs backups and managed Postgres before a production claim. Both
+public origins remain simulation-only. See `deploy/tencent/README.md` for the
+host-specific service and HTTPS boundary.
 
 ## Production boundary
 
