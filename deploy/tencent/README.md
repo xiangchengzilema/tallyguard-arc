@@ -1,8 +1,9 @@
 # Tencent Cloud public judge deployment
 
 This deployment is a persistent, simulation-only public judge environment on
-Ubuntu 24.04. It does not load Circle credentials or move funds. The current
-temporary HTTPS origin is `https://tallyguard.43-162-123-129.sslip.io`;
+Ubuntu 24.04. It does not load Circle credentials or move funds. The public
+HTTPS origin is `https://tallyguard.online`. The previous hostname
+`https://tallyguard.43-162-123-129.sslip.io` remains available, and
 `https://tallyguard-arc.onrender.com` remains a fallback.
 
 `tallyguard.service` runs one Gunicorn process as the unprivileged `tallyguard`
@@ -25,18 +26,18 @@ Useful read-only checks:
 ```bash
 systemctl status tallyguard caddy --no-pager
 curl -fsS http://127.0.0.1:8180/api/readiness
-curl -fsS https://tallyguard.43-162-123-129.sslip.io/api/readiness
+curl -fsS https://tallyguard.online/api/readiness
 ```
 
 Readiness must say `simulation`, `funds_movement: disabled`, and
 `mainnet_enabled: false`. Run the public HTTPS smoke from a clean client:
 
 ```bash
-tallyguard-deployment-smoke --base-url https://tallyguard.43-162-123-129.sslip.io
+tallyguard-deployment-smoke --base-url https://tallyguard.online
 ```
 
 The smoke creates disposable synthetic demo records and revokes its sessions.
-It does not prove a live transfer or real customer usage. Before changing to an
-owned domain, point its DNS A record at the server, replace the hostname in
-`Caddyfile`, validate and reload Caddy, and repeat HTTPS and browser QA. Keep
-the old URL working until the new one is verified.
+It does not prove a live transfer or real customer usage. Spaceship hosts the
+apex A record for `tallyguard.online` at `43.162.123.129`. `Caddyfile` serves
+the owned domain and previous hostname together. Validate and reload Caddy
+after any future hostname change, then repeat HTTPS and browser QA.

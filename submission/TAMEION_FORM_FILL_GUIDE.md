@@ -22,7 +22,7 @@ The 50 automated workflows are engineering tests, not 50 human users.
 | Previous Canteen x Arc participation | `xiangchengzilema` — the channel has a Pythia / Agora video whose description says submitted, plus an Obol / Lepton demo. Confirm which events you officially submitted to; do not list an award unless you have proof. |
 | Project Source Code | `https://github.com/xiangchengzilema/tallyguard-arc` |
 | Existing-project comparison | `https://github.com/xiangchengzilema/tallyguard-arc/compare/7ab81cd...main` — pre-event baseline to the current branch; verify it resolves after the final push. |
-| Project Live | `https://tallyguard-arc.onrender.com` |
+| Project Live | `https://tallyguard.online` (verify the current form value before submission; the Render URL still works as a fallback). |
 | Project Video Demo | `https://youtu.be/Jjc9D-k1UXY` (unlisted 2:59 submission cut; not the 3:12 owner-review cut). |
 
 ## Continuing project / last two weeks

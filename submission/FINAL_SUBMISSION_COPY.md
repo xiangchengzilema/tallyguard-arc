@@ -107,7 +107,7 @@ tried the product, add only their verified count and feedback in the form.
 ## Repository, product, and media
 
 - Public repository: https://github.com/xiangchengzilema/tallyguard-arc
-- Live judge console: https://tallyguard-arc.onrender.com
+- Live judge console: https://tallyguard.online (Render fallback: https://tallyguard-arc.onrender.com)
 - Demo video under three minutes: https://youtu.be/Jjc9D-k1UXY (unlisted)
 - Pitch deck: `submission/TallyGuard_Tameion_Pitch_v9.pptx`
 - Arc Testnet transaction: `0xe8c6b06dbafbd55a7f9a5a9fbb276fe5b07ddf27be3ef84cc26281dcdf783adf`

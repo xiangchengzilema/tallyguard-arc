@@ -2,7 +2,7 @@
 
 **Proof-before-payment accounts payable for AI-operated businesses on Arc.**
 
-**[Open the live judge console](https://tallyguard-arc.onrender.com)** · [Read the public deployment check](docs/reports/REMOTE_DEPLOYMENT_SMOKE_20260926.md)
+**[Open the live judge console](https://tallyguard.online)** · [Read the owned-domain deployment check](docs/reports/OWNED_DOMAIN_DEPLOYMENT_20260928.md)
 
 The public site is a role-separated, isolated judge playground. Its payment receipts use the Arc simulator and do not move funds; real Arc Testnet transfer evidence is documented separately.
 
