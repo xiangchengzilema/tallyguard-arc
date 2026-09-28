@@ -1,9 +1,8 @@
 # TallyGuard final submission copy
 
 For the actual form fields and current verified links, use
-`TAMEION_FORM_FILL_GUIDE.md`. This longer background copy predates the final
-video and retains conditional pilot text; do not paste a conditional pilot
-claim as completed usage.
+`TAMEION_FORM_FILL_GUIDE.md`. This longer background copy is supporting
+context; keep the real-person traction answer separate from synthetic tests.
 
 ## Project name
 
@@ -98,33 +97,12 @@ funds.
 
 ## Genuine traction answer
 
-Use exactly one of the following after the real pilot.
-
-### If only the self-operated pilot is complete
-
-We completed one genuine self-operated accounts-payable workflow using records
-the operator was actually responsible for. The operator chose the acceptance
-criteria before starting, recorded the prior-process and TallyGuard completion
-times, and exported a verified Payment Evidence Packet. The resulting pilot
-report content-addresses both the product proof and the operator attestation. We
-present this as genuine self-operated usage, not as an external customer.
-
-Insert only verified results:
-
-- Pilot report: `PENDING_EXTERNAL`
-- Criteria completed: `PENDING_EXTERNAL`
-- Baseline time: `PENDING_EXTERNAL`
-- TallyGuard time: `PENDING_EXTERNAL`
-- Settlement evidence: `PENDING_EXTERNAL`
-
-### If external operators also complete the flow
-
-In addition to the self-operated pilot, `PENDING_EXTERNAL` external finance or
-crypto operators completed the judge workflow. `PENDING_EXTERNAL` completed it
-without assistance. The median time to a policy decision was
-`PENDING_EXTERNAL`, and their structured feedback identified
-`PENDING_EXTERNAL`. These are pilot users; do not call them paying customers
-unless payment and permission to make that claim are separately documented.
+One human builder/operator manually exercised the product. We have not
+independently verified any external company user or paying customer. Engineering
+validation is separate: 50 synthetic payment workflows completed, including
+40 confirmed Arc Testnet transfers of 0.01 test USDC each. These are not
+50 human users or customer payments. If additional people have genuinely
+tried the product, add only their verified count and feedback in the form.
 
 ## Repository, product, and media
 
@@ -134,7 +112,7 @@ unless payment and permission to make that claim are separately documented.
 - Pitch deck: `submission/TallyGuard_Tameion_Pitch_v9.pptx`
 - Arc Testnet transaction: `0xe8c6b06dbafbd55a7f9a5a9fbb276fe5b07ddf27be3ef84cc26281dcdf783adf`
 - Verified Testnet artifact: `docs/reports/ARC_TESTNET_TREASURY_AND_WEB_SETTLEMENT_20260922.md`
-- Pilot evidence: `PENDING_EXTERNAL`
+- External customer pilot evidence: not yet verified
 
 ## Technology
 
