@@ -1,8 +1,9 @@
 # TallyGuard final submission copy
 
-This file contains canonical copy for the Tameion Agents Hackathon form. Replace
-only the explicitly marked external-evidence fields. Do not describe a pending
-pilot, deployment, or Testnet transfer as complete.
+For the actual form fields and current verified links, use
+`TAMEION_FORM_FILL_GUIDE.md`. This longer background copy predates the final
+video and retains conditional pilot text; do not paste a conditional pilot
+claim as completed usage.
 
 ## Project name
 
@@ -31,7 +32,7 @@ invoice, or a payment that exceeds its authority.
 TallyGuard provides a bounded accounts-payable agent for AI-operated
 businesses. It ingests immutable invoice, purchase-order, and delivery evidence;
 checks the verified vendor payout identity and current treasury state; and
-evaluates thirteen deterministic controls. The result is one of five explicit
+evaluates versioned deterministic controls. The result is one of five explicit
 actions: PAY, SCHEDULE, HOLD, REJECT, or ESCALATE.
 
 The autonomous runner freezes the observed queue and proposed actions under
@@ -129,7 +130,7 @@ unless payment and permission to make that claim are separately documented.
 
 - Public repository: https://github.com/xiangchengzilema/tallyguard-arc
 - Live judge console: https://tallyguard-arc.onrender.com
-- Demo video under three minutes: `PENDING_EXTERNAL`
+- Demo video under three minutes: https://youtu.be/Jjc9D-k1UXY (unlisted)
 - Pitch deck: `submission/TallyGuard_Tameion_Pitch_v9.pptx`
 - Arc Testnet transaction: `0xe8c6b06dbafbd55a7f9a5a9fbb276fe5b07ddf27be3ef84cc26281dcdf783adf`
 - Verified Testnet artifact: `docs/reports/ARC_TESTNET_TREASURY_AND_WEB_SETTLEMENT_20260922.md`

@@ -36,7 +36,7 @@ Visual tone: ink and restrained teal for the opener, ivory product surfaces, pur
 
 ## Acceptance checks
 
-1. Verify `TG-33628CF4` and 1,486.25 USDC across submit modal, finance queue, approver, settlement, and requester receipt.
+1. Verify `TG-A894F253` and 1,486.25 USDC across submit modal, finance queue, approver, settlement, and requester receipt.
 2. Verify the automatic request is 40 USDC and the visible policy is 50 per request / 450 per day.
 3. Inspect a beginning/middle/end frame of every shot, including the five-step homepage, the modal, checked finance row, evidence arrows, receipt, and explorer. No blank loading state, clipped text, or incorrect status.
 4. Check audio clips fit their shots; check final file duration, codecs, audio levels, and subtitle timing.

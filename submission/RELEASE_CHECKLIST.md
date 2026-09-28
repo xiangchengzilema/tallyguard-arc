@@ -87,7 +87,8 @@ in Beijing. Finish the external steps at least 24 hours earlier.
 - [x] Keep only the current v9 deck in the public submission package; obsolete
   deck binaries remain recoverable from Git history but are not exposed to judges.
 - [ ] Replace no pending claim with a placeholder that looks complete.
-- [ ] Record the product walkthrough from the final deployed commit.
+- [x] Record the product walkthrough from the final deployed commit; preserve
+  the 3:12 owner cut and the separately reviewed 2:59 submission cut.
 - [x] Keep the final product film under three minutes (2:59 at 1920 × 1080,
   30 fps, with recorded web interaction and narration).
 - [x] Show both complete public-demo paths from recorded web interaction:
@@ -101,15 +102,20 @@ in Beijing. Finish the external steps at least 24 hours earlier.
   mobile → all three widths). It is intentionally outside the web-first cut.
 - [x] Include one desktop/mobile comparison frame in the final deck or submission
   gallery so the responsive work remains visible outside the video (slide 10).
-- [ ] Include real Explorer proof only after independent verification succeeds.
-- [ ] Upload the video and verify playback without account access.
+- [x] Include real Explorer proof only after independent verification succeeds;
+  distinguish historical Testnet evidence from filmed simulation clicks.
+- [x] Upload the 2:59 cut as an unlisted YouTube video and verify the watch
+  page returns `playabilityStatus: OK` without account cookies:
+  https://youtu.be/Jjc9D-k1UXY . YouTube rounds the UI runtime to `3:00`;
+  the source container is 179.05 seconds, below the form's 180-second cap.
 
 ## Final form
 
-- [ ] Copy from `FINAL_SUBMISSION_COPY.md` and replace every
-  `PENDING_EXTERNAL` value with a real result or remove the line.
-- [ ] Select the AP/AR Automation Agent track and mention the secondary
-  Compliance Intelligence fit in the description.
+- [ ] Fill the actual form from `TAMEION_FORM_FILL_GUIDE.md`; leave conditional
+  pilot claims out when no pilot evidence exists. Do not convert the 50
+  automated workflows into a human-user count.
+- [ ] Describe the AP/AR Automation Agent fit and supporting compliance
+  controls in the project text. The current form has no separate track picker.
 - [ ] Recheck repository, live product, video, deck, Explorer, and pilot links.
 - [x] Run `tallyguard-deployment-smoke --base-url <LIVE_URL> --output
   artifacts/remote-deployment-smoke-final.json` from outside the host and

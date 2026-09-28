@@ -94,8 +94,22 @@ const shots:[number,number,React.ReactNode][]=[
   [174,11,<UIShot index="14" title="Verifiable on Arc Explorer" footer="50 workflow tests · 40 confirmed Testnet transfers of 0.01 USDC" clip="arc-proof.mp4" start={38} speed={.36} zoom={1} zoomEnd={1.08} motionFrames={330} origin="45%" originY="36%" compactCaption label="Historical transaction · not the filmed request" test/>],
   [185,7,<Outro/>]
 ];
-export const Film:React.FC<{withBgm:boolean}>=({withBgm})=><AbsoluteFill style={base}>
-  {shots.map(([from,duration,node],i)=><Sequence key={i} from={from*FPS} durationInFrames={duration*FPS}>{node}</Sequence>)}
-  {shots.map(([from,duration],i)=><Sequence key={'vo'+i} from={from*FPS} durationInFrames={duration*FPS}><Audio src={staticFile('media/vo-'+String(i+1).padStart(2,'0')+'.mp3')} volume={.92}/></Sequence>)}
+// Keep the owner-approved full cut intact. The official Tameion form asks for a
+// walkthrough under three minutes, so the submission cut trims only end holds.
+// Every narration file still fits entirely inside its shortened shot.
+const submissionDurations=[12,16,11,12,11,10,10,8,12,11,8,16,12,13,11,6];
+let submissionFrom=0;
+const submissionShots:[number,number,React.ReactNode][]=shots.map(([, , node],i)=>{
+  const duration=submissionDurations[i];
+  const shot:[number,number,React.ReactNode]=[submissionFrom,duration,node];
+  submissionFrom+=duration;
+  return shot;
+});
+export const Film:React.FC<{withBgm:boolean;submissionCut?:boolean}>=({withBgm,submissionCut=false})=>{
+  const activeShots=submissionCut?submissionShots:shots;
+  return <AbsoluteFill style={base}>
+  {activeShots.map(([from,duration,node],i)=><Sequence key={i} from={from*FPS} durationInFrames={duration*FPS}>{node}</Sequence>)}
+  {activeShots.map(([from,duration],i)=><Sequence key={'vo'+i} from={from*FPS} durationInFrames={duration*FPS}><Audio src={staticFile('media/vo-'+String(i+1).padStart(2,'0')+'.mp3')} volume={.92}/></Sequence>)}
   {withBgm&&<Loop durationInFrames={3343}><Audio src={staticFile('media/house-vibez.mp3')} volume={.095}/></Loop>}
-</AbsoluteFill>;
+  </AbsoluteFill>;
+};
