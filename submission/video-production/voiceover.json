@@ -2,7 +2,7 @@
   {"id":"01","from":0,"duration":14,"text":"Scattered evidence, duplicate invoices, wallet risk, slow approvals, unclear status, and bank cutoffs make payments harder. AI cannot have unchecked authority."},
   {"id":"02","from":14,"duration":18,"text":"TallyGuard makes one controlled path visible: read the evidence, match the records, apply finance policy, settle on Arc, and create an audit receipt. AI speeds the checks. Finance retains authority."},
   {"id":"03","from":32,"duration":11,"text":"The requester adds an invoice, purchase order, and delivery proof. Extracted fields remain editable until a person confirms them."},
-  {"id":"04","from":43,"duration":12,"text":"Click submit. A live result opens immediately, showing what passed, where the request waits, and the next handoff. Submission never means payment."},
+  {"id":"04","from":43,"duration":12,"text":"Click submit. Review opens, checks evidence and finance controls, then reveals the outcome and next handoff. Submission never means payment."},
   {"id":"05","from":55,"duration":12,"text":"Finance selects the same request and checks the supplier, wallet, duplicate signals, timing, and policy. This amount needs a separate approval."},
   {"id":"06","from":67,"duration":11,"text":"An independent approver reads the sealed evidence and records a reasoned decision. The agent cannot approve its own exception."},
   {"id":"07","from":78,"duration":10,"text":"Approval is not payment. Finance settles separately. This public demo simulates the transfer; no funds move."},
