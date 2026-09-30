@@ -241,6 +241,8 @@ def _invoice_json(stored: StoredInvoice) -> dict[str, Any]:
         "version": stored.version,
         "created_at": stored.created_at.isoformat(),
         "updated_at": stored.updated_at.isoformat(),
+        "supersedes_invoice_id": stored.supersedes_invoice_id,
+        "superseded_by_invoice_id": stored.superseded_by_invoice_id,
     }
 
 
@@ -1123,6 +1125,8 @@ def create_app(
     @app.post("/api/treasury/snapshots")
     @require(Permission.TREASURY_WRITE)
     def record_treasury_snapshot():
+        if not isinstance(settlement_adapter, SimulatedArcAdapter):
+            raise SettlementDenied("Manual balances are simulation-only. Refresh verified Circle treasury data instead.")
         payload = request.get_json(silent=False) or {}
         snapshot = TreasurySnapshot(
             organization_id=g.principal.organization_id,
@@ -1163,6 +1167,9 @@ def create_app(
                 "A live Circle/Arc adapter is required to refresh the treasury balance."
             )
 
+        # Bound the balance observation before any provider call. Payments that
+        # finish during the read remain conservatively reserved afterwards.
+        observed_at = datetime.now(timezone.utc)
         wallet = wallet_inspector()
         network = network_inspector()
         if wallet.state.strip().upper() != "LIVE":
@@ -1204,6 +1211,7 @@ def create_app(
             snapshot,
             source_reference=source_reference,
             recorded_by_user_id=g.principal.user_id,
+            recorded_at=observed_at,
         )
         repository.append(
             aggregate_type="treasury_snapshot",
@@ -1360,10 +1368,8 @@ def create_app(
         actor_user_id: str,
         correlation_id: str,
     ) -> dict[str, Any]:
-        if scenario_key == "provider-recovery" and not isinstance(
-            settlement_adapter, SimulatedArcAdapter
-        ):
-            raise ValueError("The provider recovery drill is available only in safe simulation mode.")
+        if not isinstance(settlement_adapter, SimulatedArcAdapter):
+            raise SettlementDenied("Demo scenarios are available only in safe simulation mode.")
         invoice_id = f"invoice_{scenario_key.replace('-', '_')}_{uuid4().hex[:12]}"
         scenario = build_demo_scenario(
             scenario_key,
@@ -1391,15 +1397,18 @@ def create_app(
                     vendor_id=scenario.vendor.id,
                 ) != scenario.vendor:
                     raise
-        repository.activate_policy(
-            scenario.policy,
-            activated_by_user_id=actor_user_id,
+        # Demo fixtures may initialize an empty simulator, never replace the
+        # administrator's active controls or reset already committed balances.
+        policy, treasury = repository.initialize_demo_controls(
+            policy=replace(scenario.policy, schedule_payments_before_due_days=None),
+            treasury=scenario.treasury,
+            actor_user_id=actor_user_id,
         )
-        repository.record_treasury_snapshot(
-            scenario.treasury,
-            source_reference="demo-fixture-treasury",
-            recorded_by_user_id=actor_user_id,
+        vendor = repository.get_vendor(
+            organization_id=g.principal.organization_id, vendor_id=scenario.vendor.id,
         )
+        if scenario_key == "scheduled-payment":
+            policy = replace(policy, schedule_payments_before_due_days=3)
         stored = repository.create_invoice(scenario.evidence.invoice)
         stored = repository.transition_invoice(
             organization_id=g.principal.organization_id,
@@ -1415,17 +1424,15 @@ def create_app(
         )[-1]
         decision = decision_service.evaluate(
             evidence=scenario.evidence,
-            vendor=scenario.vendor,
-            treasury=scenario.treasury,
-            policy=scenario.policy,
+            vendor=vendor,
+            treasury=treasury,
+            policy=policy,
             agent_recommendation=scenario.recommendation,
             known_invoice_fingerprints=scenario.known_invoice_fingerprints,
             evaluation_date=scenario.evaluation_date,
             vendor_wallet_event_type=wallet_event.event_type.value,
             vendor_wallet_verified_date=wallet_event.verified_at.date(),
         )
-        if decision.final_action != scenario.definition.expected_action:
-            raise RuntimeError("Demo scenario produced an unexpected control result.")
         stored = repository.transition_invoice(
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
@@ -1989,7 +1996,21 @@ def create_app(
             raise ValueError(f"Missing invoice field: {exc.args[0]}") from exc
         except (InvalidOperation, ValueError) as exc:
             raise ValueError(f"Invalid invoice payload: {exc}") from exc
-        stored = repository.create_invoice(invoice)
+        parent_id = payload.get("supersedes_invoice_id")
+        if parent_id:
+            # Stable server identity prevents retries from forking payable copies.
+            revision_id = "revision_" + sha256(
+                f"{g.principal.organization_id}:{parent_id}".encode()
+            ).hexdigest()[:24]
+            invoice = replace(invoice, id=revision_id)
+            stored = repository.create_invoice_revision(invoice, parent_invoice_id=str(parent_id))
+            repository.append(
+                aggregate_type="invoice", aggregate_id=invoice.id, event_type="INVOICE_CORRECTION_OPENED",
+                payload={"organization_id": invoice.organization_id, "invoice_id": invoice.id,
+                         "supersedes_invoice_id": str(parent_id), "actor_user_id": g.principal.user_id},
+            )
+        else:
+            stored = repository.create_invoice(invoice)
         return jsonify({"invoice": _invoice_json(stored), "correlation_id": _correlation_id()}), 201
 
     @app.post("/api/evidence/extract")
@@ -2083,7 +2104,7 @@ def create_app(
                 )
             if record.field("invoice_id").normalized_value.strip() != invoice_id:
                 raise ValueError("Invoice evidence invoice_id must match the URL invoice ID.")
-        repository.save_and_link_invoice_evidence(
+        record = repository.save_and_link_invoice_evidence(
             record,
             content=content,
             invoice_id=invoice_id,

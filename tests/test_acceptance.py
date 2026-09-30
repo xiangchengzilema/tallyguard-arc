@@ -4,13 +4,13 @@ import pytest
 
 from tallyguard.acceptance import run_testnet_acceptance, write_acceptance_artifacts
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
-from tallyguard.settlement import PaymentIntent, ProviderSubmission
+from tallyguard.settlement import PaymentIntent, ProviderSubmission, SimulatedArcAdapter
 
 
 RECIPIENT = "0x1111111111111111111111111111111111111111"
 
 
-class CountingAdapter:
+class CountingAdapter(SimulatedArcAdapter):
     name = "acceptance-fake"
 
     def __init__(self) -> None:

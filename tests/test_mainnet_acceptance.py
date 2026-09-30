@@ -9,13 +9,13 @@ from tallyguard.mainnet_acceptance import (
     write_mainnet_acceptance_artifacts,
 )
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
-from tallyguard.settlement import PaymentIntent, ProviderSubmission
+from tallyguard.settlement import PaymentIntent, ProviderSubmission, SimulatedArcAdapter
 
 
 RECIPIENT = "0x1111111111111111111111111111111111111111"
 
 
-class CountingMainnetAdapter:
+class CountingMainnetAdapter(SimulatedArcAdapter):
     name = "mainnet-acceptance-fake"
 
     def __init__(self) -> None:

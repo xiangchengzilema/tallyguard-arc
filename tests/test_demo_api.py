@@ -9,10 +9,10 @@ import pytest
 from tallyguard.api import create_app
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.persistence import PersistenceError
-from tallyguard.settlement import PaymentIntent, ProviderSubmission
+from tallyguard.settlement import PaymentIntent, ProviderSubmission, SimulatedArcAdapter
 
 
-class WrongRecipientAdapter:
+class WrongRecipientAdapter(SimulatedArcAdapter):
     name = "fault-injection"
 
     def submit(self, intent: PaymentIntent) -> ProviderSubmission:

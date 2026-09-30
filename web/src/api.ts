@@ -844,41 +844,37 @@ export async function runUploadedEvidenceWorkflow(
   files: EvidenceFileBundle,
   overrides: EvidenceFieldOverrides = {},
   settlementMode: BootstrapData['readiness']['settlement_mode'] = 'simulation',
+  supersedesInvoiceId?: string,
 ): Promise<RunResult> {
   const parsed = await parseEvidenceBundle(files, operatorToken, overrides);
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
-  const invoiceId = parsed.invoice.invoice_id;
+  let invoiceId = parsed.invoice.invoice_id;
   const vendorId = parsed.invoice.vendor_id;
   const wallet = parsed.invoice.payment_wallet_address;
   const invoiceHash = parsed.documents.invoice.contentSha256;
-  const invoiceDirectory = await request<{ items: Invoice[] }>(
-    '/api/invoices?limit=50',
-    { method: 'GET' },
-    operatorToken,
-  );
-  const existingInvoice = invoiceDirectory.items.find((item) => item.id === invoiceId);
+  let existingInvoice: Invoice | undefined;
+  if (!supersedesInvoiceId) {
+    try {
+      existingInvoice = (await request<{ invoice: Invoice }>(
+        `/api/invoices/${encodeURIComponent(invoiceId)}`, { method: 'GET' }, operatorToken,
+      )).invoice;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    }
+  }
   if (existingInvoice) {
-    if (existingInvoice.source_document_hash !== invoiceHash) {
+    if (existingInvoice.source_document_hash !== invoiceHash ||
+        existingInvoice.vendor_id !== vendorId ||
+        existingInvoice.invoice_number !== parsed.invoice.invoice_number ||
+        Number(existingInvoice.amount) !== Number(parsed.invoice.amount) ||
+        existingInvoice.due_date !== parsed.invoice.due_date ||
+        existingInvoice.payment_wallet_address.toLowerCase() !== wallet.toLowerCase()) {
       throw new ApiError(
         `Invoice ID ${invoiceId} already belongs to different source evidence. Correct the invoice ID or submit it as a new version.`,
         409,
         'INVOICE_ID_CONFLICT',
       );
     }
-    const overviewPayload = await request<{ overview: OperationsOverview }>(
-      '/api/operations/overview?queue_limit=50&recent_limit=50',
-      { method: 'GET' },
-      operatorToken,
-    );
-    const existingOperation = overviewPayload.overview.recent_requests.find((item) => item.id === invoiceId);
-    if (existingOperation?.decision_id) {
-      return fetchInvoiceRun(existingInvoice, existingOperation.decision_id, operatorToken);
-    }
-    return request<RunResult>(
-      `/api/invoices/${encodeURIComponent(invoiceId)}/evaluate?auto_settle=true`,
-      { method: 'POST' },
-      operatorToken,
-    );
   }
 
   const [vendorDirectory, policyDirectory, treasurySnapshot] = await Promise.all([
@@ -955,7 +951,8 @@ export async function runUploadedEvidenceWorkflow(
     }, operatorToken));
   }
   await Promise.all(setupRequests);
-  await request('/api/invoices', {
+  if (!existingInvoice) {
+    existingInvoice = (await request<{ invoice: Invoice }>('/api/invoices', {
     method: 'POST',
     body: JSON.stringify({
       id: invoiceId,
@@ -966,20 +963,39 @@ export async function runUploadedEvidenceWorkflow(
       due_date: parsed.invoice.due_date,
       payment_wallet_address: wallet,
       source_document_hash: invoiceHash,
+      ...(supersedesInvoiceId ? { supersedes_invoice_id: supersedesInvoiceId } : {}),
     }),
-  }, operatorToken);
+    }, operatorToken)).invoice;
+    invoiceId = existingInvoice.id;
+  }
+  parsed.documents.invoice = applyEvidenceOverrides(parsed.documents.invoice, { invoice_id: invoiceId });
   const uploads: Array<[string, File, ParsedEvidenceDocument]> = [
     ['INVOICE', files.invoice, parsed.documents.invoice],
     ['PURCHASE_ORDER', files.purchaseOrder, parsed.documents.purchaseOrder],
     ['DELIVERY', files.delivery, parsed.documents.delivery],
   ];
-  await Promise.all(uploads.map(([evidenceType, file, document]) => {
+  if (existingInvoice.status !== 'DRAFT') {
+    const sealed = await fetchInvoiceEvidence(invoiceId, operatorToken);
+    for (const [evidenceType, , document] of uploads) {
+      const prior = sealed.find((item) => item.evidence_type === evidenceType);
+      if (!prior || prior.content_sha256 !== document.contentSha256 ||
+          document.fields.some((field) => prior.fields.find((item) => item.name === field.name)?.normalized_value !== field.normalized_value)) {
+        throw new ApiError('This request has already been reviewed with different evidence. Open “Correct and resubmit” to create a linked correction.', 409, 'SEALED_EVIDENCE_CONFLICT');
+      }
+    }
+  } else {
+    // Re-uploading an identical attachment is server-idempotent. Wait for all
+    // uploads before surfacing a failure so a retry cannot race trailing writes.
+    const results = await Promise.allSettled(uploads.map(([evidenceType, file, document]) => {
     const form = new FormData();
     form.append('evidence_type', evidenceType);
     form.append('file', new Blob([document.bytes], { type: document.mimeType }), file.name);
     form.append('fields', JSON.stringify(document.fields));
     return request(`/api/invoices/${encodeURIComponent(invoiceId)}/evidence`, { method: 'POST', body: form }, operatorToken);
-  }));
+    }));
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+  }
   return request<RunResult>(`/api/invoices/${encodeURIComponent(invoiceId)}/evaluate?auto_settle=true`, { method: 'POST' }, operatorToken);
 }
 

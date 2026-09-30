@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import base64
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -37,6 +37,7 @@ from .policies import (
     policy_content_hash,
 )
 from .policy import (
+    WALLET_CHANGE_COOLDOWN_DAYS,
     DELIVERY_COMMITMENT_SIGNAL,
     NEAR_DUPLICATE_SIGNAL,
     PO_COMMITMENT_SIGNAL,
@@ -115,6 +116,8 @@ class StoredInvoice:
     version: int
     created_at: datetime
     updated_at: datetime
+    supersedes_invoice_id: str | None = None
+    superseded_by_invoice_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,6 +392,16 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE INDEX IF NOT EXISTS idx_invoices_tenant_status
     ON invoices (organization_id, status, updated_at, id);
 
+CREATE TABLE IF NOT EXISTS invoice_revisions (
+    organization_id TEXT NOT NULL,
+    parent_invoice_id TEXT NOT NULL,
+    child_invoice_id TEXT NOT NULL,
+    PRIMARY KEY (organization_id, parent_invoice_id),
+    UNIQUE (organization_id, child_invoice_id),
+    FOREIGN KEY (organization_id, parent_invoice_id) REFERENCES invoices(organization_id, id),
+    FOREIGN KEY (organization_id, child_invoice_id) REFERENCES invoices(organization_id, id)
+);
+
 CREATE TABLE IF NOT EXISTS decisions (
     organization_id TEXT NOT NULL,
     id TEXT NOT NULL,
@@ -560,6 +573,18 @@ class SqliteRepository:
             if self.path != ":memory:":
                 self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.executescript(SCHEMA)
+            evidence_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(invoice_evidence)")}
+            if "fields_json" not in evidence_columns:
+                self._connection.execute("ALTER TABLE invoice_evidence ADD COLUMN fields_json TEXT")
+            invoice_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(invoices)")}
+            if "supersedes_invoice_id" not in invoice_columns:
+                self._connection.execute("ALTER TABLE invoices ADD COLUMN supersedes_invoice_id TEXT")
+            if "superseded_by_invoice_id" not in invoice_columns:
+                self._connection.execute("ALTER TABLE invoices ADD COLUMN superseded_by_invoice_id TEXT")
+                self._connection.execute("""UPDATE invoices SET superseded_by_invoice_id = (
+                    SELECT child_invoice_id FROM invoice_revisions r
+                    WHERE r.organization_id = invoices.organization_id AND r.parent_invoice_id = invoices.id
+                )""")
             policy_columns = {
                 str(row["name"])
                 for row in self._connection.execute("PRAGMA table_info(policies)").fetchall()
@@ -821,6 +846,7 @@ class SqliteRepository:
         *,
         activated_by_user_id: str,
         activated_at: datetime | None = None,
+        only_if_missing: bool = False,
     ) -> StoredPolicy:
         timestamp = activated_at or datetime.now(timezone.utc)
         if timestamp.tzinfo is None:
@@ -836,6 +862,12 @@ class SqliteRepository:
         with self._guard:
             self._connection.execute("BEGIN IMMEDIATE")
             try:
+                if only_if_missing and self._connection.execute(
+                    "SELECT 1 FROM active_policies WHERE organization_id = ?", (policy.organization_id,),
+                ).fetchone():
+                    existing_active = self.active_policy(organization_id=policy.organization_id)
+                    self._connection.execute("COMMIT")
+                    return existing_active
                 existing = self._connection.execute(
                     """
                     SELECT 1 FROM policies
@@ -970,6 +1002,7 @@ class SqliteRepository:
         source_reference: str,
         recorded_by_user_id: str,
         recorded_at: datetime | None = None,
+        only_if_missing: bool = False,
     ) -> StoredTreasurySnapshot:
         timestamp = recorded_at or datetime.now(timezone.utc)
         if timestamp.tzinfo is None:
@@ -983,7 +1016,10 @@ class SqliteRepository:
                     INSERT INTO treasury_snapshots
                         (organization_id, available_usdc, spent_today_usdc,
                          source_reference, recorded_by_user_id, recorded_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    SELECT ?, ?, ?, ?, ?, ?
+                    WHERE ? = 0 OR NOT EXISTS (
+                        SELECT 1 FROM treasury_snapshots WHERE organization_id = ?
+                    )
                     """,
                     (
                         snapshot.organization_id,
@@ -992,8 +1028,12 @@ class SqliteRepository:
                         source_reference,
                         recorded_by_user_id,
                         timestamp.isoformat(),
+                        int(only_if_missing),
+                        snapshot.organization_id,
                     ),
                 )
+                if not cursor.rowcount:
+                    return self.latest_treasury_snapshot(organization_id=snapshot.organization_id)
             except sqlite3.IntegrityError as exc:
                 raise PersistenceError(
                     "Treasury snapshot requires a valid organization and recorder."
@@ -1005,6 +1045,28 @@ class SqliteRepository:
             recorded_by_user_id=recorded_by_user_id,
             recorded_at=timestamp,
         )
+
+    def initialize_demo_controls(self, *, policy: Policy, treasury: TreasurySnapshot,
+                                 actor_user_id: str) -> tuple[Policy, TreasurySnapshot]:
+        active = self.activate_policy(policy, activated_by_user_id=actor_user_id, only_if_missing=True)
+        snapshot = self.record_treasury_snapshot(
+            treasury, source_reference="demo-fixture-treasury", recorded_by_user_id=actor_user_id,
+            only_if_missing=True,
+        )
+        return active.policy, snapshot.snapshot
+
+    def _unaccounted_payment_reservations(self, organization_id: str, observed_at: str,
+                                        *, exclude_id: str = "") -> list[sqlite3.Row]:
+        # A provider timeout is NOT proof that money was never sent. Keep every
+        # unreceipted intent reserved, even across newer treasury observations.
+        return self._connection.execute(
+            """SELECT p.id, p.invoice_id, p.amount_usdc FROM payment_intents p
+               LEFT JOIN settlement_receipts r ON r.organization_id = p.organization_id
+                 AND r.payment_intent_id = p.id
+               WHERE p.organization_id = ? AND p.id <> ?
+                 AND (r.payment_intent_id IS NULL OR r.confirmed_at >= ?)""",
+            (organization_id, exclude_id, observed_at),
+        ).fetchall()
 
     def latest_treasury_snapshot(self, *, organization_id: str) -> StoredTreasurySnapshot:
         with self._guard:
@@ -1053,13 +1115,7 @@ class SqliteRepository:
                     "Settlement capacity requires an active policy and treasury snapshot."
                 )
             recorded_at = datetime.fromisoformat(str(snapshot_row["recorded_at"]))
-            reservation_rows = self._connection.execute(
-                """
-                SELECT amount_usdc FROM payment_intents
-                WHERE organization_id = ? AND created_at > ?
-                """,
-                (organization_id, recorded_at.isoformat()),
-            ).fetchall()
+            reservation_rows = self._unaccounted_payment_reservations(organization_id, recorded_at.isoformat())
             autonomous_rows = self._connection.execute(
                 """
                 SELECT amount_usdc FROM payment_intents
@@ -1447,6 +1503,44 @@ class SqliteRepository:
         with self._guard:
             self._connection.execute("BEGIN IMMEDIATE")
             try:
+                current = self.get_invoice(organization_id=document.organization_id, invoice_id=invoice_id)
+                if current.status != InvoiceStatus.DRAFT:
+                    raise WorkflowError("Evidence cannot be changed after evaluation begins.")
+                existing = next((item for item in self.list_invoice_evidence(
+                    organization_id=document.organization_id, invoice_id=invoice_id,
+                ) if item.document.evidence_type == document.evidence_type), None)
+                if existing:
+                    if (existing.document.content_sha256 != document.content_sha256 or
+                            self._field_values(existing) != self._field_values(record)):
+                        raise PersistenceError("This request already has different sealed evidence. Create a correction instead.")
+                    self._connection.execute("COMMIT")
+                    return existing
+                same_content = self._connection.execute(
+                    "SELECT id, evidence_type FROM evidence_documents WHERE organization_id = ? AND content_sha256 = ?",
+                    (document.organization_id, document.content_sha256),
+                ).fetchone()
+                if same_content:
+                    ancestors = self._revision_ancestors(document.organization_id, invoice_id)
+                    links = self._connection.execute(
+                        "SELECT invoice_id FROM invoice_evidence WHERE organization_id = ? AND document_id = ?",
+                        (document.organization_id, same_content["id"]),
+                    ).fetchall()
+                    if (same_content["evidence_type"] != document.evidence_type.value or
+                            not ancestors.intersection(row["invoice_id"] for row in links)):
+                        raise PersistenceError("Evidence content already belongs to another request; only a linked correction may reuse it.")
+                    original = self.get_evidence(organization_id=document.organization_id, document_id=same_content["id"])
+                    record = replace(record, document=original.document, fields=tuple(
+                        replace(field, source=replace(field.source, document_id=original.document.id)) for field in record.fields
+                    ))
+                    self._connection.execute(
+                        """INSERT INTO invoice_evidence
+                           (organization_id, invoice_id, document_id, evidence_type, linked_at, fields_json)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (document.organization_id, invoice_id, original.document.id, document.evidence_type.value,
+                         timestamp.isoformat(), canonical_json(record.fields)),
+                    )
+                    self._connection.execute("COMMIT")
+                    return record
                 self._connection.execute(
                     """
                     INSERT INTO evidence_documents
@@ -1507,19 +1601,85 @@ class SqliteRepository:
         with self._guard:
             rows = self._connection.execute(
                 """
-                SELECT document_id FROM invoice_evidence
+                SELECT document_id, fields_json FROM invoice_evidence
                 WHERE organization_id = ? AND invoice_id = ?
                 ORDER BY evidence_type, linked_at, document_id
                 """,
                 (organization_id, invoice_id),
             ).fetchall()
-        return tuple(
-            self.get_evidence(
-                organization_id=organization_id,
-                document_id=row["document_id"],
-            )
-            for row in rows
-        )
+        result = []
+        for row in rows:
+            record = self.get_evidence(organization_id=organization_id, document_id=row["document_id"])
+            if row["fields_json"]:
+                fields = tuple(ExtractedField(
+                    name=f["name"], raw_value=f["raw_value"], normalized_value=f["normalized_value"],
+                    confidence=Decimal(f["confidence"]), method=ExtractionMethod(f["method"]),
+                    source=SourceLocation(**f["source"]),
+                ) for f in json.loads(row["fields_json"]))
+                record = replace(record, fields=fields)
+            result.append(record)
+        return tuple(result)
+
+    @staticmethod
+    def _field_values(record: EvidenceRecord) -> dict[str, str]:
+        return {field.name: field.normalized_value for field in record.fields}
+
+    def _revision_ancestors(self, organization_id: str, invoice_id: str) -> set[str]:
+        rows = self._connection.execute(
+            """WITH RECURSIVE parents(id) AS (
+                 SELECT parent_invoice_id FROM invoice_revisions WHERE organization_id = ? AND child_invoice_id = ?
+                 UNION
+                 SELECT r.parent_invoice_id FROM invoice_revisions r JOIN parents p ON r.child_invoice_id = p.id
+                 WHERE r.organization_id = ?)
+               SELECT id FROM parents""", (organization_id, invoice_id, organization_id),
+        ).fetchall()
+        return {row["id"] for row in rows}
+
+    def create_invoice_revision(self, invoice: Invoice, *, parent_invoice_id: str) -> StoredInvoice:
+        """One immutable child per rejected/held request. Retries reuse that child.
+
+        The parent stays sealed. An uncertain or completed payment can never
+        enter this path; correcting a correction must start from that child.
+        """
+        with self._guard:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                parent = self.get_invoice(organization_id=invoice.organization_id, invoice_id=parent_invoice_id)
+                if parent.status not in {InvoiceStatus.REJECTED, InvoiceStatus.HOLD}:
+                    raise WorkflowError("Only a held or rejected request can be corrected.")
+                if self._connection.execute(
+                    "SELECT 1 FROM payment_intents WHERE organization_id = ? AND invoice_id = ?",
+                    (invoice.organization_id, parent_invoice_id),
+                ).fetchone():
+                    raise WorkflowError("A request with a payment intent must be reconciled, not resubmitted.")
+                if parent.invoice.vendor_id != invoice.vendor_id or parent.invoice.invoice_number != invoice.invoice_number:
+                    raise WorkflowError("A correction must retain the supplier and invoice number.")
+                existing = self._connection.execute(
+                    "SELECT child_invoice_id FROM invoice_revisions WHERE organization_id = ? AND parent_invoice_id = ?",
+                    (invoice.organization_id, parent_invoice_id),
+                ).fetchone()
+                if existing:
+                    stored = self.get_invoice(organization_id=invoice.organization_id, invoice_id=existing["child_invoice_id"])
+                    if stored.invoice != invoice:
+                        raise WorkflowError("A different correction already exists. Open that request to continue.")
+                else:
+                    stored = self.create_invoice(invoice)
+                    self._connection.execute("INSERT INTO invoice_revisions VALUES (?, ?, ?)",
+                                             (invoice.organization_id, parent_invoice_id, invoice.id))
+                    self._connection.execute(
+                        "UPDATE invoices SET supersedes_invoice_id = ? WHERE organization_id = ? AND id = ?",
+                        (parent_invoice_id, invoice.organization_id, invoice.id),
+                    )
+                    self._connection.execute(
+                        "UPDATE invoices SET superseded_by_invoice_id = ? WHERE organization_id = ? AND id = ?",
+                        (invoice.id, invoice.organization_id, parent_invoice_id),
+                    )
+                    stored = replace(stored, supersedes_invoice_id=parent_invoice_id)
+                self._connection.execute("COMMIT")
+                return stored
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
 
     def create_invoice(
         self,
@@ -1636,7 +1796,8 @@ class SqliteRepository:
             InvoiceStatus.CONFIRMATION_TIMEOUT,
             InvoiceStatus.RECONCILIATION_MISMATCH,
         }
-        open_items = tuple(item for item in invoices if item.status not in terminal)
+        current_items = tuple(item for item in invoices if not item.superseded_by_invoice_id)
+        open_items = tuple(item for item in current_items if item.status not in terminal)
         status_counts = {
             status.value: sum(1 for item in invoices if item.status == status)
             for status in InvoiceStatus
@@ -1662,13 +1823,7 @@ class SqliteRepository:
             )
             treasury_available = latest_snapshot.snapshot.available_usdc
             with self._guard:
-                reservation_rows = self._connection.execute(
-                    """
-                    SELECT invoice_id, amount_usdc FROM payment_intents
-                    WHERE organization_id = ? AND created_at > ?
-                    """,
-                    (organization_id, latest_snapshot.recorded_at.isoformat()),
-                ).fetchall()
+                reservation_rows = self._unaccounted_payment_reservations(organization_id, latest_snapshot.recorded_at.isoformat())
             committed_since_snapshot = sum(
                 (Decimal(str(row["amount_usdc"])) for row in reservation_rows),
                 Decimal("0"),
@@ -1703,7 +1858,7 @@ class SqliteRepository:
             status_counts=status_counts,
             open_exposure_usdc=open_exposure,
             blocked_exposure_usdc=total(
-                tuple(item for item in invoices if item.status in blocked)
+                tuple(item for item in current_items if item.status in blocked)
             ),
             due_next_7_days_usdc=total(due_soon),
             due_next_7_days_count=len(due_soon),
@@ -1904,10 +2059,12 @@ class SqliteRepository:
         query += " ORDER BY id"
         with self._guard:
             rows = self._connection.execute(query, values).fetchall()
+            ancestors = self._revision_ancestors(organization_id, exclude_invoice_id) if exclude_invoice_id else set()
+            rows = [row for row in rows if row["id"] not in ancestors]
             prior_evidence = (
                 self._connection.execute(
                     """
-                    SELECT ie.invoice_id, ie.evidence_type, d.fields_json
+                    SELECT ie.invoice_id, ie.evidence_type, COALESCE(ie.fields_json, d.fields_json) AS fields_json
                     FROM invoice_evidence ie
                     JOIN evidence_documents d
                       ON d.organization_id = ie.organization_id AND d.id = ie.document_id
@@ -2056,6 +2213,8 @@ class SqliteRepository:
                 ).fetchone()
                 if row is None:
                     raise PersistenceError("Invoice was not found in this organization.")
+                if row["superseded_by_invoice_id"]:
+                    raise WorkflowError("This original request is sealed; continue from its linked correction.")
                 current = InvoiceStatus(row["status"])
                 if row["version"] != expected_version:
                     raise WorkflowError("Invoice was updated by another operation.")
@@ -2666,6 +2825,30 @@ class SqliteRepository:
                 details=policy_details,
             )
 
+        vendor = self._connection.execute(
+            """SELECT v.*, i.payment_wallet_address, i.amount FROM invoices i
+               JOIN vendors v ON v.organization_id = i.organization_id AND v.id = i.vendor_id
+               WHERE i.organization_id = ? AND i.id = ?""",
+            (intent.organization_id, intent.invoice_id),
+        ).fetchone()
+        if vendor is None or not bool(vendor["active"]):
+            raise SettlementExecutionBlocked("VENDOR_INACTIVE", "Settlement requires a currently active, verified supplier.")
+        if (normalize_wallet(vendor["approved_wallet_address"]) != intent.recipient
+                or normalize_wallet(vendor["payment_wallet_address"]) != intent.recipient
+                or Decimal(vendor["amount"]) != intent.amount_usdc):
+            raise SettlementExecutionBlocked("VENDOR_WALLET_CHANGED", "Supplier payment details changed after review. No new transfer was submitted.")
+        latest_wallet = self._connection.execute(
+            """SELECT * FROM vendor_wallet_events WHERE organization_id = ? AND vendor_id = ?
+               ORDER BY sequence DESC LIMIT 1""", (intent.organization_id, vendor["id"]),
+        ).fetchone()
+        if latest_wallet is None:
+            raise SettlementExecutionBlocked("VENDOR_UNVERIFIED", "The supplier has no verified wallet history.")
+        if (latest_wallet["event_type"] == "REPLACED" and
+                timestamp.date() < datetime.fromisoformat(latest_wallet["verified_at"]).date() + timedelta(days=WALLET_CHANGE_COOLDOWN_DAYS)):
+            raise SettlementExecutionBlocked("WALLET_CHANGE_COOLDOWN", "A recently changed supplier wallet is still in its safety cooldown.")
+        if intent.amount_usdc > Decimal(vendor["autopay_limit"]) and not intent.approval_reference:
+            raise SettlementExecutionBlocked("VENDOR_AUTONOMY_LIMIT_EXCEEDED", "The current supplier limit requires independent approval.")
+
         autonomous_limit = Decimal(str(policy_row["maximum_autonomous_payment_usdc"]))
         if not bool(policy_row["autonomous_payments_enabled"]) and not intent.approval_reference:
             raise SettlementExecutionBlocked(
@@ -2716,13 +2899,9 @@ class SqliteRepository:
                 },
             )
 
-        reservation_rows = self._connection.execute(
-            """
-            SELECT id, amount_usdc FROM payment_intents
-            WHERE organization_id = ? AND created_at > ? AND id <> ?
-            """,
-            (intent.organization_id, recorded_at.isoformat(), intent.id),
-        ).fetchall()
+        reservation_rows = self._unaccounted_payment_reservations(
+            intent.organization_id, recorded_at.isoformat(), exclude_id=intent.id,
+        )
         autonomous_rows = self._connection.execute(
             """
             SELECT amount_usdc FROM payment_intents
@@ -2796,7 +2975,7 @@ class SqliteRepository:
     ) -> None:
         rows = self._connection.execute(
             """
-            SELECT ie.evidence_type, d.fields_json
+            SELECT ie.evidence_type, COALESCE(ie.fields_json, d.fields_json) AS fields_json
             FROM invoice_evidence ie JOIN evidence_documents d
               ON d.organization_id = ie.organization_id AND d.id = ie.document_id
             WHERE ie.organization_id = ? AND ie.invoice_id = ?
@@ -2823,8 +3002,8 @@ class SqliteRepository:
         prior_rows = self._connection.execute(
             """
             SELECT p.invoice_id, p.amount_usdc,
-                   po_doc.fields_json AS po_fields_json,
-                   delivery_doc.fields_json AS delivery_fields_json
+                   COALESCE(po_link.fields_json, po_doc.fields_json) AS po_fields_json,
+                   COALESCE(delivery_link.fields_json, delivery_doc.fields_json) AS delivery_fields_json
             FROM payment_intents p
             JOIN invoices i ON i.organization_id = p.organization_id AND i.id = p.invoice_id
             LEFT JOIN invoice_evidence po_link ON
@@ -3205,6 +3384,8 @@ class SqliteRepository:
             version=row["version"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+            supersedes_invoice_id=row["supersedes_invoice_id"],
+            superseded_by_invoice_id=row["superseded_by_invoice_id"],
         )
 
     @staticmethod

@@ -8,6 +8,8 @@ export interface Scenario {
 }
 
 export interface Invoice {
+  supersedes_invoice_id?: string | null;
+  superseded_by_invoice_id?: string | null;
   id: string;
   organization_id: string;
   vendor_id: string;

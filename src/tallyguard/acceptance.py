@@ -25,7 +25,7 @@ from .circle_arc import (
 from .network import ArcNetwork, ArcNetworkConfig
 from .preflight import run_preflight
 from .environment import load_local_environment
-from .settlement import SettlementAdapter
+from .settlement import SettlementAdapter, SimulatedArcAdapter
 
 
 MAX_ACCEPTANCE_AMOUNT_USDC = Decimal("0.10")
@@ -119,7 +119,7 @@ def run_testnet_acceptance(
         )
         _post_json(
             client,
-            "/api/treasury/snapshots",
+            "/api/treasury/snapshots" if isinstance(settlement_adapter, SimulatedArcAdapter) else "/api/treasury/snapshots/refresh",
             {
                 "available_usdc": format(treasury_available_usdc, "f"),
                 "spent_today_usdc": "0",

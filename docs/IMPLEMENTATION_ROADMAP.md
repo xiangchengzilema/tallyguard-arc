@@ -377,6 +377,27 @@ Implemented foundation:
 
 ## Definition of done
 
+### Maintenance gate — 2026-09-30 audit remediation
+
+- Revalidate the current supplier, wallet history/cooldown, amount, and supplier
+  autonomy limit before creating or executing a new payment reservation.
+- Restrict demo fixtures and manually entered treasury balances to the simulator;
+  preserve existing policy, kill switch, and treasury observations.
+- Carry unconfirmed payment reservations across balance refreshes; account for
+  confirmed receipts at the observation boundary without double subtraction.
+- Link each held/rejected invoice to at most one immutable correction; preserve
+  source bytes while recording per-request extracted fields. Cross-tenant,
+  unrelated-evidence reuse, and resubmission of a payment intent fail closed.
+- Resume partial evidence uploads idempotently and reject reviewed requests
+  whose supporting documents or immutable invoice values have changed.
+- Verify checkbox selection with mouse and keyboard, and the animated
+  hold → correction → simulation receipt journey in the browser.
+- Exclude superseded originals from current exposure and active-request counts;
+  keep historical records and links. Remove the requester portal's fixed-width
+  desktop grid at narrow widths so history and receipts remain readable.
+- Gate release on Python/frontend tests, build, compilation, secret scan, HTTPS
+  deployment smoke, and screenshots. Do not touch unrelated server processes.
+
 The project is submission-ready only when:
 
 - A clean invoice settles end to end on Arc Testnet.

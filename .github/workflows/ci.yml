@@ -38,6 +38,10 @@ jobs:
         working-directory: web
         run: npm run build
 
+      - name: Test frontend upload and correction workflows
+        working-directory: web
+        run: npm test
+
       - name: Run Python tests
         run: python -m pytest
 

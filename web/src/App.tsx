@@ -630,6 +630,7 @@ function RequesterTopbar({
 }
 
 function requesterStatus(item: OperationsInvoice, approval: Approval | null | undefined) {
+  if (item.superseded_by_invoice_id) return { key: 'superseded', label: 'Original · corrected', helper: 'Continue from the linked correction' };
   const normalized = item.status.toUpperCase();
   if (approval?.status === 'REJECTED' || item.decision_action === 'REJECT') return { key: 'rejected', label: 'Needs changes', helper: 'Finance returned this request' };
   if (normalized.includes('RECONCIL') || normalized.includes('SETTLED') || normalized.includes('PAID')) return { key: 'paid', label: item.settlement_provider === 'arc-simulator' ? 'Demo complete · receipt ready' : 'Paid · receipt ready', helper: item.settlement_provider === 'arc-simulator' ? 'No funds moved in this demo' : 'Arc settlement confirmed' };
@@ -644,6 +645,11 @@ function requesterStatus(item: OperationsInvoice, approval: Approval | null | un
 
 function requesterDecisionCopy(item: OperationsInvoice, approval: Approval | null | undefined) {
   const status = requesterStatus(item, approval);
+  if (status.key === 'superseded') return {
+    tone: 'review', title: 'Original preserved for audit',
+    body: 'A linked correction replaces this request. Its original evidence and decision remain unchanged.',
+    next: 'Follow the corrected request for the current outcome.',
+  };
   if (status.key === 'paid') return {
     tone: 'paid',
     title: `${item.settlement_provider === 'arc-simulator' ? 'Demo payment completed' : 'Paid'} ${formatMoney(item.settled_amount_usdc ?? item.amount)} ${item.currency}`,
@@ -777,7 +783,7 @@ function RequesterPortalPage({
   const selectedDecision = selected ? requesterDecisionCopy(selected, selectedApproval) : null;
   const activeCount = submittedQueue.filter((item) => {
     const linked = item.decision_id ? approvals[item.decision_id] : null;
-    return !['rejected', 'paid'].includes(requesterStatus(item, linked).key);
+    return !['rejected', 'paid', 'superseded'].includes(requesterStatus(item, linked).key);
   }).length;
   const returnedCount = submittedQueue.filter((item) => {
     const linked = item.decision_id ? approvals[item.decision_id] : null;
@@ -812,10 +818,13 @@ function RequesterPortalPage({
           <section className="requester-detail">
             {selected ? <>
               <header><div><span>{showExamples ? 'PRELOADED SAMPLE · SHARED WITH FINANCE' : 'PAYMENT REQUEST'}</span><h2>{selected.invoice_number}</h2><p>{showExamples ? 'Example created ' : 'Submitted '}{new Date(selected.created_at).toLocaleString()}</p></div><span className={`requester-status is-${requesterStatus(selected, selectedApproval).key}`}><i />{requesterStatus(selected, selectedApproval).label}</span></header>
+              {selected.supersedes_invoice_id ? <p className="requester-revision-note">Corrected request · Original {shorten(selected.supersedes_invoice_id, 16, 8)} remains sealed.</p> : null}
+              {selected.superseded_by_invoice_id ? <p className="requester-revision-note">Linked correction: {shorten(selected.superseded_by_invoice_id, 16, 8)}{queue.some((item) => item.id === selected.superseded_by_invoice_id) ? <button type="button" onClick={() => setSelectedId(selected.superseded_by_invoice_id!)}>View corrected request →</button> : null}</p> : null}
               <RequesterProgress item={selected} approval={selectedApproval} />
               {selectedDecision ? <section className={`requester-decision is-${selectedDecision.tone}`}><span>{selectedDecision.tone === 'rejected' ? '×' : selectedDecision.tone === 'hold' || selectedDecision.tone === 'review' ? '!' : '✓'}</span><div><strong>{selectedDecision.title}</strong><p>{selectedDecision.body}</p><small>Next: {selectedDecision.next}</small></div></section> : null}
               {selectedApproval?.status === 'APPROVED' ? <section className="requester-feedback is-approved"><CheckmarkFilled size={20} /><div><strong>Finance approval note</strong><p>{selectedApproval.resolution_note ?? 'Finance approved this request for settlement.'}</p><small>{selectedApproval.resolved_by_user_id ? `Approved by ${selectedApproval.resolved_by_user_id}` : 'Approved by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small></div></section> : null}
-              {(selectedApproval?.status === 'REJECTED' || selected.decision_action === 'REJECT') ? <section className="requester-feedback is-rejected"><WarningAltFilled size={20} /><div><strong>{selectedApproval?.status === 'REJECTED' ? 'Finance returned this request' : 'Automated controls stopped this request'}</strong><p>{selectedApproval?.resolution_note || (selected.decision_findings?.length ? selected.decision_findings.map((finding) => finding.message).join(' ') : 'This request did not pass the current payment policy.')}</p>{selectedApproval?.status === 'REJECTED' ? <p><strong>How to fix: </strong>Follow the finance note and submit a corrected new request. The original stays sealed.</p> : selected.decision_remediation?.length ? <p><strong>How to fix: </strong>{selected.decision_remediation.join(' ')}</p> : null}{selectedApproval ? <small>{selectedApproval.resolved_by_user_id ? `Returned by ${selectedApproval.resolved_by_user_id}` : 'Returned by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small> : null}<button type="button" onClick={() => onStartCorrection(selected)}>Correct and resubmit <ArrowRight size={14} /></button><small>The original evidence stays sealed. Your correction creates a new request.</small></div></section> : null}
+              {!selected.superseded_by_invoice_id && (selectedApproval?.status === 'REJECTED' || selected.decision_action === 'REJECT') ? <section className="requester-feedback is-rejected"><WarningAltFilled size={20} /><div><strong>{selectedApproval?.status === 'REJECTED' ? 'Finance returned this request' : 'Automated controls stopped this request'}</strong><p>{selectedApproval?.resolution_note || (selected.decision_findings?.length ? selected.decision_findings.map((finding) => finding.message).join(' ') : 'This request did not pass the current payment policy.')}</p>{selectedApproval?.status === 'REJECTED' ? <p><strong>How to fix: </strong>Follow the finance note and submit a corrected new request. The original stays sealed.</p> : selected.decision_remediation?.length ? <p><strong>How to fix: </strong>{selected.decision_remediation.join(' ')}</p> : null}{selectedApproval ? <small>{selectedApproval.resolved_by_user_id ? `Returned by ${selectedApproval.resolved_by_user_id}` : 'Returned by an independent finance reviewer'}{selectedApproval.resolved_at ? ` · ${new Date(selectedApproval.resolved_at).toLocaleString()}` : ''}</small> : null}<button type="button" onClick={() => onStartCorrection(selected)}>Correct and resubmit <ArrowRight size={14} /></button><small>The original evidence stays sealed. Your correction creates a new request.</small></div></section> : null}
+              {selected.status === 'HOLD' && !showExamples && !selected.superseded_by_invoice_id ? <section className="requester-feedback is-held"><WarningAltFilled size={20} /><div><strong>Correct the flagged evidence</strong><p>The original request stays sealed. Submit corrected documents for a fresh policy review.</p><button type="button" onClick={() => onStartCorrection(selected)}>Correct and resubmit <ArrowRight size={14} /></button></div></section> : null}
               <dl className="requester-facts"><div><dt>Vendor</dt><dd>{selected.vendor_id.replaceAll('-', ' ')}</dd></div><div><dt>Requested amount</dt><dd>{formatMoney(selected.amount)} {selected.currency}</dd></div><div><dt>Due date</dt><dd>{selected.due_date}</dd></div><div><dt>Current step</dt><dd>{requesterStatus(selected, selectedApproval).helper}</dd></div></dl>
               <section className="requester-proof"><div><DocumentSecurity size={20} /><span><strong>Evidence record</strong><small>{selected.decision_id ? 'Documents hashed and decision sealed' : 'Waiting for evidence evaluation'}</small></span></div><code>{selected.decision_id ? shorten(selected.decision_id, 14, 10) : shorten(selected.source_document_hash, 14, 10)}</code></section>
               {selected.settled_amount_usdc && selected.settlement_transaction_hash ? <section className="requester-receipt" aria-labelledby="requester-receipt-title">
@@ -908,7 +917,7 @@ function RequesterSubmitPage({
       <RequesterTopbar active="submit" onNavigate={onNavigate} onSignOut={onSignOut} />
       <main className="requester-submit">
         <header><button type="button" onClick={() => onNavigate('portal')}>← My requests</button><span>{correctionSource ? `CORRECTING ${correctionSource.invoice_number}` : 'NEW PAYMENT REQUEST'}</span><h1>{correctionSource ? 'Submit corrected evidence' : 'Submit an invoice for payment'}</h1><p>{correctionSource ? 'The previous request remains sealed. Upload corrected documents, review the extracted fields, and submit a new request.' : 'Add the three records finance needs. AI extracts the fields, but you confirm them before anything is saved.'}</p></header>
-        {correctionSource ? <aside className="requester-correction"><WarningAltFilled size={20} /><div><strong>Returned request · {correctionSource.invoice_number}</strong><p>{correctionFeedback || correctionSource.decision_findings?.map((finding) => finding.message).join(' ') || 'Review the source evidence and the finance feedback before retrying.'}</p><small>Start with sample documents or upload your own. Confirm every corrected field before sealing.</small></div></aside> : null}
+        {correctionSource ? <aside className="requester-correction"><WarningAltFilled size={20} /><div><strong>Returned request · {correctionSource.invoice_number}</strong><p>{correctionFeedback || correctionSource.decision_findings?.map((finding) => finding.message).join(' ') || 'Review the source evidence and the finance feedback before retrying.'}</p><small>Upload the corrected evidence. Keep the same supplier and invoice number; the original stays sealed.</small></div></aside> : null}
         <div className="requester-submit__steps">{submitSteps.map(([label, detail], index) => <span className={index + 1 < submissionStage ? 'is-complete' : index + 1 === submissionStage ? 'is-active' : ''} key={label}><b>{index + 1 < submissionStage ? '✓' : index + 1}</b><em>{label}<small>{detail}</small></em></span>)}</div>
         {error ? <InlineNotification kind="error" title="Submission stopped" subtitle={error} lowContrast /> : null}
         <section className="requester-submit__card">
@@ -1119,7 +1128,7 @@ function PremiumPayablesPage({
             <div className="payables-table__head"><span aria-label="Select invoices" title="Select invoices">✓</span><span>Invoice ↓</span><span>Vendor</span><span>Amount</span><span>Due ↕</span><span>Evidence</span><span>Decision</span><span>Status</span></div>
             {filtered.length ? filtered.map((item) => (
               <div className={batchIds.includes(item.id) ? 'payables-table__row is-selected' : 'payables-table__row'} key={item.id} onClick={() => { setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') { setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); } }}>
-                <label className="row-check"><input type="checkbox" aria-label={`Select ${item.invoice_number}`} checked={batchIds.includes(item.id)} onChange={(event) => { setSelectedId(item.id); setDrawerOpen(true); setBatchChecked(item.id, event.target.checked); }} onClick={(event) => event.stopPropagation()} /><span>✓</span></label>
+                <label className="row-check" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${item.invoice_number}`} checked={batchIds.includes(item.id)} onChange={(event) => { setSelectedId(item.id); setDrawerOpen(true); setBatchChecked(item.id, event.target.checked); }} /><span>✓</span></label>
                 <button type="button" className="payable-link" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setBatchIds([item.id]); setDrawerOpen(true); if (item.decision_id) onOpenReview(item); }}><strong>{item.invoice_number}</strong><small>{shorten(item.id, 7, 4)}</small></button>
                 <span className="vendor-cell"><strong>{vendorLabel(item.vendor_id)}</strong><small>{isDemoScenarioInvoice(item) ? 'Sample case · ' : ''}{shorten(item.payment_wallet_address, 7, 5)}</small></span>
                 <strong>{formatMoney(item.amount)} {item.currency}</strong><span>{dueLabel(item.due_date)}</span>
@@ -3500,6 +3509,7 @@ function App() {
         files,
         overrides,
         data.readiness.settlement_mode,
+        correctionSource?.id,
       );
       setRun(result);
       setHistory((items) => [result, ...items].slice(0, 12));
@@ -3517,7 +3527,7 @@ function App() {
       setVendorDirectory(await fetchVendorDirectory(data.sessions.auditor));
       await refreshAuditLedger();
     });
-  }, [act, data, refreshAuditLedger]);
+  }, [act, data, correctionSource, refreshAuditLedger]);
 
   const handleResolveInboxApproval = useCallback((item: GovernanceOverview['pendingApprovals'][number], approve: boolean, note: string) => {
     if (!data) return;

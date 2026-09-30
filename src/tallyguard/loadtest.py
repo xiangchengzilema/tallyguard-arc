@@ -11,6 +11,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 import json
 from pathlib import Path
 from statistics import mean
@@ -26,6 +27,8 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 
 from .api import create_app
 from .auth import Principal, Role
+from .models import TreasurySnapshot
+from .policy import Policy
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +340,17 @@ def execute_load_test(configuration: LoadConfiguration) -> dict[str, Any]:
                 )
             )
             identities[organization_id] = (operator_token, approver_token, admin_token)
+            # Load throughput has its own explicit budget. Scenario creation
+            # must not replenish the treasury or overwrite active controls.
+            budget = Decimal(configuration.invoices * 2500 + 10000)
+            repository.activate_policy(Policy(
+                version="load-budget", organization_id=organization_id,
+                daily_payment_limit_usdc=budget, minimum_cash_reserve_usdc=Decimal("0"),
+                maximum_autonomous_payment_usdc=Decimal("2000"), autonomous_payments_enabled=True,
+            ), activated_by_user_id=admin_id)
+            repository.record_treasury_snapshot(TreasurySnapshot(
+                organization_id=organization_id, available_usdc=budget, spent_today_usdc=Decimal("0"),
+            ), source_reference="isolated-load-fixture", recorded_by_user_id=operator_id)
 
         started = perf_counter()
         with LocalHttpServer(app) as server:

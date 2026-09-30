@@ -435,6 +435,11 @@ def test_approved_payment_does_not_consume_no_touch_daily_ceiling(tmp_path):
         invoice(), id="invoice-2", invoice_number="INV-1008",
         amount=Decimal("40"), source_document_hash="b" * 64,
     ))
+    repo.onboard_vendor(
+        Vendor(id="vendor-1", organization_id="org-1", legal_name="Supplier", approved_wallet_address=WALLET, autopay_limit=Decimal("5000")),
+        verification_method=WalletVerificationMethod.MANUAL_REVIEW, verification_reference="unit-test",
+        verified_by_user_id="operator-1",
+    )
     manual = PaymentIntent(
         id="payment-manual", organization_id="org-1", invoice_id="invoice-1",
         decision_id="decision-manual", recipient=WALLET,

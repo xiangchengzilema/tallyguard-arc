@@ -24,7 +24,7 @@ from .circle_arc import ArcRpcClient, CircleArcAdapter, CircleSdkGateway
 from .environment import load_local_environment
 from .network import ArcNetwork, ArcNetworkConfig
 from .preflight import run_preflight
-from .settlement import EVM_ADDRESS, SettlementAdapter
+from .settlement import EVM_ADDRESS, SettlementAdapter, SimulatedArcAdapter
 
 
 MAX_MAINNET_ACCEPTANCE_AMOUNT_USDC = Decimal("0.01")
@@ -173,7 +173,7 @@ def run_mainnet_acceptance(
         )
         _post_json(
             client,
-            "/api/treasury/snapshots",
+            "/api/treasury/snapshots" if isinstance(settlement_adapter, SimulatedArcAdapter) else "/api/treasury/snapshots/refresh",
             {
                 "available_usdc": format(treasury_available_usdc, "f"),
                 "spent_today_usdc": "0",

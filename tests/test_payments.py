@@ -8,7 +8,8 @@ import pytest
 
 from tallyguard.auth import Role
 from tallyguard.evidence import EvidenceStore, EvidenceType, ExtractedField, ExtractionMethod, SourceLocation
-from tallyguard.models import Invoice, TreasurySnapshot
+from tallyguard.models import Invoice, TreasurySnapshot, Vendor
+from tallyguard.vendors import WalletVerificationMethod
 from tallyguard.network import ArcNetwork, ArcNetworkConfig
 from tallyguard.payments import PaymentOrchestrator
 from tallyguard.persistence import PersistenceError, SettlementExecutionBlocked, SqliteRepository
@@ -25,6 +26,14 @@ from tallyguard.workflow import InvoiceStatus, WorkflowError
 
 
 WALLET = "0x1111111111111111111111111111111111111111"
+
+
+def verified_vendor(repo):
+    repo.onboard_vendor(
+        Vendor(id="vendor-1", organization_id="org-1", legal_name="Supplier", approved_wallet_address=WALLET, autopay_limit=Decimal("5000")),
+        verification_method=WalletVerificationMethod.MANUAL_REVIEW, verification_reference="unit-test",
+        verified_by_user_id="operator-1",
+    )
 
 
 def authorized_decision() -> Decision:
@@ -333,6 +342,7 @@ def test_atomic_treasury_reservation_prevents_concurrent_daily_limit_overspend(t
         recorded_by_user_id="operator-1",
         recorded_at=recorded_at,
     )
+    verified_vendor(setup)
     for index in (1, 2):
         setup.create_invoice(
             Invoice(
@@ -412,6 +422,7 @@ def test_atomic_intent_reservation_prevents_two_invoices_overusing_one_po(tmp_pa
         source_reference="test-snapshot", recorded_by_user_id="operator-1", recorded_at=now,
     )
     store = EvidenceStore()
+    verified_vendor(setup)
     for index in (1, 2):
         invoice_id = f"invoice-{index}"
         setup.create_invoice(
@@ -420,7 +431,7 @@ def test_atomic_intent_reservation_prevents_two_invoices_overusing_one_po(tmp_pa
                 invoice_number=f"INV-{index}", currency="USDC", amount=Decimal("70"),
                 due_date=date(2026, 10, 8), payment_wallet_address=WALLET,
                 source_document_hash=str(index) * 64,
-            ), status=InvoiceStatus.READY, created_at=now,
+            ), status=InvoiceStatus.DRAFT, created_at=now,
         )
         for evidence_type, values in (
             (EvidenceType.PURCHASE_ORDER, {
@@ -511,6 +522,7 @@ def test_treasury_reservation_fails_closed_on_stale_snapshot(tmp_path):
         recorded_by_user_id="operator-1",
         recorded_at=observed_at,
     )
+    verified_vendor(repo)
     intent = PaymentIntent(
         id="payment-stale",
         organization_id="org-1",

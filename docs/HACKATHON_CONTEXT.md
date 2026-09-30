@@ -104,6 +104,21 @@ credential or balance is needed for the hackathon demo.
 
 ## Submission discipline
 
+### 2026-09-30 post-submission hardening
+
+The existing public URL and repository remain unchanged. This maintenance
+release fixes stale supplier-wallet authorization, simulator control resets,
+unconfirmed reservations lost on balance refresh, and unverified manual live
+balances. It also adds an immutable, tenant-scoped correction chain for held or
+rejected invoices, safe partial-upload retries, and reliable checkbox selection.
+Corrections keep the original evidence sealed and cannot branch off a request
+with a payment intent. Historical Arc Testnet receipts are not recreated.
+
+The public deployment remains simulation-only. Updating GitHub and deploying
+the matching source/frontend build are separate steps for the native Tencent
+service. These fixes do not require a new Arc application or changed submission
+links; no external submission is automatically edited by this release.
+
 - Submit an initial working version early and update it before the deadline.
 - Preserve activity-window commits, Arc transaction hashes, load-test results, and pilot evidence.
 - Distinguish synthetic reliability testing from genuine pilot usage.
