@@ -1,3 +1,7 @@
+from datetime import date, timedelta
+
+import pytest
+
 from tallyguard.api import create_app
 
 
@@ -12,8 +16,15 @@ def session(client, role: str) -> str:
     return client.post("/api/demo/session", json={"role": role}).get_json()["access_token"]
 
 
-def test_showcase_seeds_mixed_queue_for_one_click_agent_planning(tmp_path):
-    app = create_app(database_path=tmp_path / "showcase.sqlite3", testing=True)
+@pytest.mark.parametrize("seed_date", [
+    None, date(2026, 9, 20), date(2026, 10, 19),
+    date(2027, 12, 24), date(2028, 2, 22),
+])
+def test_showcase_seeds_mixed_queue_for_one_click_agent_planning(tmp_path, seed_date):
+    app = create_app(
+        database_path=tmp_path / "showcase.sqlite3", testing=True,
+        date_provider=(lambda: seed_date) if seed_date is not None else None,
+    )
     client = app.test_client()
     operator = session(client, "operator")
 
@@ -64,6 +75,10 @@ def test_showcase_seeds_mixed_queue_for_one_click_agent_planning(tmp_path):
         "REMEDIATE",
         "WAIT_SCHEDULE",
     }
+    if seed_date is not None:
+        scheduled = showcase["items"][3]
+        assert scheduled["invoice"]["due_date"] == (seed_date + timedelta(days=20)).isoformat()
+        assert scheduled["decision"]["scheduled_for"] == (seed_date + timedelta(days=17)).isoformat()
 
 
 def test_showcase_requires_decision_run_permission(tmp_path):
@@ -76,3 +91,49 @@ def test_showcase_requires_decision_run_permission(tmp_path):
         headers=headers(auditor, "showcase-denied"),
     )
     assert denied.status_code == 403
+
+
+def test_existing_demo_schedule_stays_sealed_when_new_samples_use_a_later_date(tmp_path):
+    database = tmp_path / "durable-schedule.sqlite3"
+    clock = {"today": date(2026, 9, 20)}
+    app = create_app(database_path=database, testing=True, date_provider=lambda: clock["today"])
+    client = app.test_client()
+    operator = session(client, "operator")
+    auditor = session(client, "auditor")
+    original = client.post(
+        "/api/demo/scenarios/scheduled-payment/run",
+        headers=headers(operator, "old-demo-seed"),
+    ).get_json()
+    assert original["decision"]["scheduled_for"] == "2026-10-07"
+    app.extensions["tallyguard_repository"].close()
+
+    clock["today"] = date(2027, 1, 1)
+    app = create_app(database_path=database, testing=True, date_provider=lambda: clock["today"])
+    client = app.test_client()
+    fresh = client.post(
+        "/api/demo/scenarios/scheduled-payment/run",
+        headers=headers(operator, "fresh-demo-seed"),
+    ).get_json()
+    assert fresh["decision"]["scheduled_for"] == "2027-01-18"
+    stored_decision = client.get(
+        f"/api/decisions/{original['decision']['id']}",
+        headers=headers(auditor, "old-decision-read"),
+    )
+    assert stored_decision.status_code == 200
+    assert stored_decision.get_json()["decision"] == original["decision"]
+    replay = client.get(
+        f"/api/decisions/{original['decision']['id']}/replay",
+        headers=headers(auditor, "old-decision-replay"),
+    )
+    assert replay.status_code == 200
+    assert replay.get_json()["verification"]["verified"] is True
+
+    plan = client.post(
+        "/api/agent-runs", json={},
+        headers=headers(operator, "old-and-new-plan"),
+    ).get_json()["agent_run"]
+    assert {item["invoice_id"]: item["action"] for item in plan["items"]} == {
+        original["invoice"]["id"]: "RELEASE_SCHEDULE",
+        fresh["invoice"]["id"]: "WAIT_SCHEDULE",
+    }
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0

@@ -2,6 +2,8 @@ from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 
+import pytest
+
 from tallyguard.audit import canonical_json
 
 from tallyguard.api import create_app
@@ -258,11 +260,13 @@ def test_agent_run_routes_escalation_then_settles_only_after_separate_approval(t
     assert result["payment"]["invoice"]["id"] == invoice["invoice"]["id"]
 
 
-def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp_path):
+@pytest.mark.parametrize("release_delay_days", [0, 1])
+def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp_path, release_delay_days):
+    clock = {"today": date(2026, 9, 20)}
     app = create_app(
         database_path=tmp_path / "agent-schedule.sqlite3",
         testing=True,
-        date_provider=lambda: date(2026, 10, 7),
+        date_provider=lambda: clock["today"],
     )
     client = app.test_client()
     operator = session(client, "operator")
@@ -271,6 +275,22 @@ def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp
         "/api/demo/scenarios/scheduled-payment/run",
         headers=headers(operator, "agent-schedule-seed"),
     ).get_json()
+    clock["today"] = date(2026, 10, 6)
+    waiting_plan = client.post(
+        "/api/agent-runs", json={},
+        headers=headers(operator, "agent-schedule-wait-plan"),
+    ).get_json()["agent_run"]
+    assert waiting_plan["items"][0]["action"] == "WAIT_SCHEDULE"
+    assert waiting_plan["items"][0]["executable"] is False
+    waiting = client.post(
+        f"/api/agent-runs/{waiting_plan['id']}/execute",
+        headers=headers(approver, "agent-schedule-wait-execute"),
+    )
+    assert waiting.status_code == 200
+    assert waiting.get_json()["agent_run"]["results"][0]["status"] == "SKIPPED"
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
+
+    clock["today"] = date(2026, 10, 7) + timedelta(days=release_delay_days)
     planned = client.post(
         "/api/agent-runs",
         json={},
@@ -288,6 +308,14 @@ def test_agent_run_releases_due_schedule_through_current_policy_revalidation(tmp
     assert result["status"] == "SETTLED"
     assert result["schedule_result"]["release_decision"]["final_action"] == "PAY"
     assert result["schedule_result"]["payment"]["invoice"]["id"] == scheduled["invoice"]["id"]
+    assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
+
+    repeated = client.post(
+        f"/api/agent-runs/{planned['id']}/execute",
+        headers=headers(approver, "agent-schedule-repeat"),
+    )
+    assert repeated.status_code == 200
+    assert repeated.get_json()["reused_result"] is True
     assert app.extensions["tallyguard_settlement_adapter"].submission_count == 1
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import hashlib
 
@@ -98,7 +98,10 @@ def build_demo_scenario(
     *,
     organization_id: str,
     invoice_id: str,
+    evaluation_date: date,
 ) -> DemoScenarioCase:
+    # New samples share the application's clock with planning and release.
+    # Only creation is relative: persisted evidence and release dates never roll.
     try:
         definition = next(item for item in DEMO_SCENARIOS if item.key == key)
     except StopIteration as exc:
@@ -119,7 +122,7 @@ def build_demo_scenario(
         invoice_number=f"INV-{invoice_id[-8:].upper()}",
         currency="USDC",
         amount=amount,
-        due_date=date(2026, 10, 10),
+        due_date=evaluation_date + timedelta(days=20),
         payment_wallet_address=CHANGED_WALLET if key == "wallet-change" else APPROVED_WALLET,
         source_document_hash=invoice_hash,
     )
@@ -161,7 +164,7 @@ def build_demo_scenario(
         spent_today_usdc=Decimal("400"),
     )
     policy = Policy(
-        version=f"demo-2026-09-20.{invoice_id[-8:]}",
+        version=f"demo-{evaluation_date.isoformat()}.{invoice_id[-8:]}",
         organization_id=organization_id,
         daily_payment_limit_usdc=Decimal("5000"),
         minimum_cash_reserve_usdc=Decimal("3000"),
@@ -188,5 +191,5 @@ def build_demo_scenario(
         policy=policy,
         recommendation=recommendation,
         known_invoice_fingerprints=known,
-        evaluation_date=date(2026, 9, 20),
+        evaluation_date=evaluation_date,
     )

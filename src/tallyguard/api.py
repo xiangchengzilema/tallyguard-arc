@@ -1375,6 +1375,7 @@ def create_app(
             scenario_key,
             organization_id=g.principal.organization_id,
             invoice_id=invoice_id,
+            evaluation_date=current_date(),
         )
         try:
             repository.get_vendor(

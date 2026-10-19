@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import hashlib
 from io import BytesIO
@@ -374,8 +374,11 @@ def test_missing_delivery_scenario_explains_remediation(tmp_path):
     assert any("delivery" in text.lower() for text in payload["decision"]["remediation"])
 
 
-def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_path):
-    clock = {"today": date(2026, 9, 20)}
+@pytest.mark.parametrize("release_delay_days", [0, 1])
+def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_path, release_delay_days):
+    seed_date = date(2026, 12, 20)
+    release_date = seed_date + timedelta(days=17)
+    clock = {"today": seed_date}
     app = create_app(
         database_path=tmp_path / "schedule.sqlite3",
         testing=True,
@@ -389,9 +392,11 @@ def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_
         headers=operator_headers,
     ).get_json()
     assert run["decision"]["final_action"] == "SCHEDULE"
-    assert run["decision"]["scheduled_for"] == "2026-10-07"
+    assert run["decision"]["scheduled_for"] == release_date.isoformat()
+    assert run["invoice"]["due_date"] == (seed_date + timedelta(days=20)).isoformat()
 
     assert client.post("/api/schedules/run", headers=operator_headers).status_code == 403
+    clock["today"] = release_date - timedelta(days=1)
     waiting = client.post("/api/schedules/run", headers=approver_headers)
     assert waiting.status_code == 200
     waiting_run = waiting.get_json()["schedule_run"]
@@ -400,7 +405,7 @@ def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_
     assert waiting_run["settled"] == 0
     assert app.extensions["tallyguard_settlement_adapter"].submission_count == 0
 
-    clock["today"] = date(2026, 10, 7)
+    clock["today"] = release_date + timedelta(days=release_delay_days)
     released = client.post("/api/schedules/run", headers=approver_headers)
     assert released.status_code == 200
     release_run = released.get_json()["schedule_run"]
@@ -419,10 +424,11 @@ def test_schedule_runner_waits_until_release_date_then_settles_exactly_once(tmp_
 
 
 def test_schedule_release_revalidates_current_kill_switch_before_payment(tmp_path):
+    clock = {"today": date(2026, 9, 20)}
     app = create_app(
         database_path=tmp_path / "schedule-stop.sqlite3",
         testing=True,
-        date_provider=lambda: date(2026, 10, 7),
+        date_provider=lambda: clock["today"],
     )
     client = app.test_client()
     run = client.post(
@@ -447,6 +453,7 @@ def test_schedule_release_revalidates_current_kill_switch_before_payment(tmp_pat
     )
     assert activated.status_code == 201
 
+    clock["today"] = date(2026, 10, 7)
     response = client.post("/api/schedules/run", headers=auth(client, "approver"))
     assert response.status_code == 200
     schedule_run = response.get_json()["schedule_run"]
